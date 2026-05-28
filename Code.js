@@ -1,7 +1,7 @@
 function doGet() {
-  return HtmlService.createHtmlOutput('<h1>Hello World</h1>');
+  return HtmlService.createHtmlOutput('<h1>Hello Nattawat</h1>');
 }
 
 function myFunction() {
-  Logger.log('Hello World');
+  Logger.log('Hello Nattawat');
 }
