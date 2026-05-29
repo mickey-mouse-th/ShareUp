@@ -1,1322 +1,772 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>ShareUp - Expense Splitting</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
-  <style>
-    :root {
-      --primary: #6C63FF;
-      --secondary: #48CAE4;
-      --success: #06D6A0;
-      --danger: #EF476F;
-      --bg: #F4F6FB;
-      --card-radius: 15px;
-      --header-height: 60px;
-      --bottom-nav-height: 65px;
-    }
-    * { box-sizing: border-box; }
-    body {
-      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-      background: var(--bg);
-      min-height: 100vh;
-      overflow-x: hidden;
-    }
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+<meta name="theme-color" content="#7C3AED"/>
+<title>ShareUp</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --p:#7C3AED;--p2:#A78BFA;--p3:#EDE9FE;
+  --b:#3B82F6;--g:#10B981;--r:#EF4444;--o:#F59E0B;
+  --bg:#F5F5FA;--s:#fff;--t1:#111827;--t2:#6B7280;--t3:#D1D5DB;--br:#F3F4F6;
+  --hh:56px;--nh:68px;
+  --st:env(safe-area-inset-top,0px);--sb:env(safe-area-inset-bottom,0px);
+}
+html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--t1);-webkit-font-smoothing:antialiased}
+button,input,select{font-family:inherit}
 
-    /* ---- AUTH ---- */
-    #authSection {
-      min-height: 100vh;
-      background: linear-gradient(135deg, #6C63FF 0%, #48CAE4 100%);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
-    .auth-card {
-      background: #fff;
-      border-radius: 24px;
-      padding: 36px 28px;
-      width: 100%;
-      max-width: 420px;
-      box-shadow: 0 20px 60px rgba(108,99,255,0.25);
-    }
-    .auth-logo {
-      width: 60px;
-      height: 60px;
-      background: linear-gradient(135deg, var(--primary), var(--secondary));
-      border-radius: 18px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 16px;
-    }
-    .auth-logo i { font-size: 28px; color: #fff; }
-    .auth-title { font-size: 1.7rem; font-weight: 700; color: #1a1a2e; text-align: center; }
-    .auth-subtitle { color: #888; text-align: center; margin-bottom: 28px; font-size: 0.93rem; }
-    .form-floating .form-control {
-      border-radius: 12px;
-      border: 1.5px solid #e0e0e0;
-      background: #fafafa;
-    }
-    .form-floating .form-control:focus {
-      border-color: var(--primary);
-      box-shadow: 0 0 0 0.2rem rgba(108,99,255,0.15);
-    }
-    .btn-primary-grad {
-      background: linear-gradient(135deg, var(--primary), var(--secondary));
-      border: none;
-      color: #fff;
-      border-radius: 12px;
-      font-weight: 600;
-      padding: 12px;
-      width: 100%;
-      font-size: 1rem;
-      transition: opacity 0.2s;
-    }
-    .btn-primary-grad:hover { opacity: 0.9; color: #fff; }
-    .auth-link { text-align: center; color: #888; font-size: 0.9rem; margin-top: 18px; }
-    .auth-link a { color: var(--primary); text-decoration: none; font-weight: 600; }
-    .pw-toggle {
-      position: absolute;
-      right: 14px;
-      top: 50%;
-      transform: translateY(-50%);
-      cursor: pointer;
-      color: #aaa;
-      z-index: 10;
-      background: none;
-      border: none;
-      padding: 0;
-    }
-    .pw-wrap { position: relative; }
-    .pw-wrap .form-control { padding-right: 44px; }
+/* SPLASH */
+#splash{position:fixed;inset:0;background:linear-gradient(160deg,#7C3AED,#3B82F6);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;transition:opacity .4s}
+#splash.out{opacity:0;pointer-events:none}
+.sp-logo{width:80px;height:80px;background:rgba(255,255,255,.2);border-radius:24px;display:flex;align-items:center;justify-content:center;margin-bottom:16px}
+.sp-logo svg{width:44px;height:44px;fill:#fff}
+.sp-title{color:#fff;font-size:28px;font-weight:800;letter-spacing:-.5px}
+.sp-sub{color:rgba(255,255,255,.7);font-size:14px;margin-top:6px}
+.sp-ring{width:32px;height:32px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;margin-top:40px}
+@keyframes spin{to{transform:rotate(360deg)}}
 
-    /* ---- APP SHELL ---- */
-    #appSection { display: none; min-height: 100vh; }
+/* TOAST */
+#toastWrap{position:fixed;top:calc(var(--st) + 14px);left:12px;right:12px;z-index:8000;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.su-toast{background:var(--t1);color:#fff;border-radius:12px;padding:12px 16px;font-size:14px;font-weight:500;display:flex;align-items:center;gap:10px;box-shadow:0 8px 24px rgba(0,0,0,.2);animation:tIn .3s ease;pointer-events:all}
+.su-toast.success{background:var(--g)}.su-toast.danger{background:var(--r)}.su-toast.warning{background:var(--o);color:var(--t1)}
+@keyframes tIn{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:translateY(0)}}
 
-    /* Header */
-    .app-header {
-      position: fixed;
-      top: 0; left: 0; right: 0;
-      height: var(--header-height);
-      background: #fff;
-      box-shadow: 0 2px 12px rgba(108,99,255,0.08);
-      display: flex;
-      align-items: center;
-      padding: 0 16px;
-      z-index: 100;
-      gap: 10px;
-    }
-    .header-back {
-      background: none; border: none; padding: 6px 10px 6px 0;
-      color: var(--primary); font-size: 1.2rem; cursor: pointer;
-      display: none;
-    }
-    .header-logo {
-      width: 34px; height: 34px;
-      background: linear-gradient(135deg, var(--primary), var(--secondary));
-      border-radius: 10px;
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0;
-    }
-    .header-logo i { font-size: 16px; color: #fff; }
-    .header-title { font-weight: 700; font-size: 1.05rem; color: #1a1a2e; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .header-user { font-size: 0.8rem; color: #888; max-width: 90px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .btn-logout {
-      background: none; border: 1.5px solid #e0e0e0; border-radius: 10px;
-      padding: 5px 10px; color: #888; font-size: 0.8rem; cursor: pointer;
-      white-space: nowrap;
-    }
-    .btn-logout:hover { border-color: var(--danger); color: var(--danger); }
+/* AUTH */
+#authView{position:fixed;inset:0;background:linear-gradient(160deg,#7C3AED,#3B82F6);display:flex;flex-direction:column;align-items:center;justify-content:flex-end;display:none}
+.auth-top{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px 20px}
+.auth-top svg{width:60px;height:60px;fill:#fff;margin-bottom:12px}
+.auth-top h1{color:#fff;font-size:32px;font-weight:800;letter-spacing:-.5px}
+.auth-top p{color:rgba(255,255,255,.75);font-size:15px;margin-top:6px}
+.auth-sheet{width:100%;background:#fff;border-radius:28px 28px 0 0;padding:28px 24px calc(28px + var(--sb));max-height:88vh;overflow-y:auto}
+.auth-pill{width:40px;height:5px;background:var(--br);border-radius:3px;margin:0 auto 24px}
+.auth-heading{font-size:22px;font-weight:800;letter-spacing:-.3px;margin-bottom:4px}
+.auth-sub{font-size:14px;color:var(--t2);margin-bottom:22px}
+.fld{margin-bottom:14px}
+.fld label{display:block;font-size:12px;font-weight:700;color:var(--t2);margin-bottom:6px;letter-spacing:.04em;text-transform:uppercase}
+.fld-wrap{position:relative}
+.fld input{width:100%;height:50px;border:1.5px solid var(--br);border-radius:12px;padding:0 44px 0 14px;font-size:15px;color:var(--t1);background:#FAFAFA;outline:none;transition:border-color .2s}
+.fld input:focus{border-color:var(--p);background:#fff}
+.pw-eye{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--t2);display:flex;align-items:center;padding:4px}
+.pw-eye svg{width:20px;height:20px;fill:currentColor}
+.btn-main{width:100%;height:52px;background:linear-gradient(135deg,var(--p),var(--b));border:none;border-radius:14px;color:#fff;font-size:16px;font-weight:700;margin-top:6px;transition:transform .1s,opacity .1s}
+.btn-main:active{transform:scale(.97);opacity:.9}
+.auth-link{text-align:center;margin-top:18px;font-size:14px;color:var(--t2)}
+.auth-link a{color:var(--p);font-weight:700;text-decoration:none}
 
-    /* Bottom Nav */
-    .bottom-nav {
-      position: fixed;
-      bottom: 0; left: 0; right: 0;
-      height: var(--bottom-nav-height);
-      background: #fff;
-      box-shadow: 0 -2px 16px rgba(108,99,255,0.10);
-      display: flex;
-      z-index: 100;
-    }
-    .nav-item {
-      flex: 1; display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      cursor: pointer; color: #bbb; transition: color 0.2s;
-      gap: 2px; font-size: 0.7rem; padding-bottom: 4px;
-      border: none; background: none;
-    }
-    .nav-item i { font-size: 1.4rem; }
-    .nav-item.active { color: var(--primary); }
-    .nav-item span { font-weight: 500; }
+/* APP SHELL */
+#appView{position:fixed;inset:0;display:none;flex-direction:column}
+.app-hd{padding:calc(var(--st) + 10px) 16px 10px;background:rgba(255,255,255,.92);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid rgba(0,0,0,.06);display:flex;align-items:center;gap:10px;flex-shrink:0;min-height:calc(var(--st) + var(--hh))}
+.hd-back{width:36px;height:36px;border-radius:50%;background:var(--p3);border:none;display:none;align-items:center;justify-content:center;color:var(--p);flex-shrink:0}
+.hd-back svg{width:20px;height:20px;fill:var(--p)}
+.show-back .hd-back{display:flex}.show-back .hd-brand{display:none}
+.hd-brand{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--p),var(--b));display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.hd-brand svg{width:18px;height:18px;fill:#fff}
+.hd-title{flex:1;font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hd-avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--p),var(--b));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px;flex-shrink:0;cursor:pointer;transition:transform .1s}
+.hd-avatar:active{transform:scale(.9)}
 
-    /* Content area */
-    .app-content {
-      padding-top: calc(var(--header-height) + 10px);
-      padding-bottom: calc(var(--bottom-nav-height) + 80px);
-      padding-left: 12px;
-      padding-right: 12px;
-      min-height: 100vh;
-    }
+/* PAGES */
+.pages{flex:1;overflow:hidden;position:relative}
+.page{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--bg);transition:transform .32s cubic-bezier(.25,.46,.45,.94);will-change:transform}
+.page::-webkit-scrollbar{display:none}
+.page.hidden{transform:translateX(100%);pointer-events:none}
+.page.behind{transform:translateX(-28%);pointer-events:none}
+.pg{padding:12px 12px calc(12px + var(--nh) + var(--sb))}
 
-    /* Cards */
-    .su-card {
-      background: #fff;
-      border-radius: var(--card-radius);
-      box-shadow: 0 2px 14px rgba(108,99,255,0.07);
-      margin-bottom: 12px;
-      overflow: hidden;
-    }
-    .event-card {
-      border-left: 4px solid var(--primary);
-      padding: 14px 14px 14px 16px;
-      display: flex; align-items: center; cursor: pointer;
-      transition: background 0.15s;
-    }
-    .event-card:hover { background: #fafafa; }
-    .event-card .ev-icon {
-      width: 42px; height: 42px;
-      background: linear-gradient(135deg, rgba(108,99,255,0.15), rgba(72,202,228,0.15));
-      border-radius: 12px;
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0; margin-right: 12px;
-    }
-    .event-card .ev-icon i { font-size: 1.2rem; color: var(--primary); }
-    .event-card .ev-name { font-weight: 600; font-size: 1rem; color: #1a1a2e; }
-    .event-card .ev-date { font-size: 0.78rem; color: #aaa; }
-    .event-card .ev-actions { margin-left: auto; display: flex; gap: 6px; }
-    .btn-icon {
-      background: none; border: none; padding: 6px;
-      border-radius: 8px; cursor: pointer; color: #ccc;
-      transition: color 0.15s, background 0.15s;
-    }
-    .btn-icon:hover { color: var(--danger); background: rgba(239,71,111,0.08); }
+/* BOTTOM NAV */
+.bot-nav{padding-bottom:var(--sb);background:rgba(255,255,255,.95);backdrop-filter:blur(20px);border-top:1px solid rgba(0,0,0,.06);display:flex;flex-shrink:0}
+.nav-btn{flex:1;padding:8px 4px 6px;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;color:var(--t3);transition:color .2s}
+.nav-btn.active{color:var(--p)}
+.nav-ic{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:8px;transition:background .2s}
+.nav-btn.active .nav-ic{background:var(--p3)}
+.nav-ic svg{width:22px;height:22px;fill:currentColor}
+.nav-lbl{font-size:10px;font-weight:600;letter-spacing:.02em}
 
-    /* Friend card */
-    .friend-item {
-      display: flex; align-items: center;
-      padding: 12px 14px; gap: 12px;
-    }
-    .friend-avatar {
-      width: 42px; height: 42px; border-radius: 50%;
-      background: linear-gradient(135deg, var(--primary), var(--secondary));
-      display: flex; align-items: center; justify-content: center;
-      color: #fff; font-weight: 700; font-size: 1.1rem; flex-shrink: 0;
-    }
-    .friend-name { font-weight: 600; color: #1a1a2e; font-size: 0.97rem; flex: 1; }
-    .friend-me { font-size: 0.75rem; color: var(--primary); background: rgba(108,99,255,0.1); border-radius: 6px; padding: 2px 7px; margin-left: 6px; }
+/* FAB */
+.fab{position:fixed;right:16px;bottom:calc(var(--nh) + var(--sb) + 14px);width:54px;height:54px;border-radius:17px;background:linear-gradient(135deg,var(--p),var(--b));border:none;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 24px rgba(124,58,237,.45);z-index:50;transition:transform .15s}
+.fab:active{transform:scale(.9)}
+.fab svg{width:26px;height:26px;fill:#fff}
+.fab.hide{display:none}
 
-    /* Transaction card */
-    .tx-card {
-      padding: 14px;
-    }
-    .tx-header { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
-    .tx-desc { font-weight: 600; font-size: 0.97rem; color: #1a1a2e; flex: 1; }
-    .tx-amount { font-weight: 700; font-size: 1.05rem; color: var(--primary); white-space: nowrap; }
-    .tx-paid-by { font-size: 0.8rem; color: #888; margin-bottom: 6px; }
-    .tx-paid-by span { color: var(--secondary); font-weight: 600; }
-    .tx-participants { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 4px; }
-    .tx-chip {
-      font-size: 0.75rem; background: rgba(108,99,255,0.08); color: var(--primary);
-      border-radius: 20px; padding: 2px 10px; font-weight: 500;
-    }
-    .tx-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
-    .tx-date { font-size: 0.75rem; color: #ccc; }
+/* GREETING */
+.greet{background:linear-gradient(135deg,var(--p),var(--b));padding:20px 20px 36px;color:#fff;margin:-12px -12px 0;position:relative;overflow:hidden}
+.greet::after{content:'';position:absolute;bottom:-20px;left:-10px;right:-10px;height:40px;background:var(--bg);border-radius:50% 50% 0 0 / 100% 100% 0 0}
+.greet-hi{font-size:14px;opacity:.8;font-weight:500}
+.greet-name{font-size:26px;font-weight:800;letter-spacing:-.5px;margin-top:2px}
+.greet-sub{font-size:13px;opacity:.7;margin-top:4px}
 
-    /* Settlement card */
-    .settlement-card {
-      padding: 14px 16px;
-      display: flex; align-items: center; gap: 10px;
-    }
-    .settle-from { font-weight: 700; color: var(--danger); font-size: 0.95rem; flex: 1; }
-    .settle-arrow { color: #aaa; font-size: 1.1rem; flex-shrink: 0; }
-    .settle-to { font-weight: 700; color: var(--success); font-size: 0.95rem; flex: 1; text-align: right; }
-    .settle-amount { font-size: 0.95rem; font-weight: 700; color: var(--primary); background: rgba(108,99,255,0.08); border-radius: 10px; padding: 4px 10px; white-space: nowrap; }
+/* STATS */
+.stats{display:flex;gap:10px;margin:8px 0 4px}
+.stat{flex:1;background:#fff;border-radius:12px;padding:12px 14px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.stat-n{font-size:24px;font-weight:800;color:var(--p)}
+.stat-l{font-size:11px;font-weight:600;color:var(--t2);margin-top:2px}
 
-    /* FAB */
-    .fab {
-      position: fixed;
-      bottom: calc(var(--bottom-nav-height) + 16px);
-      right: 20px;
-      width: 56px; height: 56px;
-      border-radius: 18px;
-      background: linear-gradient(135deg, var(--primary), var(--secondary));
-      border: none; color: #fff; font-size: 1.6rem;
-      box-shadow: 0 6px 24px rgba(108,99,255,0.4);
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; z-index: 90;
-      transition: transform 0.2s, opacity 0.2s;
-    }
-    .fab:hover { transform: scale(1.08); }
-    .fab.hidden { display: none; }
+/* SECTION LABEL */
+.sec-hd{font-size:13px;font-weight:700;color:var(--t2);letter-spacing:.06em;text-transform:uppercase;margin:14px 2px 8px}
 
-    /* Loading overlay */
-    #loadingOverlay {
-      position: fixed; inset: 0;
-      background: rgba(255,255,255,0.8);
-      display: flex; align-items: center; justify-content: center;
-      z-index: 9999; backdrop-filter: blur(4px);
-    }
-    #loadingOverlay.hidden { display: none; }
-    .spinner-ring {
-      width: 52px; height: 52px;
-      border: 4px solid rgba(108,99,255,0.2);
-      border-top-color: var(--primary);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
+/* CARD */
+.card{background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,.06);margin-bottom:10px}
 
-    /* Toast */
-    #toastContainer {
-      position: fixed;
-      top: 16px; right: 16px; left: 16px;
-      z-index: 99999;
-      display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
-      pointer-events: none;
-    }
-    .su-toast {
-      background: #fff;
-      border-radius: 14px;
-      padding: 12px 16px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.15);
-      display: flex; align-items: center; gap: 10px;
-      min-width: 220px; max-width: 340px;
-      animation: slideIn 0.3s ease;
-      pointer-events: all;
-    }
-    .su-toast.success { border-left: 4px solid var(--success); }
-    .su-toast.danger { border-left: 4px solid var(--danger); }
-    .su-toast.warning { border-left: 4px solid #FFB703; }
-    .su-toast i { font-size: 1.2rem; }
-    .su-toast.success i { color: var(--success); }
-    .su-toast.danger i { color: var(--danger); }
-    .su-toast.warning i { color: #FFB703; }
-    .su-toast span { font-size: 0.88rem; color: #333; font-weight: 500; }
-    @keyframes slideIn {
-      from { opacity: 0; transform: translateX(40px); }
-      to { opacity: 1; transform: translateX(0); }
-    }
+/* EVENT ITEM */
+.ev-item{display:flex;align-items:center;padding:14px 12px 14px 14px;gap:12px;cursor:pointer;transition:background .15s}
+.ev-item:active{background:#FAFAFA}
+.ev-icon{width:46px;height:46px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+.ev-text{flex:1;min-width:0}
+.ev-name{font-size:15px;font-weight:700;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev-date{font-size:12px;color:var(--t2);margin-top:2px}
+.chev svg{width:16px;height:16px;fill:var(--t3)}
+.btn-del{width:34px;height:34px;border-radius:10px;background:rgba(239,68,68,.1);border:none;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s}
+.btn-del:active{background:rgba(239,68,68,.2)}
+.btn-del svg{width:16px;height:16px;fill:var(--r)}
 
-    /* Empty state */
-    .empty-state {
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      padding: 52px 20px;
-      color: #ccc; text-align: center;
-    }
-    .empty-state i { font-size: 3.5rem; margin-bottom: 12px; }
-    .empty-state p { font-size: 0.95rem; color: #bbb; }
+/* FRIEND */
+.fr-item{display:flex;align-items:center;padding:12px 14px;gap:12px}
+.fr-av{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:17px;flex-shrink:0}
+.fr-name{font-size:15px;font-weight:600;flex:1}
+.fr-me{font-size:11px;font-weight:700;color:var(--p);background:var(--p3);border-radius:6px;padding:3px 8px}
+.divider{height:1px;background:var(--br);margin:0 14px 0 70px}
 
-    /* Tabs */
-    .su-tabs {
-      display: flex; background: #fff; border-radius: var(--card-radius);
-      box-shadow: 0 2px 14px rgba(108,99,255,0.07);
-      overflow: hidden; margin-bottom: 14px;
-    }
-    .su-tab {
-      flex: 1; padding: 12px 0; text-align: center;
-      font-weight: 600; font-size: 0.9rem; color: #bbb;
-      cursor: pointer; border: none; background: none;
-      border-bottom: 3px solid transparent;
-      transition: color 0.2s, border-color 0.2s;
-    }
-    .su-tab.active { color: var(--primary); border-color: var(--primary); }
+/* TRANSACTION */
+.tx-item{padding:14px 16px}
+.tx-top{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px}
+.tx-av{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:#fff;flex-shrink:0}
+.tx-info{flex:1;min-width:0}
+.tx-desc{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tx-by{font-size:12px;color:var(--t2);margin-top:2px}
+.tx-amt{font-size:17px;font-weight:800;color:var(--p);white-space:nowrap}
+.tx-chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
+.tx-chip{font-size:11px;font-weight:600;background:var(--p3);color:var(--p);border-radius:20px;padding:3px 10px}
+.tx-foot{display:flex;align-items:center;justify-content:space-between}
+.tx-date{font-size:11px;color:var(--t3)}
 
-    /* Admin table */
-    .account-item {
-      display: flex; align-items: center;
-      padding: 12px 14px; gap: 12px; flex-wrap: wrap;
-    }
-    .account-avatar {
-      width: 40px; height: 40px; border-radius: 50%;
-      background: linear-gradient(135deg, var(--primary), var(--secondary));
-      display: flex; align-items: center; justify-content: center;
-      color: #fff; font-weight: 700; font-size: 1rem; flex-shrink: 0;
-    }
-    .account-info { flex: 1; min-width: 0; }
-    .account-name { font-weight: 600; font-size: 0.95rem; color: #1a1a2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .account-username { font-size: 0.78rem; color: #aaa; }
-    .account-login { font-size: 0.72rem; color: #ccc; }
-    .role-select {
-      border-radius: 8px; border: 1.5px solid #e0e0e0;
-      padding: 4px 8px; font-size: 0.8rem; color: #555;
-      background: #fafafa; cursor: pointer;
-    }
-    .role-select:focus { outline: none; border-color: var(--primary); }
+/* SUMMARY */
+.settle-item{display:flex;align-items:center;gap:10px;padding:14px 16px}
+.s-av{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:#fff;flex-shrink:0}
+.s-from{background:linear-gradient(135deg,var(--r),#FCA5A5)}
+.s-to{background:linear-gradient(135deg,var(--g),#6EE7B7)}
+.s-mid{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px}
+.s-amt{font-size:16px;font-weight:800;color:var(--p);background:var(--p3);border-radius:10px;padding:4px 12px}
+.s-arrow{color:var(--t3);font-size:18px}
+.s-name{font-size:11px;font-weight:600;color:var(--t2);text-align:center;max-width:60px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-    /* Modal overrides */
-    .modal-content { border-radius: 20px; border: none; }
-    .modal-header { border-bottom: none; padding: 20px 20px 8px; }
-    .modal-footer { border-top: none; padding: 8px 20px 20px; }
-    .modal-title { font-weight: 700; color: #1a1a2e; }
-    .form-label { font-weight: 600; font-size: 0.85rem; color: #555; }
-    .form-control, .form-select {
-      border-radius: 10px; border: 1.5px solid #e0e0e0;
-      background: #fafafa; font-size: 0.93rem;
-    }
-    .form-control:focus, .form-select:focus {
-      border-color: var(--primary);
-      box-shadow: 0 0 0 0.15rem rgba(108,99,255,0.15);
-    }
-    .btn-cancel {
-      background: #f0f0f5; border: none; border-radius: 10px;
-      color: #888; font-weight: 600; padding: 10px 20px;
-    }
-    .btn-submit {
-      background: linear-gradient(135deg, var(--primary), var(--secondary));
-      border: none; border-radius: 10px; color: #fff;
-      font-weight: 600; padding: 10px 24px;
-    }
-    .btn-submit:hover { opacity: 0.9; color: #fff; }
-    .check-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
-    .check-item {
-      display: flex; align-items: center; gap: 10px;
-      background: #fafafa; border-radius: 10px; padding: 8px 12px;
-      cursor: pointer;
-    }
-    .check-item input[type=checkbox] { accent-color: var(--primary); width: 16px; height: 16px; flex-shrink: 0; }
-    .check-item label { cursor: pointer; font-size: 0.9rem; color: #333; flex: 1; }
+/* TABS */
+.tab-bar{display:flex;background:var(--br);border-radius:12px;padding:3px;margin-bottom:12px}
+.tab-btn{flex:1;padding:8px;font-size:13px;font-weight:600;border:none;background:none;color:var(--t2);border-radius:10px;transition:background .2s,color .2s}
+.tab-btn.active{background:#fff;color:var(--p);box-shadow:0 1px 4px rgba(0,0,0,.08)}
 
-    .section-label {
-      font-size: 0.75rem; font-weight: 700; color: #aaa; letter-spacing: 0.08em;
-      text-transform: uppercase; margin: 14px 2px 6px;
-    }
+/* ADMIN */
+.acc-item{display:flex;align-items:center;padding:12px 14px;gap:10px;flex-wrap:wrap}
+.acc-av{width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,var(--p),var(--b));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:16px;flex-shrink:0}
+.acc-info{flex:1;min-width:0}
+.acc-name{font-size:14px;font-weight:700}
+.acc-un{font-size:12px;color:var(--t2)}
+.acc-last{font-size:11px;color:var(--t3)}
+.role-sel{font-size:11px;font-weight:700;border-radius:8px;padding:5px 8px;border:1.5px solid var(--br);background:#fff;cursor:pointer}
 
-    /* Divider between items in card */
-    .su-divider { height: 1px; background: #f0f0f5; margin: 0 14px; }
+/* EMPTY */
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:56px 30px;text-align:center}
+.empty-ic{width:76px;height:76px;border-radius:22px;background:var(--p3);display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+.empty-ic svg{width:38px;height:38px;fill:var(--p2)}
+.empty-t{font-size:17px;font-weight:700;margin-bottom:6px}
+.empty-s{font-size:14px;color:var(--t2);line-height:1.5}
 
-    /* Back-button spacing */
-    .has-back .header-back { display: flex; }
-    .has-back .header-logo { display: none; }
+/* BOTTOM SHEET */
+.sh-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;opacity:0;pointer-events:none;transition:opacity .3s}
+.sh-overlay.open{opacity:1;pointer-events:all}
+.sheet{position:fixed;left:0;right:0;bottom:0;background:#fff;border-radius:24px 24px 0 0;z-index:501;transform:translateY(110%);transition:transform .35s cubic-bezier(.25,.46,.45,.94);max-height:92vh;display:flex;flex-direction:column;padding-bottom:var(--sb)}
+.sheet.open{transform:translateY(0)}
+.sh-handle{width:40px;height:5px;background:var(--br);border-radius:3px;margin:12px auto 0;flex-shrink:0}
+.sh-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 10px;flex-shrink:0}
+.sh-title{font-size:17px;font-weight:700}
+.sh-close{width:30px;height:30px;border-radius:50%;background:var(--br);border:none;display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--t2)}
+.sh-body{padding:0 20px 20px;overflow-y:auto;flex:1}
 
-    @media (min-width: 600px) {
-      .app-content { max-width: 600px; margin: 0 auto; }
-      .fab { right: calc(50% - 300px + 20px); }
-    }
-  </style>
+.inp-lbl{display:block;font-size:12px;font-weight:700;color:var(--t2);letter-spacing:.04em;text-transform:uppercase;margin-bottom:6px}
+.inp{width:100%;height:50px;border:1.5px solid var(--br);border-radius:12px;padding:0 14px;font-size:15px;color:var(--t1);background:#FAFAFA;outline:none;transition:border-color .2s}
+.inp:focus{border-color:var(--p);background:#fff}
+select.inp{cursor:pointer}
+.inp-g{margin-bottom:14px}
+.check-list{display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto}
+.ck-row{display:flex;align-items:center;gap:10px;background:#FAFAFA;border-radius:10px;padding:10px 12px;cursor:pointer}
+.ck-row input{width:18px;height:18px;accent-color:var(--p);flex-shrink:0}
+.ck-row label{font-size:14px;color:var(--t1);flex:1;cursor:pointer}
+.per-info{text-align:center;font-size:13px;color:var(--t2);font-weight:600;background:var(--p3);border-radius:10px;padding:10px;margin-top:10px;display:none}
+.per-info span{color:var(--p);font-size:16px;font-weight:800}
+.toggle-row{display:flex;gap:8px;margin-bottom:8px}
+.btn-xs{font-size:12px;font-weight:600;border-radius:8px;padding:5px 12px;border:1.5px solid var(--br);background:#fff;color:var(--t2);cursor:pointer}
+.btn-xs.hl{border-color:var(--p);color:var(--p);background:var(--p3)}
+.sh-btn{width:100%;height:52px;background:linear-gradient(135deg,var(--p),var(--b));border:none;border-radius:14px;color:#fff;font-size:16px;font-weight:700;margin-top:16px}
+.sh-btn:active{opacity:.85}
+
+/* CONFIRM SHEET */
+.cf-icon{width:60px;height:60px;border-radius:20px;background:rgba(239,68,68,.1);display:flex;align-items:center;justify-content:center;margin:0 auto 12px}
+.cf-icon svg{width:30px;height:30px;fill:var(--r)}
+.cf-t{font-size:17px;font-weight:700;text-align:center;margin-bottom:8px}
+.cf-m{font-size:14px;color:var(--t2);text-align:center;line-height:1.5;margin-bottom:20px}
+.cf-btns{display:flex;gap:10px}
+.btn-cancel-cf{flex:1;height:48px;background:var(--br);border:none;border-radius:12px;font-size:15px;font-weight:600;color:var(--t2)}
+.btn-ok-cf{flex:1;height:48px;background:var(--r);border:none;border-radius:12px;font-size:15px;font-weight:700;color:#fff}
+</style>
 </head>
 <body>
 
-<!-- Loading Overlay -->
-<div id="loadingOverlay">
-  <div class="spinner-ring"></div>
+<!-- SPLASH -->
+<div id="splash">
+  <div class="sp-logo"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg></div>
+  <div class="sp-title">ShareUp</div>
+  <div class="sp-sub">Expense Splitting Made Simple</div>
+  <div class="sp-ring"></div>
 </div>
 
-<!-- Toast Container -->
-<div id="toastContainer"></div>
+<!-- TOAST -->
+<div id="toastWrap"></div>
 
-<!-- =========================================================
-     AUTH SECTION
-========================================================= -->
-<div id="authSection">
-  <!-- LOGIN CARD -->
-  <div class="auth-card" id="loginCard">
-    <div class="auth-logo"><i class="bi bi-receipt-cutoff"></i></div>
-    <h1 class="auth-title">ShareUp</h1>
-    <p class="auth-subtitle">Track and split expenses with friends</p>
-    <form id="loginForm" onsubmit="handleLogin(event)">
-      <div class="form-floating mb-3">
-        <input type="text" class="form-control" id="loginUsername" placeholder="Username" autocomplete="username" required />
-        <label for="loginUsername"><i class="bi bi-person"></i> Username</label>
-      </div>
-      <div class="form-floating mb-4 pw-wrap">
-        <input type="password" class="form-control" id="loginPassword" placeholder="Password" autocomplete="current-password" required />
-        <label for="loginPassword"><i class="bi bi-lock"></i> Password</label>
-        <button type="button" class="pw-toggle" onclick="togglePw('loginPassword',this)"><i class="bi bi-eye"></i></button>
-      </div>
-      <button type="submit" class="btn-primary-grad">Sign In</button>
-    </form>
-    <p class="auth-link">Don't have an account? <a href="#" onclick="showPage('register')">Register</a></p>
+<!-- AUTH -->
+<div id="authView">
+  <div class="auth-top">
+    <svg viewBox="0 0 24 24"><path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
+    <h1>ShareUp</h1>
+    <p>Split expenses with friends</p>
   </div>
-
-  <!-- REGISTER CARD -->
-  <div class="auth-card" id="registerCard" style="display:none;">
-    <div class="auth-logo"><i class="bi bi-person-plus"></i></div>
-    <h1 class="auth-title">Create Account</h1>
-    <p class="auth-subtitle">Join ShareUp today</p>
-    <form id="registerForm" onsubmit="handleRegister(event)">
-      <div class="form-floating mb-3">
-        <input type="text" class="form-control" id="regDisplayName" placeholder="Display Name" required />
-        <label for="regDisplayName"><i class="bi bi-badge-person"></i> Display Name</label>
-      </div>
-      <div class="form-floating mb-3">
-        <input type="text" class="form-control" id="regUsername" placeholder="Username" autocomplete="username" required />
-        <label for="regUsername"><i class="bi bi-person"></i> Username</label>
-      </div>
-      <div class="form-floating mb-4 pw-wrap">
-        <input type="password" class="form-control" id="regPassword" placeholder="Password" autocomplete="new-password" required />
-        <label for="regPassword"><i class="bi bi-lock"></i> Password</label>
-        <button type="button" class="pw-toggle" onclick="togglePw('regPassword',this)"><i class="bi bi-eye"></i></button>
-      </div>
-      <button type="submit" class="btn-primary-grad">Create Account</button>
-    </form>
-    <p class="auth-link">Already have an account? <a href="#" onclick="showPage('login')">Sign In</a></p>
+  <div class="auth-sheet">
+    <div class="auth-pill"></div>
+    <!-- LOGIN -->
+    <div id="loginPanel">
+      <div class="auth-heading">Welcome back</div>
+      <div class="auth-sub">Sign in to your account</div>
+      <form onsubmit="handleLogin(event)">
+        <div class="fld"><label>Username</label><div class="fld-wrap"><input type="text" id="loginUser" placeholder="Enter username" autocomplete="username" required/></div></div>
+        <div class="fld"><label>Password</label><div class="fld-wrap"><input type="password" id="loginPass" placeholder="Enter password" autocomplete="current-password" required/><button type="button" class="pw-eye" onclick="tgPw('loginPass')"><svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg></button></div></div>
+        <button type="submit" class="btn-main">Sign In</button>
+      </form>
+      <p class="auth-link">No account? <a href="#" onclick="authPg('register');return false">Register here</a></p>
+    </div>
+    <!-- REGISTER -->
+    <div id="registerPanel" style="display:none">
+      <div class="auth-heading">Create account</div>
+      <div class="auth-sub">Join ShareUp today</div>
+      <form onsubmit="handleRegister(event)">
+        <div class="fld"><label>Display Name</label><div class="fld-wrap"><input type="text" id="regName" placeholder="Your name" required/></div></div>
+        <div class="fld"><label>Username</label><div class="fld-wrap"><input type="text" id="regUser" placeholder="Choose username" autocomplete="username" required/></div></div>
+        <div class="fld"><label>Password</label><div class="fld-wrap"><input type="password" id="regPass" placeholder="Create password" autocomplete="new-password" required/><button type="button" class="pw-eye" onclick="tgPw('regPass')"><svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg></button></div></div>
+        <button type="submit" class="btn-main">Create Account</button>
+      </form>
+      <p class="auth-link">Have an account? <a href="#" onclick="authPg('login');return false">Sign in</a></p>
+    </div>
   </div>
 </div>
 
-<!-- =========================================================
-     APP SECTION
-========================================================= -->
-<div id="appSection">
-  <!-- STICKY HEADER -->
-  <header class="app-header" id="appHeader">
-    <button class="header-back" id="headerBack" onclick="goBack()"><i class="bi bi-arrow-left"></i></button>
-    <div class="header-logo"><i class="bi bi-receipt-cutoff"></i></div>
-    <span class="header-title" id="headerTitle">ShareUp</span>
-    <span class="header-user" id="headerUser"></span>
-    <button class="btn-logout" onclick="handleLogout()"><i class="bi bi-box-arrow-right"></i> Out</button>
+<!-- APP -->
+<div id="appView">
+  <header class="app-hd" id="appHd">
+    <button class="hd-back" id="btnBack" onclick="goBack()"><svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg></button>
+    <div class="hd-brand" id="hdBrand"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg></div>
+    <span class="hd-title" id="hdTitle">ShareUp</span>
+    <div class="hd-avatar" id="hdAv" onclick="openSheet('sheetLogout')" title="Sign out"></div>
   </header>
 
-  <!-- CONTENT -->
-  <div class="app-content">
-
-    <!-- EVENTS TAB -->
-    <div id="tabEvents">
-      <div class="section-label">My Events</div>
-      <div id="eventsList"></div>
+  <div class="pages">
+    <!-- EVENTS -->
+    <div class="page" id="pgEvents">
+      <div class="pg">
+        <div class="greet">
+          <div class="greet-hi">Hello 👋</div>
+          <div class="greet-name" id="greetName">Friend</div>
+          <div class="greet-sub">Ready to split some bills?</div>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="stat-n" id="stEvents">0</div><div class="stat-l">Events</div></div>
+          <div class="stat"><div class="stat-n" id="stFriends">0</div><div class="stat-l">Friends</div></div>
+        </div>
+        <div class="sec-hd">My Events</div>
+        <div id="eventsList"></div>
+      </div>
     </div>
 
     <!-- EVENT DETAIL -->
-    <div id="tabEventDetail" style="display:none;">
-      <div class="su-tabs">
-        <button class="su-tab active" id="tabTxBtn" onclick="switchDetailTab('tx')">
-          <i class="bi bi-list-ul"></i> Transactions
-        </button>
-        <button class="su-tab" id="tabSumBtn" onclick="switchDetailTab('sum')">
-          <i class="bi bi-calculator"></i> Summary
-        </button>
-      </div>
-      <!-- Transactions -->
-      <div id="detailTxPanel">
-        <div id="txList"></div>
-      </div>
-      <!-- Summary -->
-      <div id="detailSumPanel" style="display:none;">
-        <div id="summaryList"></div>
+    <div class="page hidden" id="pgDetail">
+      <div class="pg">
+        <div class="tab-bar">
+          <button class="tab-btn active" id="tabTx" onclick="switchDT('tx')">Transactions</button>
+          <button class="tab-btn" id="tabSum" onclick="switchDT('sum')">Summary</button>
+        </div>
+        <div id="panelTx"><div id="txList"></div></div>
+        <div id="panelSum" style="display:none"><div id="sumList"></div></div>
       </div>
     </div>
 
-    <!-- FRIENDS TAB -->
-    <div id="tabFriends" style="display:none;">
-      <div class="section-label">Friends</div>
-      <div class="su-card" id="friendsList"></div>
+    <!-- FRIENDS -->
+    <div class="page hidden" id="pgFriends">
+      <div class="pg">
+        <div class="sec-hd">My Friends</div>
+        <div class="card" id="friendsList"></div>
+      </div>
     </div>
 
-    <!-- ADMIN TAB -->
-    <div id="tabAdmin" style="display:none;">
-      <div class="section-label">All Accounts</div>
-      <div id="accountsList"></div>
+    <!-- ADMIN -->
+    <div class="page hidden" id="pgAdmin">
+      <div class="pg">
+        <div class="sec-hd">All Accounts</div>
+        <div id="accountsList"></div>
+      </div>
     </div>
+  </div>
 
-  </div><!-- /.app-content -->
-
-  <!-- BOTTOM NAV -->
-  <nav class="bottom-nav" id="bottomNav">
-    <button class="nav-item active" id="navEvents" onclick="switchTab('events')">
-      <i class="bi bi-calendar-event"></i>
-      <span>Events</span>
+  <nav class="bot-nav">
+    <button class="nav-btn active" id="navEv" onclick="goTab('events')">
+      <div class="nav-ic"><svg viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5C3.89 3 3 3.9 3 5v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zm-7-2l-4-4 1.41-1.41L12 14.17l6.59-6.58L20 9z"/></svg></div>
+      <span class="nav-lbl">Events</span>
     </button>
-    <button class="nav-item" id="navFriends" onclick="switchTab('friends')">
-      <i class="bi bi-people"></i>
-      <span>Friends</span>
+    <button class="nav-btn" id="navFr" onclick="goTab('friends')">
+      <div class="nav-ic"><svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg></div>
+      <span class="nav-lbl">Friends</span>
     </button>
-    <button class="nav-item" id="navAdmin" onclick="switchTab('admin')" style="display:none;">
-      <i class="bi bi-shield-check"></i>
-      <span>Admin</span>
+    <button class="nav-btn" id="navAd" onclick="goTab('admin')" style="display:none">
+      <div class="nav-ic"><svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg></div>
+      <span class="nav-lbl">Admin</span>
     </button>
   </nav>
 
-  <!-- FAB -->
-  <button class="fab" id="mainFab" onclick="handleFab()">
-    <i class="bi bi-plus-lg"></i>
-  </button>
+  <button class="fab" id="fab" onclick="handleFab()"><svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></button>
 </div>
 
-<!-- =========================================================
-     MODALS
-========================================================= -->
+<!-- SHEETS OVERLAY -->
+<div class="sh-overlay" id="shOverlay" onclick="closeSheets()"></div>
 
-<!-- New Event Modal -->
-<div class="modal fade" id="modalNewEvent" tabindex="-1">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-calendar-plus me-2" style="color:var(--primary)"></i>New Event</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <label class="form-label">Event Name</label>
-        <input type="text" class="form-control" id="newEventName" placeholder="e.g. Trip to Chiang Mai" />
-      </div>
-      <div class="modal-footer">
-        <button class="btn-cancel" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn-submit" onclick="submitNewEvent()">Create</button>
-      </div>
-    </div>
+<!-- Sheet: New Event -->
+<div class="sheet" id="sheetEvent">
+  <div class="sh-handle"></div>
+  <div class="sh-head"><span class="sh-title">New Event</span><button class="sh-close" onclick="closeSheets()">✕</button></div>
+  <div class="sh-body">
+    <div class="inp-g"><label class="inp-lbl">Event Name</label><input class="inp" id="inpEv" type="text" placeholder="e.g. Chiang Mai Trip" autocomplete="off"/></div>
+    <button class="sh-btn" onclick="submitEvent()">Create Event</button>
   </div>
 </div>
 
-<!-- New Friend Modal -->
-<div class="modal fade" id="modalNewFriend" tabindex="-1">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-person-plus me-2" style="color:var(--primary)"></i>Add Friend</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <label class="form-label">Friend's Name</label>
-        <input type="text" class="form-control" id="newFriendName" placeholder="e.g. Sarah" />
-      </div>
-      <div class="modal-footer">
-        <button class="btn-cancel" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn-submit" onclick="submitNewFriend()">Add</button>
-      </div>
-    </div>
+<!-- Sheet: Add Friend -->
+<div class="sheet" id="sheetFriend">
+  <div class="sh-handle"></div>
+  <div class="sh-head"><span class="sh-title">Add Friend</span><button class="sh-close" onclick="closeSheets()">✕</button></div>
+  <div class="sh-body">
+    <div class="inp-g"><label class="inp-lbl">Friend's Name</label><input class="inp" id="inpFr" type="text" placeholder="e.g. Sarah" autocomplete="off"/></div>
+    <button class="sh-btn" onclick="submitFriend()">Add Friend</button>
   </div>
 </div>
 
-<!-- Add Transaction Modal -->
-<div class="modal fade" id="modalAddTx" tabindex="-1">
-  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-plus-circle me-2" style="color:var(--primary)"></i>Add Transaction</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <div class="mb-3">
-          <label class="form-label">Description</label>
-          <input type="text" class="form-control" id="txDesc" placeholder="e.g. Dinner at restaurant" />
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Total Amount (฿)</label>
-          <input type="number" class="form-control" id="txAmount" placeholder="0.00" min="0" step="0.01" />
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Paid by</label>
-          <select class="form-select" id="txPaidBy"></select>
-        </div>
-        <div class="mb-1">
-          <label class="form-label">Shared by</label>
-          <div class="d-flex gap-2 mb-2">
-            <button type="button" class="btn btn-sm" style="border-radius:8px;border:1.5px solid var(--primary);color:var(--primary);font-size:0.78rem;" onclick="checkAllFriends(true)">All</button>
-            <button type="button" class="btn btn-sm" style="border-radius:8px;border:1.5px solid #ccc;color:#888;font-size:0.78rem;" onclick="checkAllFriends(false)">None</button>
-          </div>
-          <div class="check-list" id="txSharedBy"></div>
-        </div>
-        <div id="txPerPersonInfo" class="mt-3 text-center" style="font-size:0.85rem;color:#888;"></div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn-cancel" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn-submit" onclick="submitAddTx()">Add</button>
-      </div>
+<!-- Sheet: Add Transaction -->
+<div class="sheet" id="sheetTx">
+  <div class="sh-handle"></div>
+  <div class="sh-head"><span class="sh-title">Add Transaction</span><button class="sh-close" onclick="closeSheets()">✕</button></div>
+  <div class="sh-body">
+    <div class="inp-g"><label class="inp-lbl">Description</label><input class="inp" id="inpDesc" type="text" placeholder="e.g. Dinner" autocomplete="off"/></div>
+    <div class="inp-g"><label class="inp-lbl">Amount (฿)</label><input class="inp" id="inpAmt" type="number" placeholder="0.00" min="0" step="0.01" oninput="calcPP()"/></div>
+    <div class="inp-g"><label class="inp-lbl">Paid by</label><select class="inp" id="inpPayer" onchange="calcPP()"></select></div>
+    <div class="inp-g">
+      <label class="inp-lbl">Shared by</label>
+      <div class="toggle-row"><button class="btn-xs hl" onclick="ckAll(true)">All</button><button class="btn-xs" onclick="ckAll(false)">None</button></div>
+      <div class="check-list" id="inpShared"></div>
     </div>
+    <div class="per-info" id="perInfo">Each person pays <span id="perAmt"></span></div>
+    <button class="sh-btn" onclick="submitTx()">Add Transaction</button>
   </div>
 </div>
 
-<!-- Confirm Delete Modal -->
-<div class="modal fade" id="modalConfirm" tabindex="-1">
-  <div class="modal-dialog modal-dialog-centered modal-sm">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="confirmTitle">Confirm Delete</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <p id="confirmMsg" style="color:#555;font-size:0.93rem;"></p>
-      </div>
-      <div class="modal-footer">
-        <button class="btn-cancel" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn btn-danger" style="border-radius:10px;" id="confirmOkBtn">Delete</button>
-      </div>
-    </div>
+<!-- Sheet: Confirm Delete -->
+<div class="sheet" id="sheetConfirm">
+  <div class="sh-handle"></div>
+  <div class="sh-body" style="padding-top:20px">
+    <div class="cf-icon"><svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></div>
+    <div class="cf-t" id="cfTitle">Delete?</div>
+    <div class="cf-m" id="cfMsg"></div>
+    <div class="cf-btns"><button class="btn-cancel-cf" onclick="closeSheets()">Cancel</button><button class="btn-ok-cf" id="cfOk">Delete</button></div>
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<!-- Sheet: Logout -->
+<div class="sheet" id="sheetLogout">
+  <div class="sh-handle"></div>
+  <div class="sh-body" style="padding-top:20px">
+    <div class="cf-icon" style="background:rgba(124,58,237,.1)"><svg viewBox="0 0 24 24" style="fill:var(--p)"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg></div>
+    <div class="cf-t">Sign Out?</div>
+    <div class="cf-m">You will be returned to the login screen.</div>
+    <div class="cf-btns"><button class="btn-cancel-cf" onclick="closeSheets()">Cancel</button><button class="btn-ok-cf" style="background:var(--p)" onclick="doLogout()">Sign Out</button></div>
+  </div>
+</div>
+
 <script>
-// ================================================================
-// STATE
-// ================================================================
-var TOKEN = localStorage.getItem('su_token') || null;
-var SESSION = JSON.parse(localStorage.getItem('su_session') || 'null');
-var currentTab = 'events';
-var currentEvent = null; // { id, name }
-var currentDetailTab = 'tx';
-var friendsCache = [];
-var eventsCache = [];
-var detailsCache = [];
+var TOKEN=localStorage.getItem('su_token')||null;
+var SESSION=JSON.parse(localStorage.getItem('su_session')||'null');
+var curTab='events',curEvent=null,curDT='tx';
+var FC=[],EC=[],DC=[];
 
-// ================================================================
-// HELPERS
-// ================================================================
-function gscRun(fn) {
-  return new Promise(function(resolve, reject) {
-    google.script.run
-      .withSuccessHandler(resolve)
-      .withFailureHandler(reject)
-      [fn].apply(google.script.run, Array.prototype.slice.call(arguments, 1));
+var AVC=['linear-gradient(135deg,#7C3AED,#A78BFA)','linear-gradient(135deg,#3B82F6,#93C5FD)','linear-gradient(135deg,#10B981,#6EE7B7)','linear-gradient(135deg,#F59E0B,#FCD34D)','linear-gradient(135deg,#EF4444,#FCA5A5)','linear-gradient(135deg,#EC4899,#F9A8D4)'];
+var EMOJIS=['🎉','🍕','✈️','🎬','🏖️','🎂','🍜','⚽','🎮','🛒','🏕️','🎵'];
+function avCol(s){var h=0;for(var i=0;i<(s||'').length;i++)h=(h*31+s.charCodeAt(i))&0xFFFF;return AVC[h%AVC.length]}
+function evEmoji(s){var h=0;for(var i=0;i<(s||'').length;i++)h=(h*31+s.charCodeAt(i))&0xFF;return EMOJIS[h%EMOJIS.length]}
+function av(s){return(s||'?')[0].toUpperCase()}
+
+function gsc(fn){
+  var args=Array.prototype.slice.call(arguments,1);
+  return new Promise(function(res,rej){
+    var r=google.script.run.withSuccessHandler(res).withFailureHandler(rej);
+    r[fn].apply(r,args);
   });
 }
 
-function gsc(fn) {
-  var args = Array.prototype.slice.call(arguments, 1);
-  return new Promise(function(resolve, reject) {
-    var runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
-    runner[fn].apply(runner, args);
-  });
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function fmtD(iso){if(!iso)return'';try{return new Date(iso).toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'numeric'})}catch(e){return iso}}
+function toast(msg,type){
+  type=type||'success';
+  var ic={success:'✓',danger:'✕',warning:'!'};
+  var el=document.createElement('div');
+  el.className='su-toast '+type;
+  el.innerHTML='<b>'+ic[type]+'</b> '+esc(msg);
+  document.getElementById('toastWrap').appendChild(el);
+  setTimeout(function(){el.remove()},3000);
+}
+function tgPw(id){var i=document.getElementById(id);i.type=i.type==='password'?'text':'password'}
+
+// SHEETS
+var _sheet=null;
+function openSheet(id){
+  closeSheets(1);
+  _sheet=id;
+  document.getElementById('shOverlay').classList.add('open');
+  var el=document.getElementById(id);
+  requestAnimationFrame(function(){el.classList.add('open')});
+  setTimeout(function(){var inp=el.querySelector('input:not([type=checkbox])');if(inp)inp.focus()},350);
+}
+function closeSheets(s){
+  document.getElementById('shOverlay').classList.remove('open');
+  document.querySelectorAll('.sheet.open').forEach(function(x){x.classList.remove('open')});
+  _sheet=null;
 }
 
-function showLoading(v) {
-  document.getElementById('loadingOverlay').classList.toggle('hidden', !v);
+// AUTH
+function authPg(p){
+  document.getElementById('loginPanel').style.display=p==='login'?'':'none';
+  document.getElementById('registerPanel').style.display=p==='register'?'':'none';
 }
-
-function showToast(msg, type) {
-  type = type || 'success';
-  var icons = { success: 'bi-check-circle-fill', danger: 'bi-x-circle-fill', warning: 'bi-exclamation-triangle-fill' };
-  var toast = document.createElement('div');
-  toast.className = 'su-toast ' + type;
-  toast.innerHTML = '<i class="bi ' + icons[type] + '"></i><span>' + escHtml(msg) + '</span>';
-  document.getElementById('toastContainer').appendChild(toast);
-  setTimeout(function() { toast.remove(); }, 3500);
-}
-
-function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-function fmtDate(iso) {
-  if (!iso) return '';
-  try {
-    var d = new Date(iso);
-    return d.toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'numeric' });
-  } catch(e) { return iso; }
-}
-
-function fmtDatetime(iso) {
-  if (!iso) return '';
-  try {
-    var d = new Date(iso);
-    return d.toLocaleString('th-TH', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
-  } catch(e) { return iso; }
-}
-
-function avatarLetter(name) {
-  return (name || '?').charAt(0).toUpperCase();
-}
-
-// ================================================================
-// AUTH PAGES
-// ================================================================
-function showPage(page) {
-  document.getElementById('loginCard').style.display = page === 'login' ? '' : 'none';
-  document.getElementById('registerCard').style.display = page === 'register' ? '' : 'none';
-}
-
-function togglePw(inputId, btn) {
-  var inp = document.getElementById(inputId);
-  var isText = inp.type === 'text';
-  inp.type = isText ? 'password' : 'text';
-  btn.querySelector('i').className = 'bi bi-eye' + (isText ? '' : '-slash');
-}
-
-async function handleLogin(e) {
+async function handleLogin(e){
   e.preventDefault();
-  var username = document.getElementById('loginUsername').value.trim();
-  var password = document.getElementById('loginPassword').value;
-  if (!username || !password) return;
-  showLoading(true);
-  try {
-    var res = await gsc('loginUser', username, password);
-    if (res.success) {
-      TOKEN = res.token;
-      SESSION = res.user;
-      localStorage.setItem('su_token', TOKEN);
-      localStorage.setItem('su_session', JSON.stringify(SESSION));
-      initApp();
-    } else {
-      showToast(res.error || 'Login failed', 'danger');
-    }
-  } catch(err) {
-    showToast('Error: ' + err, 'danger');
-  }
-  showLoading(false);
+  var u=document.getElementById('loginUser').value.trim();
+  var p=document.getElementById('loginPass').value;
+  try{
+    var r=await gsc('loginUser',u,p);
+    if(r.success){TOKEN=r.token;SESSION=r.user;localStorage.setItem('su_token',TOKEN);localStorage.setItem('su_session',JSON.stringify(SESSION));startApp()}
+    else toast(r.error||'Login failed','danger');
+  }catch(e){toast(''+e,'danger')}
 }
-
-async function handleRegister(e) {
+async function handleRegister(e){
   e.preventDefault();
-  var displayName = document.getElementById('regDisplayName').value.trim();
-  var username = document.getElementById('regUsername').value.trim();
-  var password = document.getElementById('regPassword').value;
-  if (!displayName || !username || !password) return;
-  showLoading(true);
-  try {
-    var res = await gsc('registerUser', displayName, username, password);
-    if (res.success) {
-      showToast('Account created! Please sign in.', 'success');
-      document.getElementById('registerForm').reset();
-      showPage('login');
-    } else {
-      showToast(res.error || 'Registration failed', 'danger');
-    }
-  } catch(err) {
-    showToast('Error: ' + err, 'danger');
-  }
-  showLoading(false);
+  var n=document.getElementById('regName').value.trim();
+  var u=document.getElementById('regUser').value.trim();
+  var p=document.getElementById('regPass').value;
+  try{
+    var r=await gsc('registerUser',n,u,p);
+    if(r.success){toast('Account created! Sign in.');document.getElementById('registerPanel').querySelector('form').reset();authPg('login')}
+    else toast(r.error||'Failed','danger');
+  }catch(e){toast(''+e,'danger')}
+}
+async function doLogout(){
+  closeSheets();
+  try{await gsc('logoutUser',TOKEN)}catch(e){}
+  TOKEN=null;SESSION=null;localStorage.removeItem('su_token');localStorage.removeItem('su_session');
+  document.getElementById('appView').style.display='none';
+  document.getElementById('authView').style.display='flex';
+  authPg('login');
 }
 
-async function handleLogout() {
-  showLoading(true);
-  try { await gsc('logoutUser', TOKEN); } catch(e) {}
-  TOKEN = null; SESSION = null;
-  localStorage.removeItem('su_token');
-  localStorage.removeItem('su_session');
-  document.getElementById('appSection').style.display = 'none';
-  document.getElementById('authSection').style.display = 'flex';
-  showPage('login');
-  document.getElementById('loginForm').reset();
-  showLoading(false);
+// APP
+function startApp(){
+  document.getElementById('authView').style.display='none';
+  var av=document.getElementById('appView');av.style.display='flex';av.style.flexDirection='column';
+  var dn=SESSION.displayName||SESSION.username||'';
+  document.getElementById('greetName').textContent=dn;
+  document.getElementById('hdAv').textContent=av_(dn);
+  if(SESSION.role==='admin')document.getElementById('navAd').style.display='';
+  else document.getElementById('navAd').style.display='none';
+  goTab('events');
 }
+function av_(s){return(s||'?')[0].toUpperCase()}
 
-// ================================================================
-// APP INIT
-// ================================================================
-function initApp() {
-  document.getElementById('authSection').style.display = 'none';
-  document.getElementById('appSection').style.display = 'block';
-  document.getElementById('headerUser').textContent = SESSION.displayName || SESSION.username;
-
-  // Show admin nav if admin
-  if (SESSION.role === 'admin') {
-    document.getElementById('navAdmin').style.display = '';
-  } else {
-    document.getElementById('navAdmin').style.display = 'none';
-  }
-
-  currentTab = 'events';
-  currentEvent = null;
-  switchTab('events');
-}
-
-// ================================================================
-// NAVIGATION
-// ================================================================
-function switchTab(tab) {
-  currentTab = tab;
-  currentEvent = null;
-
-  // Update header
-  setHeader(tab === 'events' ? 'Events' : tab === 'friends' ? 'Friends' : 'Admin', false);
-
-  // Show/hide panels
-  document.getElementById('tabEvents').style.display = tab === 'events' ? '' : 'none';
-  document.getElementById('tabEventDetail').style.display = 'none';
-  document.getElementById('tabFriends').style.display = tab === 'friends' ? '' : 'none';
-  document.getElementById('tabAdmin').style.display = tab === 'admin' ? '' : 'none';
-
-  // FAB visibility
-  document.getElementById('mainFab').classList.toggle('hidden', tab === 'admin');
-
-  // Bottom nav active
-  ['navEvents','navFriends','navAdmin'].forEach(function(id) {
-    document.getElementById(id).classList.remove('active');
+// NAV
+function goTab(tab){
+  curTab=tab;curEvent=null;
+  document.getElementById('hdTitle').textContent=tab==='admin'?'Admin':tab==='friends'?'Friends':'ShareUp';
+  document.getElementById('appHd').classList.remove('show-back');
+  var pgMap={events:'pgEvents',friends:'pgFriends',admin:'pgAdmin'};
+  Object.keys(pgMap).forEach(function(t){
+    var pg=document.getElementById(pgMap[t]);
+    pg.classList.toggle('hidden',t!==tab);pg.classList.remove('behind');
   });
-  var navMap = { events:'navEvents', friends:'navFriends', admin:'navAdmin' };
-  if (navMap[tab]) document.getElementById(navMap[tab]).classList.add('active');
-
-  // Load data
-  if (tab === 'events') loadEvents();
-  if (tab === 'friends') loadFriends();
-  if (tab === 'admin') loadAccounts();
+  document.getElementById('pgDetail').classList.add('hidden');document.getElementById('pgDetail').classList.remove('behind');
+  document.getElementById('fab').classList.toggle('hide',tab==='admin');
+  ['navEv','navFr','navAd'].forEach(function(id){document.getElementById(id).classList.remove('active')});
+  var nm={events:'navEv',friends:'navFr',admin:'navAd'};
+  if(nm[tab])document.getElementById(nm[tab]).classList.add('active');
+  if(tab==='events'){loadEvents();loadFriends()}
+  else if(tab==='friends')loadFriends();
+  else if(tab==='admin')loadAccounts();
 }
 
-function openEventDetail(ev) {
-  currentEvent = ev;
-  currentDetailTab = 'tx';
-  setHeader(ev.name, true);
-
-  document.getElementById('tabEvents').style.display = 'none';
-  document.getElementById('tabFriends').style.display = 'none';
-  document.getElementById('tabAdmin').style.display = 'none';
-  document.getElementById('tabEventDetail').style.display = '';
-  document.getElementById('mainFab').classList.remove('hidden');
-
-  // Reset tabs
-  document.getElementById('tabTxBtn').classList.add('active');
-  document.getElementById('tabSumBtn').classList.remove('active');
-  document.getElementById('detailTxPanel').style.display = '';
-  document.getElementById('detailSumPanel').style.display = 'none';
-
-  loadDetails(ev.id);
-  loadFriends(); // prefetch friends for add-tx modal
+function openDetail(ev){
+  curEvent=ev;curDT='tx';
+  document.getElementById('hdTitle').textContent=ev.name;
+  document.getElementById('appHd').classList.add('show-back');
+  var pgMap={events:'pgEvents',friends:'pgFriends',admin:'pgAdmin'};
+  var cur=pgMap[curTab];
+  Object.keys(pgMap).forEach(function(t){document.getElementById(pgMap[t]).classList.add('hidden')});
+  if(cur)document.getElementById(cur).classList.remove('hidden'),document.getElementById(cur).classList.add('behind');
+  document.getElementById('pgDetail').classList.remove('hidden');document.getElementById('pgDetail').classList.remove('behind');
+  document.getElementById('tabTx').classList.add('active');document.getElementById('tabSum').classList.remove('active');
+  document.getElementById('panelTx').style.display='';document.getElementById('panelSum').style.display='none';
+  document.getElementById('fab').classList.remove('hide');
+  loadDetails(ev.id);loadFriends();
 }
 
-function goBack() {
-  currentEvent = null;
-  switchTab('events');
+function goBack(){
+  curEvent=null;
+  document.getElementById('pgDetail').classList.add('hidden');
+  document.getElementById('appHd').classList.remove('show-back');
+  document.getElementById('hdTitle').textContent=curTab==='admin'?'Admin':curTab==='friends'?'Friends':'ShareUp';
+  var pgMap={events:'pgEvents',friends:'pgFriends',admin:'pgAdmin'};
+  Object.keys(pgMap).forEach(function(t){
+    var pg=document.getElementById(pgMap[t]);
+    pg.classList.remove('behind');
+    if(t!==curTab)pg.classList.add('hidden');else pg.classList.remove('hidden');
+  });
+  document.getElementById('fab').classList.toggle('hide',curTab==='admin');
 }
 
-function setHeader(title, isDetail) {
-  document.getElementById('headerTitle').textContent = title;
-  var header = document.getElementById('appHeader');
-  if (isDetail) {
-    header.classList.add('has-back');
-  } else {
-    header.classList.remove('has-back');
-  }
+function switchDT(t){
+  curDT=t;
+  document.getElementById('tabTx').classList.toggle('active',t==='tx');
+  document.getElementById('tabSum').classList.toggle('active',t==='sum');
+  document.getElementById('panelTx').style.display=t==='tx'?'':'none';
+  document.getElementById('panelSum').style.display=t==='sum'?'':'none';
+  if(t==='sum'&&curEvent)loadSummary(curEvent.id);
 }
 
-function switchDetailTab(tab) {
-  currentDetailTab = tab;
-  document.getElementById('tabTxBtn').classList.toggle('active', tab === 'tx');
-  document.getElementById('tabSumBtn').classList.toggle('active', tab === 'sum');
-  document.getElementById('detailTxPanel').style.display = tab === 'tx' ? '' : 'none';
-  document.getElementById('detailSumPanel').style.display = tab === 'sum' ? '' : 'none';
-  if (tab === 'sum' && currentEvent) loadSummary(currentEvent.id);
-}
-
-// ================================================================
 // FAB
-// ================================================================
-function handleFab() {
-  if (currentEvent) {
-    // Add transaction
-    openAddTxModal();
-  } else if (currentTab === 'friends') {
-    openModal('modalNewFriend');
-    document.getElementById('newFriendName').value = '';
-    setTimeout(function() { document.getElementById('newFriendName').focus(); }, 300);
-  } else if (currentTab === 'events') {
-    openModal('modalNewEvent');
-    document.getElementById('newEventName').value = '';
-    setTimeout(function() { document.getElementById('newEventName').focus(); }, 300);
-  }
+function handleFab(){
+  if(curEvent){
+    document.getElementById('inpDesc').value='';
+    document.getElementById('inpAmt').value='';
+    document.getElementById('perInfo').style.display='none';
+    var sel=document.getElementById('inpPayer');
+    sel.innerHTML=FC.map(function(f){return'<option value="'+esc(f.id)+'">'+esc(f.name)+'</option>'}).join('');
+    var cl=document.getElementById('inpShared');
+    cl.innerHTML=FC.map(function(f){return'<div class="ck-row"><input type="checkbox" id="ck_'+esc(f.id)+'" value="'+esc(f.id)+'" checked onchange="calcPP()"/><label for="ck_'+esc(f.id)+'">'+esc(f.name)+'</label></div>'}).join('');
+    openSheet('sheetTx');
+  }else if(curTab==='friends'){document.getElementById('inpFr').value='';openSheet('sheetFriend')}
+  else{document.getElementById('inpEv').value='';openSheet('sheetEvent')}
 }
 
-function openModal(id) {
-  var el = document.getElementById(id);
-  var m = bootstrap.Modal.getOrCreateInstance(el);
-  m.show();
-}
-function closeModal(id) {
-  var el = document.getElementById(id);
-  var m = bootstrap.Modal.getInstance(el);
-  if (m) m.hide();
-}
-
-// ================================================================
 // EVENTS
-// ================================================================
-async function loadEvents() {
-  showLoading(true);
-  try {
-    var res = await gsc('getEvents', TOKEN);
-    if (res.success) {
-      eventsCache = res.events || [];
-      renderEvents();
-    } else {
-      showToast(res.error || 'Failed to load events', 'danger');
-    }
-  } catch(e) { showToast('Error: ' + e, 'danger'); }
-  showLoading(false);
+async function loadEvents(){
+  try{
+    var r=await gsc('getEvents',TOKEN);
+    if(r.success){EC=r.events||[];renderEvents();document.getElementById('stEvents').textContent=EC.length}
+    else toast(r.error,'danger');
+  }catch(e){toast(''+e,'danger')}
 }
-
-function renderEvents() {
-  var el = document.getElementById('eventsList');
-  if (!eventsCache.length) {
-    el.innerHTML = '<div class="empty-state"><i class="bi bi-calendar-x"></i><p>No events yet.<br>Tap + to create one.</p></div>';
-    return;
-  }
-  el.innerHTML = eventsCache.map(function(ev) {
-    return '<div class="su-card"><div class="event-card" onclick="openEventDetail(' + escHtml(JSON.stringify(ev)) + ')">' +
-      '<div class="ev-icon"><i class="bi bi-calendar-event"></i></div>' +
-      '<div style="flex:1;min-width:0;">' +
-        '<div class="ev-name">' + escHtml(ev.name) + '</div>' +
-        '<div class="ev-date"><i class="bi bi-clock" style="font-size:0.7rem;"></i> ' + fmtDate(ev.createdAt) + '</div>' +
-      '</div>' +
-      '<div class="ev-actions">' +
-        '<button class="btn-icon" onclick="event.stopPropagation();confirmDelete(\'event\',\'' + ev.id + '\',\'' + escHtml(ev.name) + '\')" title="Delete"><i class="bi bi-trash3"></i></button>' +
-      '</div>' +
-    '</div></div>';
+function renderEvents(){
+  var el=document.getElementById('eventsList');
+  if(!EC.length){el.innerHTML='<div class="empty"><div class="empty-ic"><svg viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5C3.89 3 3 3.9 3 5v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/></svg></div><div class="empty-t">No events yet</div><div class="empty-s">Tap + to create your first event</div></div>';return}
+  el.innerHTML=EC.map(function(ev,i){
+    return'<div class="card"><div class="ev-item" onclick="openDetail('+esc(JSON.stringify(ev))+')">'
+      +'<div class="ev-icon">'+evEmoji(ev.name)+'</div>'
+      +'<div class="ev-text"><div class="ev-name">'+esc(ev.name)+'</div><div class="ev-date">'+fmtD(ev.createdAt)+'</div></div>'
+      +'<div class="chev"><svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></div>'
+      +'<button class="btn-del" onclick="event.stopPropagation();askDel(\'event\',\''+esc(ev.id)+'\',\''+esc(ev.name)+'\')"><svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>'
+      +'</div></div>';
   }).join('');
 }
-
-async function submitNewEvent() {
-  var name = document.getElementById('newEventName').value.trim();
-  if (!name) { showToast('Please enter event name', 'warning'); return; }
-  closeModal('modalNewEvent');
-  showLoading(true);
-  try {
-    var res = await gsc('addEvent', TOKEN, name);
-    if (res.success) {
-      showToast('Event created!', 'success');
-      loadEvents();
-    } else {
-      showToast(res.error || 'Failed', 'danger');
-    }
-  } catch(e) { showToast('Error: ' + e, 'danger'); }
-  showLoading(false);
+async function submitEvent(){
+  var n=document.getElementById('inpEv').value.trim();
+  if(!n){toast('Enter event name','warning');return}
+  closeSheets();
+  try{var r=await gsc('addEvent',TOKEN,n);if(r.success){toast('Event created!');loadEvents()}else toast(r.error,'danger')}catch(e){toast(''+e,'danger')}
 }
 
-// ================================================================
 // FRIENDS
-// ================================================================
-async function loadFriends() {
-  showLoading(true);
-  try {
-    var res = await gsc('getFriends', TOKEN);
-    if (res.success) {
-      friendsCache = res.friends || [];
-      if (currentTab === 'friends') renderFriends();
-    } else {
-      showToast(res.error || 'Failed to load friends', 'danger');
-    }
-  } catch(e) { showToast('Error: ' + e, 'danger'); }
-  showLoading(false);
+async function loadFriends(){
+  try{
+    var r=await gsc('getFriends',TOKEN);
+    if(r.success){FC=r.friends||[];document.getElementById('stFriends').textContent=FC.length;if(curTab==='friends')renderFriends()}
+  }catch(e){}
 }
-
-function renderFriends() {
-  var el = document.getElementById('friendsList');
-  if (!friendsCache.length) {
-    el.innerHTML = '<div class="empty-state"><i class="bi bi-people"></i><p>No friends yet.<br>Tap + to add one.</p></div>';
-    return;
-  }
-  el.innerHTML = friendsCache.map(function(f, idx) {
-    var isMe = f.name === 'Me';
-    return (idx > 0 ? '<div class="su-divider"></div>' : '') +
-      '<div class="friend-item">' +
-        '<div class="friend-avatar">' + avatarLetter(f.name) + '</div>' +
-        '<span class="friend-name">' + escHtml(f.name) + (isMe ? '<span class="friend-me">Me</span>' : '') + '</span>' +
-        (!isMe ? '<button class="btn-icon" onclick="confirmDelete(\'friend\',\'' + f.id + '\',\'' + escHtml(f.name) + '\')" title="Delete"><i class="bi bi-trash3"></i></button>' : '') +
-      '</div>';
+function renderFriends(){
+  var el=document.getElementById('friendsList');
+  if(!FC.length){el.innerHTML='<div class="empty"><div class="empty-ic"><svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg></div><div class="empty-t">No friends yet</div><div class="empty-s">Tap + to add friends</div></div>';return}
+  el.innerHTML=FC.map(function(f,i){
+    var isMe=f.name==='Me';
+    return(i>0?'<div class="divider"></div>':'')
+      +'<div class="fr-item"><div class="fr-av" style="background:'+avCol(f.name)+'">'+av(f.name)+'</div>'
+      +'<span class="fr-name">'+esc(f.name)+'</span>'
+      +(isMe?'<span class="fr-me">You</span>':'<button class="btn-del" onclick="askDel(\'friend\',\''+esc(f.id)+'\',\''+esc(f.name)+'\')"><svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>')
+      +'</div>';
   }).join('');
 }
-
-async function submitNewFriend() {
-  var name = document.getElementById('newFriendName').value.trim();
-  if (!name) { showToast('Please enter a name', 'warning'); return; }
-  closeModal('modalNewFriend');
-  showLoading(true);
-  try {
-    var res = await gsc('addFriend', TOKEN, name);
-    if (res.success) {
-      showToast('Friend added!', 'success');
-      loadFriends();
-    } else {
-      showToast(res.error || 'Failed', 'danger');
-    }
-  } catch(e) { showToast('Error: ' + e, 'danger'); }
-  showLoading(false);
+async function submitFriend(){
+  var n=document.getElementById('inpFr').value.trim();
+  if(!n){toast('Enter a name','warning');return}
+  closeSheets();
+  try{var r=await gsc('addFriend',TOKEN,n);if(r.success){toast('Friend added!');loadFriends()}else toast(r.error,'danger')}catch(e){toast(''+e,'danger')}
 }
 
-// ================================================================
-// DETAILS / TRANSACTIONS
-// ================================================================
-async function loadDetails(eventId) {
-  showLoading(true);
-  try {
-    var res = await gsc('getDetails', TOKEN, eventId);
-    if (res.success) {
-      detailsCache = res.details || [];
-      renderDetails();
-    } else {
-      showToast(res.error || 'Failed to load transactions', 'danger');
-    }
-  } catch(e) { showToast('Error: ' + e, 'danger'); }
-  showLoading(false);
+// TRANSACTIONS
+async function loadDetails(id){
+  try{
+    var r=await gsc('getDetails',TOKEN,id);
+    if(r.success){DC=r.details||[];renderDetails()}else toast(r.error,'danger');
+  }catch(e){toast(''+e,'danger')}
 }
-
-function renderDetails() {
-  var el = document.getElementById('txList');
-  if (!detailsCache.length) {
-    el.innerHTML = '<div class="empty-state"><i class="bi bi-receipt"></i><p>No transactions yet.<br>Tap + to add one.</p></div>';
-    return;
-  }
-
-  // Build friendMap
-  var friendMap = {};
-  friendsCache.forEach(function(f) { friendMap[f.id] = f.name; });
-
-  // Group by transactionId
-  var groups = {};
-  var order = [];
-  detailsCache.forEach(function(d) {
-    if (!groups[d.transactionId]) {
-      groups[d.transactionId] = [];
-      order.push(d.transactionId);
-    }
-    groups[d.transactionId].push(d);
-  });
-
-  // Newest transaction first
-  order.reverse();
-
-  el.innerHTML = order.map(function(txId) {
-    var rows = groups[txId];
-    var first = rows[0];
-    var payerName = friendMap[first.payId] || first.payId;
-    var totalAmount = first.totalAmount;
-    var desc = first.description || 'Transaction';
-    var date = first.createdAt;
-    var participants = rows.map(function(r) { return friendMap[r.friendId] || r.friendId; });
-
-    return '<div class="su-card"><div class="tx-card">' +
-      '<div class="tx-header">' +
-        '<div class="tx-desc">' + escHtml(desc) + '</div>' +
-        '<div class="tx-amount">฿' + parseFloat(totalAmount).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</div>' +
-      '</div>' +
-      '<div class="tx-paid-by">Paid by <span>' + escHtml(payerName) + '</span></div>' +
-      '<div class="tx-participants">' +
-        participants.map(function(p) { return '<span class="tx-chip">' + escHtml(p) + '</span>'; }).join('') +
-      '</div>' +
-      '<div class="tx-footer">' +
-        '<span class="tx-date"><i class="bi bi-clock" style="font-size:0.68rem;"></i> ' + fmtDate(date) + '</span>' +
-        '<button class="btn-icon" onclick="confirmDelete(\'tx\',\'' + txId + '\',\'' + escHtml(desc) + '\')" title="Delete"><i class="bi bi-trash3"></i></button>' +
-      '</div>' +
-    '</div></div>';
+function renderDetails(){
+  var el=document.getElementById('txList');
+  if(!DC.length){el.innerHTML='<div class="empty"><div class="empty-ic"><svg viewBox="0 0 24 24"><path d="M18 17H6v-2h12v2zm0-4H6v-2h12v2zm0-4H6V7h12v2zM3 22l1.5-1.5L6 22l1.5-1.5L9 22l1.5-1.5L12 22l1.5-1.5L15 22l1.5-1.5L18 22l1.5-1.5L21 22V2l-1.5 1.5L18 2l-1.5 1.5L15 2l-1.5 1.5L12 2l-1.5 1.5L9 2 7.5 3.5 6 2 4.5 3.5 3 2v20z"/></svg></div><div class="empty-t">No transactions</div><div class="empty-s">Tap + to record the first one</div></div>';return}
+  var fm={};FC.forEach(function(f){fm[f.id]=f.name});
+  var grp={},ord=[];
+  DC.forEach(function(d){if(!grp[d.transactionId]){grp[d.transactionId]=[];ord.push(d.transactionId)}grp[d.transactionId].push(d)});
+  ord.reverse();
+  el.innerHTML=ord.map(function(tid){
+    var rows=grp[tid],f=rows[0];
+    var pn=fm[f.payId]||f.payId;
+    var total=parseFloat(f.totalAmount);
+    var desc=f.description||'Transaction';
+    var parts=rows.map(function(r){return fm[r.friendId]||r.friendId});
+    return'<div class="card"><div class="tx-item">'
+      +'<div class="tx-top"><div class="tx-av" style="background:'+avCol(pn)+'">'+av(pn)+'</div>'
+      +'<div class="tx-info"><div class="tx-desc">'+esc(desc)+'</div><div class="tx-by">Paid by '+esc(pn)+'</div></div>'
+      +'<div class="tx-amt">฿'+total.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})+'</div></div>'
+      +'<div class="tx-chips">'+parts.map(function(p){return'<span class="tx-chip">'+esc(p)+'</span>'}).join('')+'</div>'
+      +'<div class="tx-foot"><span class="tx-date">'+fmtD(f.createdAt)+'</span>'
+      +'<button class="btn-del" onclick="askDel(\'tx\',\''+esc(tid)+'\',\''+esc(desc)+'\')"><svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>'
+      +'</div></div></div>';
   }).join('');
 }
-
-function openAddTxModal() {
-  // Populate paid-by dropdown
-  var sel = document.getElementById('txPaidBy');
-  sel.innerHTML = friendsCache.map(function(f) {
-    return '<option value="' + escHtml(f.id) + '">' + escHtml(f.name) + '</option>';
-  }).join('');
-
-  // Populate shared-by checkboxes (all checked by default)
-  var checkList = document.getElementById('txSharedBy');
-  checkList.innerHTML = friendsCache.map(function(f) {
-    return '<div class="check-item">' +
-      '<input type="checkbox" id="cb_' + f.id + '" value="' + escHtml(f.id) + '" checked onchange="updatePerPerson()" />' +
-      '<label for="cb_' + f.id + '">' + escHtml(f.name) + '</label>' +
-    '</div>';
-  }).join('');
-
-  document.getElementById('txDesc').value = '';
-  document.getElementById('txAmount').value = '';
-  document.getElementById('txPerPersonInfo').textContent = '';
-
-  openModal('modalAddTx');
-  setTimeout(function() { document.getElementById('txDesc').focus(); }, 300);
-
-  // Live update per-person
-  document.getElementById('txAmount').oninput = updatePerPerson;
+function ckAll(v){document.querySelectorAll('#inpShared input').forEach(function(c){c.checked=v});calcPP()}
+function calcPP(){
+  var a=parseFloat(document.getElementById('inpAmt').value)||0;
+  var c=document.querySelectorAll('#inpShared input:checked').length;
+  var el=document.getElementById('perInfo');
+  if(a>0&&c>0){document.getElementById('perAmt').textContent='฿'+(a/c).toFixed(2);el.style.display=''}
+  else el.style.display='none';
+}
+async function submitTx(){
+  var desc=document.getElementById('inpDesc').value.trim();
+  var amt=parseFloat(document.getElementById('inpAmt').value);
+  var pay=document.getElementById('inpPayer').value;
+  var sh=Array.from(document.querySelectorAll('#inpShared input:checked')).map(function(c){return c.value});
+  if(!desc){toast('Enter description','warning');return}
+  if(!amt||amt<=0){toast('Enter valid amount','warning');return}
+  if(!sh.length){toast('Select at least one person','warning');return}
+  closeSheets();
+  try{var r=await gsc('addDetail',TOKEN,curEvent.id,pay,sh,amt,desc);if(r.success){toast('Transaction added!');loadDetails(curEvent.id)}else toast(r.error,'danger')}catch(e){toast(''+e,'danger')}
 }
 
-function checkAllFriends(val) {
-  document.querySelectorAll('#txSharedBy input[type=checkbox]').forEach(function(cb) { cb.checked = val; });
-  updatePerPerson();
-}
-
-function updatePerPerson() {
-  var amount = parseFloat(document.getElementById('txAmount').value) || 0;
-  var checked = document.querySelectorAll('#txSharedBy input[type=checkbox]:checked').length;
-  var el = document.getElementById('txPerPersonInfo');
-  if (amount > 0 && checked > 0) {
-    var pp = amount / checked;
-    el.textContent = '฿' + pp.toFixed(2) + ' per person (' + checked + ' people)';
-  } else {
-    el.textContent = '';
-  }
-}
-
-async function submitAddTx() {
-  var desc = document.getElementById('txDesc').value.trim();
-  var amount = parseFloat(document.getElementById('txAmount').value);
-  var payId = document.getElementById('txPaidBy').value;
-  var checked = Array.from(document.querySelectorAll('#txSharedBy input[type=checkbox]:checked')).map(function(cb) { return cb.value; });
-
-  if (!desc) { showToast('Please enter a description', 'warning'); return; }
-  if (!amount || amount <= 0) { showToast('Please enter a valid amount', 'warning'); return; }
-  if (!payId) { showToast('Please select who paid', 'warning'); return; }
-  if (!checked.length) { showToast('Please select at least one participant', 'warning'); return; }
-
-  closeModal('modalAddTx');
-  showLoading(true);
-  try {
-    var res = await gsc('addDetail', TOKEN, currentEvent.id, payId, checked, amount, desc);
-    if (res.success) {
-      showToast('Transaction added!', 'success');
-      loadDetails(currentEvent.id);
-    } else {
-      showToast(res.error || 'Failed', 'danger');
-    }
-  } catch(e) { showToast('Error: ' + e, 'danger'); }
-  showLoading(false);
-}
-
-// ================================================================
 // SUMMARY
-// ================================================================
-async function loadSummary(eventId) {
-  showLoading(true);
-  try {
-    var res = await gsc('getSummary', TOKEN, eventId);
-    if (res.success) {
-      renderSummary(res.settlements || []);
-    } else {
-      showToast(res.error || 'Failed to load summary', 'danger');
-    }
-  } catch(e) { showToast('Error: ' + e, 'danger'); }
-  showLoading(false);
+async function loadSummary(id){
+  try{
+    var r=await gsc('getSummary',TOKEN,id);
+    if(r.success)renderSummary(r.settlements||[]);else toast(r.error,'danger');
+  }catch(e){toast(''+e,'danger')}
 }
-
-function renderSummary(settlements) {
-  var el = document.getElementById('summaryList');
-  if (!settlements.length) {
-    el.innerHTML = '<div class="empty-state"><i class="bi bi-check2-circle" style="color:var(--success);"></i><p>All settled up!<br>No payments needed.</p></div>';
-    return;
-  }
-  el.innerHTML = settlements.map(function(s) {
-    return '<div class="su-card"><div class="settlement-card">' +
-      '<div class="settle-from"><i class="bi bi-person-fill" style="font-size:0.85rem;margin-right:4px;"></i>' + escHtml(s.fromName) + '</div>' +
-      '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">' +
-        '<span class="settle-amount">฿' + parseFloat(s.amount).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</span>' +
-        '<i class="bi bi-arrow-right settle-arrow"></i>' +
-      '</div>' +
-      '<div class="settle-to">' + escHtml(s.toName) + '<i class="bi bi-person-fill" style="font-size:0.85rem;margin-left:4px;"></i></div>' +
-    '</div></div>';
+function renderSummary(s){
+  var el=document.getElementById('sumList');
+  if(!s.length){el.innerHTML='<div class="empty"><div class="empty-ic" style="background:rgba(16,185,129,.1)"><svg viewBox="0 0 24 24" style="fill:#10B981"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></div><div class="empty-t" style="color:#10B981">All Settled!</div><div class="empty-s">No payments needed 🎉</div></div>';return}
+  el.innerHTML=s.map(function(x){
+    return'<div class="card"><div class="settle-item">'
+      +'<div style="display:flex;flex-direction:column;align-items:center;gap:4px">'
+        +'<div class="s-av s-from" style="background:'+avCol(x.fromName)+'">'+av(x.fromName)+'</div>'
+        +'<div class="s-name">'+esc(x.fromName)+'</div>'
+      +'</div>'
+      +'<div class="s-mid"><div class="s-amt">฿'+parseFloat(x.amount).toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})+'</div><div class="s-arrow">→</div></div>'
+      +'<div style="display:flex;flex-direction:column;align-items:center;gap:4px">'
+        +'<div class="s-av s-to" style="background:'+avCol(x.toName)+'">'+av(x.toName)+'</div>'
+        +'<div class="s-name">'+esc(x.toName)+'</div>'
+      +'</div>'
+    +'</div></div>';
   }).join('');
 }
 
-// ================================================================
 // ADMIN
-// ================================================================
-async function loadAccounts() {
-  showLoading(true);
-  try {
-    var res = await gsc('getAllAccounts', TOKEN);
-    if (res.success) {
-      renderAccounts(res.accounts || []);
-    } else {
-      showToast(res.error || 'Forbidden', 'danger');
-    }
-  } catch(e) { showToast('Error: ' + e, 'danger'); }
-  showLoading(false);
+async function loadAccounts(){
+  try{
+    var r=await gsc('getAllAccounts',TOKEN);
+    if(r.success)renderAccounts(r.accounts||[]);else toast(r.error,'danger');
+  }catch(e){toast(''+e,'danger')}
 }
-
-function renderAccounts(accounts) {
-  var el = document.getElementById('accountsList');
-  if (!accounts.length) {
-    el.innerHTML = '<div class="empty-state"><i class="bi bi-people"></i><p>No accounts found.</p></div>';
-    return;
-  }
-  el.innerHTML = accounts.map(function(acc, idx) {
-    var isSelf = SESSION && acc.id === SESSION.id;
-    return '<div class="su-card"><div class="account-item">' +
-      '<div class="account-avatar">' + avatarLetter(acc.displayName) + '</div>' +
-      '<div class="account-info">' +
-        '<div class="account-name">' + escHtml(acc.displayName) + (isSelf ? ' <span style="font-size:0.7rem;color:var(--primary);background:rgba(108,99,255,0.1);border-radius:6px;padding:2px 7px;">You</span>' : '') + '</div>' +
-        '<div class="account-username">@' + escHtml(acc.username) + '</div>' +
-        '<div class="account-login">Last: ' + fmtDatetime(acc.lastLogin) + '</div>' +
-      '</div>' +
-      '<select class="role-select" onchange="changeRole(\'' + acc.id + '\',this.value)" ' + (isSelf ? 'disabled' : '') + '>' +
-        ['user','staff','admin'].map(function(r) {
-          return '<option value="' + r + '"' + (acc.role === r ? ' selected' : '') + '>' + r.charAt(0).toUpperCase() + r.slice(1) + '</option>';
-        }).join('') +
-      '</select>' +
-      (!isSelf ? '<button class="btn-icon" onclick="confirmDelete(\'account\',\'' + acc.id + '\',\'' + escHtml(acc.displayName) + '\')" title="Delete"><i class="bi bi-trash3"></i></button>' : '') +
-    '</div></div>';
+function renderAccounts(list){
+  var el=document.getElementById('accountsList');
+  if(!list.length){el.innerHTML='<div class="empty"><div class="empty-t">No accounts</div></div>';return}
+  el.innerHTML=list.map(function(a){
+    var me=SESSION&&a.id===SESSION.id;
+    return'<div class="card"><div class="acc-item">'
+      +'<div class="acc-av" style="background:'+avCol(a.displayName)+'">'+av(a.displayName)+'</div>'
+      +'<div class="acc-info"><div class="acc-name">'+esc(a.displayName)+(me?' <small style="font-size:10px;color:var(--p);background:var(--p3);border-radius:5px;padding:2px 6px">You</small>':'')+'</div><div class="acc-un">@'+esc(a.username)+'</div><div class="acc-last">'+fmtD(a.lastLogin)+'</div></div>'
+      +'<select class="role-sel" onchange="chRole(\''+a.id+'\',this.value)" '+(me?'disabled':'')+'>'+['user','staff','admin'].map(function(r){return'<option value="'+r+'"'+(a.role===r?' selected':'')+'>'+r[0].toUpperCase()+r.slice(1)+'</option>'}).join('')+'</select>'
+      +(!me?'<button class="btn-del" onclick="askDel(\'account\',\''+esc(a.id)+'\',\''+esc(a.displayName)+'\')"><svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>':'')
+    +'</div></div>';
   }).join('');
 }
-
-async function changeRole(accountId, role) {
-  showLoading(true);
-  try {
-    var res = await gsc('updateAccountRole', TOKEN, accountId, role);
-    if (res.success) {
-      showToast('Role updated to ' + role, 'success');
-    } else {
-      showToast(res.error || 'Failed', 'danger');
-      loadAccounts(); // refresh to revert UI
-    }
-  } catch(e) { showToast('Error: ' + e, 'danger'); }
-  showLoading(false);
+async function chRole(id,role){
+  try{var r=await gsc('updateAccountRole',TOKEN,id,role);if(r.success)toast('Role updated');else{toast(r.error,'danger');loadAccounts()}}catch(e){toast(''+e,'danger')}
 }
 
-// ================================================================
 // DELETE CONFIRM
-// ================================================================
-var _pendingDelete = null;
-
-function confirmDelete(type, id, name) {
-  var msgs = {
-    event: 'Delete event "' + name + '"? All transactions will also be deleted.',
-    friend: 'Remove "' + name + '" from your friends?',
-    tx: 'Delete transaction "' + name + '"?',
-    account: 'Delete account "' + name + '"? This cannot be undone.'
-  };
-  document.getElementById('confirmMsg').textContent = msgs[type] || 'Are you sure?';
-  _pendingDelete = { type: type, id: id };
-  openModal('modalConfirm');
+var _del=null;
+function askDel(type,id,name){
+  var msgs={event:'Delete event "'+name+'"?',friend:'Remove "'+name+'" from friends?',tx:'Delete this transaction?',account:'Delete account "'+name+'"?'};
+  document.getElementById('cfTitle').textContent='Delete '+type[0].toUpperCase()+type.slice(1)+'?';
+  document.getElementById('cfMsg').textContent=msgs[type]||'Are you sure?';
+  _del={type:type,id:id};
+  openSheet('sheetConfirm');
 }
-
-document.getElementById('confirmOkBtn').onclick = async function() {
-  if (!_pendingDelete) return;
-  var type = _pendingDelete.type;
-  var id = _pendingDelete.id;
-  _pendingDelete = null;
-  closeModal('modalConfirm');
-  showLoading(true);
-  try {
-    var res;
-    if (type === 'event') {
-      res = await gsc('deleteEvent', TOKEN, id);
-      if (res.success) { showToast('Event deleted', 'success'); loadEvents(); }
-    } else if (type === 'friend') {
-      res = await gsc('deleteFriend', TOKEN, id);
-      if (res.success) { showToast('Friend removed', 'success'); loadFriends(); }
-    } else if (type === 'tx') {
-      res = await gsc('deleteDetail', TOKEN, id);
-      if (res.success) { showToast('Transaction deleted', 'success'); if(currentEvent) loadDetails(currentEvent.id); }
-    } else if (type === 'account') {
-      res = await gsc('deleteAccount', TOKEN, id);
-      if (res.success) { showToast('Account deleted', 'success'); loadAccounts(); }
-    }
-    if (res && !res.success) showToast(res.error || 'Failed', 'danger');
-  } catch(e) { showToast('Error: ' + e, 'danger'); }
-  showLoading(false);
+document.getElementById('cfOk').onclick=async function(){
+  if(!_del)return;
+  var t=_del.type,id=_del.id;_del=null;closeSheets();
+  try{
+    var r;
+    if(t==='event')r=await gsc('deleteEvent',TOKEN,id);
+    else if(t==='friend')r=await gsc('deleteFriend',TOKEN,id);
+    else if(t==='tx')r=await gsc('deleteDetail',TOKEN,id);
+    else if(t==='account')r=await gsc('deleteAccount',TOKEN,id);
+    if(r&&r.success){
+      toast('Deleted');
+      if(t==='event')loadEvents();
+      else if(t==='friend')loadFriends();
+      else if(t==='tx'&&curEvent)loadDetails(curEvent.id);
+      else if(t==='account')loadAccounts();
+    }else if(r)toast(r.error,'danger');
+  }catch(e){toast(''+e,'danger')}
 };
 
-// ================================================================
-// ENTER KEY HANDLERS
-// ================================================================
-document.getElementById('newEventName').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') submitNewEvent();
-});
-document.getElementById('newFriendName').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') submitNewFriend();
-});
+document.getElementById('inpEv').addEventListener('keydown',function(e){if(e.key==='Enter')submitEvent()});
+document.getElementById('inpFr').addEventListener('keydown',function(e){if(e.key==='Enter')submitFriend()});
 
-// ================================================================
 // BOOT
-// ================================================================
-window.addEventListener('load', async function() {
-  showLoading(true);
-  if (TOKEN && SESSION) {
-    try {
-      var res = await gsc('getSessionUser', TOKEN);
-      if (res.success) {
-        SESSION = res.user;
-        localStorage.setItem('su_session', JSON.stringify(SESSION));
-        initApp();
-        showLoading(false);
-        return;
-      }
-    } catch(e) {}
-    // Session invalid
-    TOKEN = null; SESSION = null;
-    localStorage.removeItem('su_token');
-    localStorage.removeItem('su_session');
+window.addEventListener('load',async function(){
+  if(TOKEN&&SESSION){
+    try{
+      var r=await gsc('getSessionUser',TOKEN);
+      if(r.success){SESSION=r.user;localStorage.setItem('su_session',JSON.stringify(SESSION));hideSplash();startApp();return}
+    }catch(e){}
+    TOKEN=null;SESSION=null;localStorage.removeItem('su_token');localStorage.removeItem('su_session');
   }
-  document.getElementById('authSection').style.display = 'flex';
-  showLoading(false);
+  hideSplash();
+  document.getElementById('authView').style.display='flex';
 });
+function hideSplash(){
+  var sp=document.getElementById('splash');
+  sp.classList.add('out');
+  setTimeout(function(){sp.style.display='none'},450);
+}
 </script>
 </body>
 </html>
