@@ -1,0 +1,1322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>ShareUp - Expense Splitting</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <style>
+    :root {
+      --primary: #6C63FF;
+      --secondary: #48CAE4;
+      --success: #06D6A0;
+      --danger: #EF476F;
+      --bg: #F4F6FB;
+      --card-radius: 15px;
+      --header-height: 60px;
+      --bottom-nav-height: 65px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ---- AUTH ---- */
+    #authSection {
+      min-height: 100vh;
+      background: linear-gradient(135deg, #6C63FF 0%, #48CAE4 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .auth-card {
+      background: #fff;
+      border-radius: 24px;
+      padding: 36px 28px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 20px 60px rgba(108,99,255,0.25);
+    }
+    .auth-logo {
+      width: 60px;
+      height: 60px;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      border-radius: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 16px;
+    }
+    .auth-logo i { font-size: 28px; color: #fff; }
+    .auth-title { font-size: 1.7rem; font-weight: 700; color: #1a1a2e; text-align: center; }
+    .auth-subtitle { color: #888; text-align: center; margin-bottom: 28px; font-size: 0.93rem; }
+    .form-floating .form-control {
+      border-radius: 12px;
+      border: 1.5px solid #e0e0e0;
+      background: #fafafa;
+    }
+    .form-floating .form-control:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 0.2rem rgba(108,99,255,0.15);
+    }
+    .btn-primary-grad {
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      border: none;
+      color: #fff;
+      border-radius: 12px;
+      font-weight: 600;
+      padding: 12px;
+      width: 100%;
+      font-size: 1rem;
+      transition: opacity 0.2s;
+    }
+    .btn-primary-grad:hover { opacity: 0.9; color: #fff; }
+    .auth-link { text-align: center; color: #888; font-size: 0.9rem; margin-top: 18px; }
+    .auth-link a { color: var(--primary); text-decoration: none; font-weight: 600; }
+    .pw-toggle {
+      position: absolute;
+      right: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      cursor: pointer;
+      color: #aaa;
+      z-index: 10;
+      background: none;
+      border: none;
+      padding: 0;
+    }
+    .pw-wrap { position: relative; }
+    .pw-wrap .form-control { padding-right: 44px; }
+
+    /* ---- APP SHELL ---- */
+    #appSection { display: none; min-height: 100vh; }
+
+    /* Header */
+    .app-header {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: var(--header-height);
+      background: #fff;
+      box-shadow: 0 2px 12px rgba(108,99,255,0.08);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      z-index: 100;
+      gap: 10px;
+    }
+    .header-back {
+      background: none; border: none; padding: 6px 10px 6px 0;
+      color: var(--primary); font-size: 1.2rem; cursor: pointer;
+      display: none;
+    }
+    .header-logo {
+      width: 34px; height: 34px;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .header-logo i { font-size: 16px; color: #fff; }
+    .header-title { font-weight: 700; font-size: 1.05rem; color: #1a1a2e; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .header-user { font-size: 0.8rem; color: #888; max-width: 90px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .btn-logout {
+      background: none; border: 1.5px solid #e0e0e0; border-radius: 10px;
+      padding: 5px 10px; color: #888; font-size: 0.8rem; cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn-logout:hover { border-color: var(--danger); color: var(--danger); }
+
+    /* Bottom Nav */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: var(--bottom-nav-height);
+      background: #fff;
+      box-shadow: 0 -2px 16px rgba(108,99,255,0.10);
+      display: flex;
+      z-index: 100;
+    }
+    .nav-item {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      cursor: pointer; color: #bbb; transition: color 0.2s;
+      gap: 2px; font-size: 0.7rem; padding-bottom: 4px;
+      border: none; background: none;
+    }
+    .nav-item i { font-size: 1.4rem; }
+    .nav-item.active { color: var(--primary); }
+    .nav-item span { font-weight: 500; }
+
+    /* Content area */
+    .app-content {
+      padding-top: calc(var(--header-height) + 10px);
+      padding-bottom: calc(var(--bottom-nav-height) + 80px);
+      padding-left: 12px;
+      padding-right: 12px;
+      min-height: 100vh;
+    }
+
+    /* Cards */
+    .su-card {
+      background: #fff;
+      border-radius: var(--card-radius);
+      box-shadow: 0 2px 14px rgba(108,99,255,0.07);
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+    .event-card {
+      border-left: 4px solid var(--primary);
+      padding: 14px 14px 14px 16px;
+      display: flex; align-items: center; cursor: pointer;
+      transition: background 0.15s;
+    }
+    .event-card:hover { background: #fafafa; }
+    .event-card .ev-icon {
+      width: 42px; height: 42px;
+      background: linear-gradient(135deg, rgba(108,99,255,0.15), rgba(72,202,228,0.15));
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; margin-right: 12px;
+    }
+    .event-card .ev-icon i { font-size: 1.2rem; color: var(--primary); }
+    .event-card .ev-name { font-weight: 600; font-size: 1rem; color: #1a1a2e; }
+    .event-card .ev-date { font-size: 0.78rem; color: #aaa; }
+    .event-card .ev-actions { margin-left: auto; display: flex; gap: 6px; }
+    .btn-icon {
+      background: none; border: none; padding: 6px;
+      border-radius: 8px; cursor: pointer; color: #ccc;
+      transition: color 0.15s, background 0.15s;
+    }
+    .btn-icon:hover { color: var(--danger); background: rgba(239,71,111,0.08); }
+
+    /* Friend card */
+    .friend-item {
+      display: flex; align-items: center;
+      padding: 12px 14px; gap: 12px;
+    }
+    .friend-avatar {
+      width: 42px; height: 42px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-weight: 700; font-size: 1.1rem; flex-shrink: 0;
+    }
+    .friend-name { font-weight: 600; color: #1a1a2e; font-size: 0.97rem; flex: 1; }
+    .friend-me { font-size: 0.75rem; color: var(--primary); background: rgba(108,99,255,0.1); border-radius: 6px; padding: 2px 7px; margin-left: 6px; }
+
+    /* Transaction card */
+    .tx-card {
+      padding: 14px;
+    }
+    .tx-header { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+    .tx-desc { font-weight: 600; font-size: 0.97rem; color: #1a1a2e; flex: 1; }
+    .tx-amount { font-weight: 700; font-size: 1.05rem; color: var(--primary); white-space: nowrap; }
+    .tx-paid-by { font-size: 0.8rem; color: #888; margin-bottom: 6px; }
+    .tx-paid-by span { color: var(--secondary); font-weight: 600; }
+    .tx-participants { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 4px; }
+    .tx-chip {
+      font-size: 0.75rem; background: rgba(108,99,255,0.08); color: var(--primary);
+      border-radius: 20px; padding: 2px 10px; font-weight: 500;
+    }
+    .tx-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+    .tx-date { font-size: 0.75rem; color: #ccc; }
+
+    /* Settlement card */
+    .settlement-card {
+      padding: 14px 16px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .settle-from { font-weight: 700; color: var(--danger); font-size: 0.95rem; flex: 1; }
+    .settle-arrow { color: #aaa; font-size: 1.1rem; flex-shrink: 0; }
+    .settle-to { font-weight: 700; color: var(--success); font-size: 0.95rem; flex: 1; text-align: right; }
+    .settle-amount { font-size: 0.95rem; font-weight: 700; color: var(--primary); background: rgba(108,99,255,0.08); border-radius: 10px; padding: 4px 10px; white-space: nowrap; }
+
+    /* FAB */
+    .fab {
+      position: fixed;
+      bottom: calc(var(--bottom-nav-height) + 16px);
+      right: 20px;
+      width: 56px; height: 56px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      border: none; color: #fff; font-size: 1.6rem;
+      box-shadow: 0 6px 24px rgba(108,99,255,0.4);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; z-index: 90;
+      transition: transform 0.2s, opacity 0.2s;
+    }
+    .fab:hover { transform: scale(1.08); }
+    .fab.hidden { display: none; }
+
+    /* Loading overlay */
+    #loadingOverlay {
+      position: fixed; inset: 0;
+      background: rgba(255,255,255,0.8);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 9999; backdrop-filter: blur(4px);
+    }
+    #loadingOverlay.hidden { display: none; }
+    .spinner-ring {
+      width: 52px; height: 52px;
+      border: 4px solid rgba(108,99,255,0.2);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Toast */
+    #toastContainer {
+      position: fixed;
+      top: 16px; right: 16px; left: 16px;
+      z-index: 99999;
+      display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+      pointer-events: none;
+    }
+    .su-toast {
+      background: #fff;
+      border-radius: 14px;
+      padding: 12px 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+      display: flex; align-items: center; gap: 10px;
+      min-width: 220px; max-width: 340px;
+      animation: slideIn 0.3s ease;
+      pointer-events: all;
+    }
+    .su-toast.success { border-left: 4px solid var(--success); }
+    .su-toast.danger { border-left: 4px solid var(--danger); }
+    .su-toast.warning { border-left: 4px solid #FFB703; }
+    .su-toast i { font-size: 1.2rem; }
+    .su-toast.success i { color: var(--success); }
+    .su-toast.danger i { color: var(--danger); }
+    .su-toast.warning i { color: #FFB703; }
+    .su-toast span { font-size: 0.88rem; color: #333; font-weight: 500; }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(40px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    /* Empty state */
+    .empty-state {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 52px 20px;
+      color: #ccc; text-align: center;
+    }
+    .empty-state i { font-size: 3.5rem; margin-bottom: 12px; }
+    .empty-state p { font-size: 0.95rem; color: #bbb; }
+
+    /* Tabs */
+    .su-tabs {
+      display: flex; background: #fff; border-radius: var(--card-radius);
+      box-shadow: 0 2px 14px rgba(108,99,255,0.07);
+      overflow: hidden; margin-bottom: 14px;
+    }
+    .su-tab {
+      flex: 1; padding: 12px 0; text-align: center;
+      font-weight: 600; font-size: 0.9rem; color: #bbb;
+      cursor: pointer; border: none; background: none;
+      border-bottom: 3px solid transparent;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .su-tab.active { color: var(--primary); border-color: var(--primary); }
+
+    /* Admin table */
+    .account-item {
+      display: flex; align-items: center;
+      padding: 12px 14px; gap: 12px; flex-wrap: wrap;
+    }
+    .account-avatar {
+      width: 40px; height: 40px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-weight: 700; font-size: 1rem; flex-shrink: 0;
+    }
+    .account-info { flex: 1; min-width: 0; }
+    .account-name { font-weight: 600; font-size: 0.95rem; color: #1a1a2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .account-username { font-size: 0.78rem; color: #aaa; }
+    .account-login { font-size: 0.72rem; color: #ccc; }
+    .role-select {
+      border-radius: 8px; border: 1.5px solid #e0e0e0;
+      padding: 4px 8px; font-size: 0.8rem; color: #555;
+      background: #fafafa; cursor: pointer;
+    }
+    .role-select:focus { outline: none; border-color: var(--primary); }
+
+    /* Modal overrides */
+    .modal-content { border-radius: 20px; border: none; }
+    .modal-header { border-bottom: none; padding: 20px 20px 8px; }
+    .modal-footer { border-top: none; padding: 8px 20px 20px; }
+    .modal-title { font-weight: 700; color: #1a1a2e; }
+    .form-label { font-weight: 600; font-size: 0.85rem; color: #555; }
+    .form-control, .form-select {
+      border-radius: 10px; border: 1.5px solid #e0e0e0;
+      background: #fafafa; font-size: 0.93rem;
+    }
+    .form-control:focus, .form-select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 0.15rem rgba(108,99,255,0.15);
+    }
+    .btn-cancel {
+      background: #f0f0f5; border: none; border-radius: 10px;
+      color: #888; font-weight: 600; padding: 10px 20px;
+    }
+    .btn-submit {
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      border: none; border-radius: 10px; color: #fff;
+      font-weight: 600; padding: 10px 24px;
+    }
+    .btn-submit:hover { opacity: 0.9; color: #fff; }
+    .check-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+    .check-item {
+      display: flex; align-items: center; gap: 10px;
+      background: #fafafa; border-radius: 10px; padding: 8px 12px;
+      cursor: pointer;
+    }
+    .check-item input[type=checkbox] { accent-color: var(--primary); width: 16px; height: 16px; flex-shrink: 0; }
+    .check-item label { cursor: pointer; font-size: 0.9rem; color: #333; flex: 1; }
+
+    .section-label {
+      font-size: 0.75rem; font-weight: 700; color: #aaa; letter-spacing: 0.08em;
+      text-transform: uppercase; margin: 14px 2px 6px;
+    }
+
+    /* Divider between items in card */
+    .su-divider { height: 1px; background: #f0f0f5; margin: 0 14px; }
+
+    /* Back-button spacing */
+    .has-back .header-back { display: flex; }
+    .has-back .header-logo { display: none; }
+
+    @media (min-width: 600px) {
+      .app-content { max-width: 600px; margin: 0 auto; }
+      .fab { right: calc(50% - 300px + 20px); }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay">
+  <div class="spinner-ring"></div>
+</div>
+
+<!-- Toast Container -->
+<div id="toastContainer"></div>
+
+<!-- =========================================================
+     AUTH SECTION
+========================================================= -->
+<div id="authSection">
+  <!-- LOGIN CARD -->
+  <div class="auth-card" id="loginCard">
+    <div class="auth-logo"><i class="bi bi-receipt-cutoff"></i></div>
+    <h1 class="auth-title">ShareUp</h1>
+    <p class="auth-subtitle">Track and split expenses with friends</p>
+    <form id="loginForm" onsubmit="handleLogin(event)">
+      <div class="form-floating mb-3">
+        <input type="text" class="form-control" id="loginUsername" placeholder="Username" autocomplete="username" required />
+        <label for="loginUsername"><i class="bi bi-person"></i> Username</label>
+      </div>
+      <div class="form-floating mb-4 pw-wrap">
+        <input type="password" class="form-control" id="loginPassword" placeholder="Password" autocomplete="current-password" required />
+        <label for="loginPassword"><i class="bi bi-lock"></i> Password</label>
+        <button type="button" class="pw-toggle" onclick="togglePw('loginPassword',this)"><i class="bi bi-eye"></i></button>
+      </div>
+      <button type="submit" class="btn-primary-grad">Sign In</button>
+    </form>
+    <p class="auth-link">Don't have an account? <a href="#" onclick="showPage('register')">Register</a></p>
+  </div>
+
+  <!-- REGISTER CARD -->
+  <div class="auth-card" id="registerCard" style="display:none;">
+    <div class="auth-logo"><i class="bi bi-person-plus"></i></div>
+    <h1 class="auth-title">Create Account</h1>
+    <p class="auth-subtitle">Join ShareUp today</p>
+    <form id="registerForm" onsubmit="handleRegister(event)">
+      <div class="form-floating mb-3">
+        <input type="text" class="form-control" id="regDisplayName" placeholder="Display Name" required />
+        <label for="regDisplayName"><i class="bi bi-badge-person"></i> Display Name</label>
+      </div>
+      <div class="form-floating mb-3">
+        <input type="text" class="form-control" id="regUsername" placeholder="Username" autocomplete="username" required />
+        <label for="regUsername"><i class="bi bi-person"></i> Username</label>
+      </div>
+      <div class="form-floating mb-4 pw-wrap">
+        <input type="password" class="form-control" id="regPassword" placeholder="Password" autocomplete="new-password" required />
+        <label for="regPassword"><i class="bi bi-lock"></i> Password</label>
+        <button type="button" class="pw-toggle" onclick="togglePw('regPassword',this)"><i class="bi bi-eye"></i></button>
+      </div>
+      <button type="submit" class="btn-primary-grad">Create Account</button>
+    </form>
+    <p class="auth-link">Already have an account? <a href="#" onclick="showPage('login')">Sign In</a></p>
+  </div>
+</div>
+
+<!-- =========================================================
+     APP SECTION
+========================================================= -->
+<div id="appSection">
+  <!-- STICKY HEADER -->
+  <header class="app-header" id="appHeader">
+    <button class="header-back" id="headerBack" onclick="goBack()"><i class="bi bi-arrow-left"></i></button>
+    <div class="header-logo"><i class="bi bi-receipt-cutoff"></i></div>
+    <span class="header-title" id="headerTitle">ShareUp</span>
+    <span class="header-user" id="headerUser"></span>
+    <button class="btn-logout" onclick="handleLogout()"><i class="bi bi-box-arrow-right"></i> Out</button>
+  </header>
+
+  <!-- CONTENT -->
+  <div class="app-content">
+
+    <!-- EVENTS TAB -->
+    <div id="tabEvents">
+      <div class="section-label">My Events</div>
+      <div id="eventsList"></div>
+    </div>
+
+    <!-- EVENT DETAIL -->
+    <div id="tabEventDetail" style="display:none;">
+      <div class="su-tabs">
+        <button class="su-tab active" id="tabTxBtn" onclick="switchDetailTab('tx')">
+          <i class="bi bi-list-ul"></i> Transactions
+        </button>
+        <button class="su-tab" id="tabSumBtn" onclick="switchDetailTab('sum')">
+          <i class="bi bi-calculator"></i> Summary
+        </button>
+      </div>
+      <!-- Transactions -->
+      <div id="detailTxPanel">
+        <div id="txList"></div>
+      </div>
+      <!-- Summary -->
+      <div id="detailSumPanel" style="display:none;">
+        <div id="summaryList"></div>
+      </div>
+    </div>
+
+    <!-- FRIENDS TAB -->
+    <div id="tabFriends" style="display:none;">
+      <div class="section-label">Friends</div>
+      <div class="su-card" id="friendsList"></div>
+    </div>
+
+    <!-- ADMIN TAB -->
+    <div id="tabAdmin" style="display:none;">
+      <div class="section-label">All Accounts</div>
+      <div id="accountsList"></div>
+    </div>
+
+  </div><!-- /.app-content -->
+
+  <!-- BOTTOM NAV -->
+  <nav class="bottom-nav" id="bottomNav">
+    <button class="nav-item active" id="navEvents" onclick="switchTab('events')">
+      <i class="bi bi-calendar-event"></i>
+      <span>Events</span>
+    </button>
+    <button class="nav-item" id="navFriends" onclick="switchTab('friends')">
+      <i class="bi bi-people"></i>
+      <span>Friends</span>
+    </button>
+    <button class="nav-item" id="navAdmin" onclick="switchTab('admin')" style="display:none;">
+      <i class="bi bi-shield-check"></i>
+      <span>Admin</span>
+    </button>
+  </nav>
+
+  <!-- FAB -->
+  <button class="fab" id="mainFab" onclick="handleFab()">
+    <i class="bi bi-plus-lg"></i>
+  </button>
+</div>
+
+<!-- =========================================================
+     MODALS
+========================================================= -->
+
+<!-- New Event Modal -->
+<div class="modal fade" id="modalNewEvent" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-calendar-plus me-2" style="color:var(--primary)"></i>New Event</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label">Event Name</label>
+        <input type="text" class="form-control" id="newEventName" placeholder="e.g. Trip to Chiang Mai" />
+      </div>
+      <div class="modal-footer">
+        <button class="btn-cancel" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn-submit" onclick="submitNewEvent()">Create</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- New Friend Modal -->
+<div class="modal fade" id="modalNewFriend" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-person-plus me-2" style="color:var(--primary)"></i>Add Friend</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label">Friend's Name</label>
+        <input type="text" class="form-control" id="newFriendName" placeholder="e.g. Sarah" />
+      </div>
+      <div class="modal-footer">
+        <button class="btn-cancel" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn-submit" onclick="submitNewFriend()">Add</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Transaction Modal -->
+<div class="modal fade" id="modalAddTx" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-plus-circle me-2" style="color:var(--primary)"></i>Add Transaction</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Description</label>
+          <input type="text" class="form-control" id="txDesc" placeholder="e.g. Dinner at restaurant" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Total Amount (฿)</label>
+          <input type="number" class="form-control" id="txAmount" placeholder="0.00" min="0" step="0.01" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Paid by</label>
+          <select class="form-select" id="txPaidBy"></select>
+        </div>
+        <div class="mb-1">
+          <label class="form-label">Shared by</label>
+          <div class="d-flex gap-2 mb-2">
+            <button type="button" class="btn btn-sm" style="border-radius:8px;border:1.5px solid var(--primary);color:var(--primary);font-size:0.78rem;" onclick="checkAllFriends(true)">All</button>
+            <button type="button" class="btn btn-sm" style="border-radius:8px;border:1.5px solid #ccc;color:#888;font-size:0.78rem;" onclick="checkAllFriends(false)">None</button>
+          </div>
+          <div class="check-list" id="txSharedBy"></div>
+        </div>
+        <div id="txPerPersonInfo" class="mt-3 text-center" style="font-size:0.85rem;color:#888;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-cancel" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn-submit" onclick="submitAddTx()">Add</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Delete Modal -->
+<div class="modal fade" id="modalConfirm" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="confirmTitle">Confirm Delete</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p id="confirmMsg" style="color:#555;font-size:0.93rem;"></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-cancel" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-danger" style="border-radius:10px;" id="confirmOkBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ================================================================
+// STATE
+// ================================================================
+var TOKEN = localStorage.getItem('su_token') || null;
+var SESSION = JSON.parse(localStorage.getItem('su_session') || 'null');
+var currentTab = 'events';
+var currentEvent = null; // { id, name }
+var currentDetailTab = 'tx';
+var friendsCache = [];
+var eventsCache = [];
+var detailsCache = [];
+
+// ================================================================
+// HELPERS
+// ================================================================
+function gscRun(fn) {
+  return new Promise(function(resolve, reject) {
+    google.script.run
+      .withSuccessHandler(resolve)
+      .withFailureHandler(reject)
+      [fn].apply(google.script.run, Array.prototype.slice.call(arguments, 1));
+  });
+}
+
+function gsc(fn) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  return new Promise(function(resolve, reject) {
+    var runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
+    runner[fn].apply(runner, args);
+  });
+}
+
+function showLoading(v) {
+  document.getElementById('loadingOverlay').classList.toggle('hidden', !v);
+}
+
+function showToast(msg, type) {
+  type = type || 'success';
+  var icons = { success: 'bi-check-circle-fill', danger: 'bi-x-circle-fill', warning: 'bi-exclamation-triangle-fill' };
+  var toast = document.createElement('div');
+  toast.className = 'su-toast ' + type;
+  toast.innerHTML = '<i class="bi ' + icons[type] + '"></i><span>' + escHtml(msg) + '</span>';
+  document.getElementById('toastContainer').appendChild(toast);
+  setTimeout(function() { toast.remove(); }, 3500);
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  try {
+    var d = new Date(iso);
+    return d.toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'numeric' });
+  } catch(e) { return iso; }
+}
+
+function fmtDatetime(iso) {
+  if (!iso) return '';
+  try {
+    var d = new Date(iso);
+    return d.toLocaleString('th-TH', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  } catch(e) { return iso; }
+}
+
+function avatarLetter(name) {
+  return (name || '?').charAt(0).toUpperCase();
+}
+
+// ================================================================
+// AUTH PAGES
+// ================================================================
+function showPage(page) {
+  document.getElementById('loginCard').style.display = page === 'login' ? '' : 'none';
+  document.getElementById('registerCard').style.display = page === 'register' ? '' : 'none';
+}
+
+function togglePw(inputId, btn) {
+  var inp = document.getElementById(inputId);
+  var isText = inp.type === 'text';
+  inp.type = isText ? 'password' : 'text';
+  btn.querySelector('i').className = 'bi bi-eye' + (isText ? '' : '-slash');
+}
+
+async function handleLogin(e) {
+  e.preventDefault();
+  var username = document.getElementById('loginUsername').value.trim();
+  var password = document.getElementById('loginPassword').value;
+  if (!username || !password) return;
+  showLoading(true);
+  try {
+    var res = await gsc('loginUser', username, password);
+    if (res.success) {
+      TOKEN = res.token;
+      SESSION = res.user;
+      localStorage.setItem('su_token', TOKEN);
+      localStorage.setItem('su_session', JSON.stringify(SESSION));
+      initApp();
+    } else {
+      showToast(res.error || 'Login failed', 'danger');
+    }
+  } catch(err) {
+    showToast('Error: ' + err, 'danger');
+  }
+  showLoading(false);
+}
+
+async function handleRegister(e) {
+  e.preventDefault();
+  var displayName = document.getElementById('regDisplayName').value.trim();
+  var username = document.getElementById('regUsername').value.trim();
+  var password = document.getElementById('regPassword').value;
+  if (!displayName || !username || !password) return;
+  showLoading(true);
+  try {
+    var res = await gsc('registerUser', displayName, username, password);
+    if (res.success) {
+      showToast('Account created! Please sign in.', 'success');
+      document.getElementById('registerForm').reset();
+      showPage('login');
+    } else {
+      showToast(res.error || 'Registration failed', 'danger');
+    }
+  } catch(err) {
+    showToast('Error: ' + err, 'danger');
+  }
+  showLoading(false);
+}
+
+async function handleLogout() {
+  showLoading(true);
+  try { await gsc('logoutUser', TOKEN); } catch(e) {}
+  TOKEN = null; SESSION = null;
+  localStorage.removeItem('su_token');
+  localStorage.removeItem('su_session');
+  document.getElementById('appSection').style.display = 'none';
+  document.getElementById('authSection').style.display = 'flex';
+  showPage('login');
+  document.getElementById('loginForm').reset();
+  showLoading(false);
+}
+
+// ================================================================
+// APP INIT
+// ================================================================
+function initApp() {
+  document.getElementById('authSection').style.display = 'none';
+  document.getElementById('appSection').style.display = 'block';
+  document.getElementById('headerUser').textContent = SESSION.displayName || SESSION.username;
+
+  // Show admin nav if admin
+  if (SESSION.role === 'admin') {
+    document.getElementById('navAdmin').style.display = '';
+  } else {
+    document.getElementById('navAdmin').style.display = 'none';
+  }
+
+  currentTab = 'events';
+  currentEvent = null;
+  switchTab('events');
+}
+
+// ================================================================
+// NAVIGATION
+// ================================================================
+function switchTab(tab) {
+  currentTab = tab;
+  currentEvent = null;
+
+  // Update header
+  setHeader(tab === 'events' ? 'Events' : tab === 'friends' ? 'Friends' : 'Admin', false);
+
+  // Show/hide panels
+  document.getElementById('tabEvents').style.display = tab === 'events' ? '' : 'none';
+  document.getElementById('tabEventDetail').style.display = 'none';
+  document.getElementById('tabFriends').style.display = tab === 'friends' ? '' : 'none';
+  document.getElementById('tabAdmin').style.display = tab === 'admin' ? '' : 'none';
+
+  // FAB visibility
+  document.getElementById('mainFab').classList.toggle('hidden', tab === 'admin');
+
+  // Bottom nav active
+  ['navEvents','navFriends','navAdmin'].forEach(function(id) {
+    document.getElementById(id).classList.remove('active');
+  });
+  var navMap = { events:'navEvents', friends:'navFriends', admin:'navAdmin' };
+  if (navMap[tab]) document.getElementById(navMap[tab]).classList.add('active');
+
+  // Load data
+  if (tab === 'events') loadEvents();
+  if (tab === 'friends') loadFriends();
+  if (tab === 'admin') loadAccounts();
+}
+
+function openEventDetail(ev) {
+  currentEvent = ev;
+  currentDetailTab = 'tx';
+  setHeader(ev.name, true);
+
+  document.getElementById('tabEvents').style.display = 'none';
+  document.getElementById('tabFriends').style.display = 'none';
+  document.getElementById('tabAdmin').style.display = 'none';
+  document.getElementById('tabEventDetail').style.display = '';
+  document.getElementById('mainFab').classList.remove('hidden');
+
+  // Reset tabs
+  document.getElementById('tabTxBtn').classList.add('active');
+  document.getElementById('tabSumBtn').classList.remove('active');
+  document.getElementById('detailTxPanel').style.display = '';
+  document.getElementById('detailSumPanel').style.display = 'none';
+
+  loadDetails(ev.id);
+  loadFriends(); // prefetch friends for add-tx modal
+}
+
+function goBack() {
+  currentEvent = null;
+  switchTab('events');
+}
+
+function setHeader(title, isDetail) {
+  document.getElementById('headerTitle').textContent = title;
+  var header = document.getElementById('appHeader');
+  if (isDetail) {
+    header.classList.add('has-back');
+  } else {
+    header.classList.remove('has-back');
+  }
+}
+
+function switchDetailTab(tab) {
+  currentDetailTab = tab;
+  document.getElementById('tabTxBtn').classList.toggle('active', tab === 'tx');
+  document.getElementById('tabSumBtn').classList.toggle('active', tab === 'sum');
+  document.getElementById('detailTxPanel').style.display = tab === 'tx' ? '' : 'none';
+  document.getElementById('detailSumPanel').style.display = tab === 'sum' ? '' : 'none';
+  if (tab === 'sum' && currentEvent) loadSummary(currentEvent.id);
+}
+
+// ================================================================
+// FAB
+// ================================================================
+function handleFab() {
+  if (currentEvent) {
+    // Add transaction
+    openAddTxModal();
+  } else if (currentTab === 'friends') {
+    openModal('modalNewFriend');
+    document.getElementById('newFriendName').value = '';
+    setTimeout(function() { document.getElementById('newFriendName').focus(); }, 300);
+  } else if (currentTab === 'events') {
+    openModal('modalNewEvent');
+    document.getElementById('newEventName').value = '';
+    setTimeout(function() { document.getElementById('newEventName').focus(); }, 300);
+  }
+}
+
+function openModal(id) {
+  var el = document.getElementById(id);
+  var m = bootstrap.Modal.getOrCreateInstance(el);
+  m.show();
+}
+function closeModal(id) {
+  var el = document.getElementById(id);
+  var m = bootstrap.Modal.getInstance(el);
+  if (m) m.hide();
+}
+
+// ================================================================
+// EVENTS
+// ================================================================
+async function loadEvents() {
+  showLoading(true);
+  try {
+    var res = await gsc('getEvents', TOKEN);
+    if (res.success) {
+      eventsCache = res.events || [];
+      renderEvents();
+    } else {
+      showToast(res.error || 'Failed to load events', 'danger');
+    }
+  } catch(e) { showToast('Error: ' + e, 'danger'); }
+  showLoading(false);
+}
+
+function renderEvents() {
+  var el = document.getElementById('eventsList');
+  if (!eventsCache.length) {
+    el.innerHTML = '<div class="empty-state"><i class="bi bi-calendar-x"></i><p>No events yet.<br>Tap + to create one.</p></div>';
+    return;
+  }
+  el.innerHTML = eventsCache.map(function(ev) {
+    return '<div class="su-card"><div class="event-card" onclick="openEventDetail(' + escHtml(JSON.stringify(ev)) + ')">' +
+      '<div class="ev-icon"><i class="bi bi-calendar-event"></i></div>' +
+      '<div style="flex:1;min-width:0;">' +
+        '<div class="ev-name">' + escHtml(ev.name) + '</div>' +
+        '<div class="ev-date"><i class="bi bi-clock" style="font-size:0.7rem;"></i> ' + fmtDate(ev.createdAt) + '</div>' +
+      '</div>' +
+      '<div class="ev-actions">' +
+        '<button class="btn-icon" onclick="event.stopPropagation();confirmDelete(\'event\',\'' + ev.id + '\',\'' + escHtml(ev.name) + '\')" title="Delete"><i class="bi bi-trash3"></i></button>' +
+      '</div>' +
+    '</div></div>';
+  }).join('');
+}
+
+async function submitNewEvent() {
+  var name = document.getElementById('newEventName').value.trim();
+  if (!name) { showToast('Please enter event name', 'warning'); return; }
+  closeModal('modalNewEvent');
+  showLoading(true);
+  try {
+    var res = await gsc('addEvent', TOKEN, name);
+    if (res.success) {
+      showToast('Event created!', 'success');
+      loadEvents();
+    } else {
+      showToast(res.error || 'Failed', 'danger');
+    }
+  } catch(e) { showToast('Error: ' + e, 'danger'); }
+  showLoading(false);
+}
+
+// ================================================================
+// FRIENDS
+// ================================================================
+async function loadFriends() {
+  showLoading(true);
+  try {
+    var res = await gsc('getFriends', TOKEN);
+    if (res.success) {
+      friendsCache = res.friends || [];
+      if (currentTab === 'friends') renderFriends();
+    } else {
+      showToast(res.error || 'Failed to load friends', 'danger');
+    }
+  } catch(e) { showToast('Error: ' + e, 'danger'); }
+  showLoading(false);
+}
+
+function renderFriends() {
+  var el = document.getElementById('friendsList');
+  if (!friendsCache.length) {
+    el.innerHTML = '<div class="empty-state"><i class="bi bi-people"></i><p>No friends yet.<br>Tap + to add one.</p></div>';
+    return;
+  }
+  el.innerHTML = friendsCache.map(function(f, idx) {
+    var isMe = f.name === 'Me';
+    return (idx > 0 ? '<div class="su-divider"></div>' : '') +
+      '<div class="friend-item">' +
+        '<div class="friend-avatar">' + avatarLetter(f.name) + '</div>' +
+        '<span class="friend-name">' + escHtml(f.name) + (isMe ? '<span class="friend-me">Me</span>' : '') + '</span>' +
+        (!isMe ? '<button class="btn-icon" onclick="confirmDelete(\'friend\',\'' + f.id + '\',\'' + escHtml(f.name) + '\')" title="Delete"><i class="bi bi-trash3"></i></button>' : '') +
+      '</div>';
+  }).join('');
+}
+
+async function submitNewFriend() {
+  var name = document.getElementById('newFriendName').value.trim();
+  if (!name) { showToast('Please enter a name', 'warning'); return; }
+  closeModal('modalNewFriend');
+  showLoading(true);
+  try {
+    var res = await gsc('addFriend', TOKEN, name);
+    if (res.success) {
+      showToast('Friend added!', 'success');
+      loadFriends();
+    } else {
+      showToast(res.error || 'Failed', 'danger');
+    }
+  } catch(e) { showToast('Error: ' + e, 'danger'); }
+  showLoading(false);
+}
+
+// ================================================================
+// DETAILS / TRANSACTIONS
+// ================================================================
+async function loadDetails(eventId) {
+  showLoading(true);
+  try {
+    var res = await gsc('getDetails', TOKEN, eventId);
+    if (res.success) {
+      detailsCache = res.details || [];
+      renderDetails();
+    } else {
+      showToast(res.error || 'Failed to load transactions', 'danger');
+    }
+  } catch(e) { showToast('Error: ' + e, 'danger'); }
+  showLoading(false);
+}
+
+function renderDetails() {
+  var el = document.getElementById('txList');
+  if (!detailsCache.length) {
+    el.innerHTML = '<div class="empty-state"><i class="bi bi-receipt"></i><p>No transactions yet.<br>Tap + to add one.</p></div>';
+    return;
+  }
+
+  // Build friendMap
+  var friendMap = {};
+  friendsCache.forEach(function(f) { friendMap[f.id] = f.name; });
+
+  // Group by transactionId
+  var groups = {};
+  var order = [];
+  detailsCache.forEach(function(d) {
+    if (!groups[d.transactionId]) {
+      groups[d.transactionId] = [];
+      order.push(d.transactionId);
+    }
+    groups[d.transactionId].push(d);
+  });
+
+  // Newest transaction first
+  order.reverse();
+
+  el.innerHTML = order.map(function(txId) {
+    var rows = groups[txId];
+    var first = rows[0];
+    var payerName = friendMap[first.payId] || first.payId;
+    var totalAmount = first.totalAmount;
+    var desc = first.description || 'Transaction';
+    var date = first.createdAt;
+    var participants = rows.map(function(r) { return friendMap[r.friendId] || r.friendId; });
+
+    return '<div class="su-card"><div class="tx-card">' +
+      '<div class="tx-header">' +
+        '<div class="tx-desc">' + escHtml(desc) + '</div>' +
+        '<div class="tx-amount">฿' + parseFloat(totalAmount).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</div>' +
+      '</div>' +
+      '<div class="tx-paid-by">Paid by <span>' + escHtml(payerName) + '</span></div>' +
+      '<div class="tx-participants">' +
+        participants.map(function(p) { return '<span class="tx-chip">' + escHtml(p) + '</span>'; }).join('') +
+      '</div>' +
+      '<div class="tx-footer">' +
+        '<span class="tx-date"><i class="bi bi-clock" style="font-size:0.68rem;"></i> ' + fmtDate(date) + '</span>' +
+        '<button class="btn-icon" onclick="confirmDelete(\'tx\',\'' + txId + '\',\'' + escHtml(desc) + '\')" title="Delete"><i class="bi bi-trash3"></i></button>' +
+      '</div>' +
+    '</div></div>';
+  }).join('');
+}
+
+function openAddTxModal() {
+  // Populate paid-by dropdown
+  var sel = document.getElementById('txPaidBy');
+  sel.innerHTML = friendsCache.map(function(f) {
+    return '<option value="' + escHtml(f.id) + '">' + escHtml(f.name) + '</option>';
+  }).join('');
+
+  // Populate shared-by checkboxes (all checked by default)
+  var checkList = document.getElementById('txSharedBy');
+  checkList.innerHTML = friendsCache.map(function(f) {
+    return '<div class="check-item">' +
+      '<input type="checkbox" id="cb_' + f.id + '" value="' + escHtml(f.id) + '" checked onchange="updatePerPerson()" />' +
+      '<label for="cb_' + f.id + '">' + escHtml(f.name) + '</label>' +
+    '</div>';
+  }).join('');
+
+  document.getElementById('txDesc').value = '';
+  document.getElementById('txAmount').value = '';
+  document.getElementById('txPerPersonInfo').textContent = '';
+
+  openModal('modalAddTx');
+  setTimeout(function() { document.getElementById('txDesc').focus(); }, 300);
+
+  // Live update per-person
+  document.getElementById('txAmount').oninput = updatePerPerson;
+}
+
+function checkAllFriends(val) {
+  document.querySelectorAll('#txSharedBy input[type=checkbox]').forEach(function(cb) { cb.checked = val; });
+  updatePerPerson();
+}
+
+function updatePerPerson() {
+  var amount = parseFloat(document.getElementById('txAmount').value) || 0;
+  var checked = document.querySelectorAll('#txSharedBy input[type=checkbox]:checked').length;
+  var el = document.getElementById('txPerPersonInfo');
+  if (amount > 0 && checked > 0) {
+    var pp = amount / checked;
+    el.textContent = '฿' + pp.toFixed(2) + ' per person (' + checked + ' people)';
+  } else {
+    el.textContent = '';
+  }
+}
+
+async function submitAddTx() {
+  var desc = document.getElementById('txDesc').value.trim();
+  var amount = parseFloat(document.getElementById('txAmount').value);
+  var payId = document.getElementById('txPaidBy').value;
+  var checked = Array.from(document.querySelectorAll('#txSharedBy input[type=checkbox]:checked')).map(function(cb) { return cb.value; });
+
+  if (!desc) { showToast('Please enter a description', 'warning'); return; }
+  if (!amount || amount <= 0) { showToast('Please enter a valid amount', 'warning'); return; }
+  if (!payId) { showToast('Please select who paid', 'warning'); return; }
+  if (!checked.length) { showToast('Please select at least one participant', 'warning'); return; }
+
+  closeModal('modalAddTx');
+  showLoading(true);
+  try {
+    var res = await gsc('addDetail', TOKEN, currentEvent.id, payId, checked, amount, desc);
+    if (res.success) {
+      showToast('Transaction added!', 'success');
+      loadDetails(currentEvent.id);
+    } else {
+      showToast(res.error || 'Failed', 'danger');
+    }
+  } catch(e) { showToast('Error: ' + e, 'danger'); }
+  showLoading(false);
+}
+
+// ================================================================
+// SUMMARY
+// ================================================================
+async function loadSummary(eventId) {
+  showLoading(true);
+  try {
+    var res = await gsc('getSummary', TOKEN, eventId);
+    if (res.success) {
+      renderSummary(res.settlements || []);
+    } else {
+      showToast(res.error || 'Failed to load summary', 'danger');
+    }
+  } catch(e) { showToast('Error: ' + e, 'danger'); }
+  showLoading(false);
+}
+
+function renderSummary(settlements) {
+  var el = document.getElementById('summaryList');
+  if (!settlements.length) {
+    el.innerHTML = '<div class="empty-state"><i class="bi bi-check2-circle" style="color:var(--success);"></i><p>All settled up!<br>No payments needed.</p></div>';
+    return;
+  }
+  el.innerHTML = settlements.map(function(s) {
+    return '<div class="su-card"><div class="settlement-card">' +
+      '<div class="settle-from"><i class="bi bi-person-fill" style="font-size:0.85rem;margin-right:4px;"></i>' + escHtml(s.fromName) + '</div>' +
+      '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">' +
+        '<span class="settle-amount">฿' + parseFloat(s.amount).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</span>' +
+        '<i class="bi bi-arrow-right settle-arrow"></i>' +
+      '</div>' +
+      '<div class="settle-to">' + escHtml(s.toName) + '<i class="bi bi-person-fill" style="font-size:0.85rem;margin-left:4px;"></i></div>' +
+    '</div></div>';
+  }).join('');
+}
+
+// ================================================================
+// ADMIN
+// ================================================================
+async function loadAccounts() {
+  showLoading(true);
+  try {
+    var res = await gsc('getAllAccounts', TOKEN);
+    if (res.success) {
+      renderAccounts(res.accounts || []);
+    } else {
+      showToast(res.error || 'Forbidden', 'danger');
+    }
+  } catch(e) { showToast('Error: ' + e, 'danger'); }
+  showLoading(false);
+}
+
+function renderAccounts(accounts) {
+  var el = document.getElementById('accountsList');
+  if (!accounts.length) {
+    el.innerHTML = '<div class="empty-state"><i class="bi bi-people"></i><p>No accounts found.</p></div>';
+    return;
+  }
+  el.innerHTML = accounts.map(function(acc, idx) {
+    var isSelf = SESSION && acc.id === SESSION.id;
+    return '<div class="su-card"><div class="account-item">' +
+      '<div class="account-avatar">' + avatarLetter(acc.displayName) + '</div>' +
+      '<div class="account-info">' +
+        '<div class="account-name">' + escHtml(acc.displayName) + (isSelf ? ' <span style="font-size:0.7rem;color:var(--primary);background:rgba(108,99,255,0.1);border-radius:6px;padding:2px 7px;">You</span>' : '') + '</div>' +
+        '<div class="account-username">@' + escHtml(acc.username) + '</div>' +
+        '<div class="account-login">Last: ' + fmtDatetime(acc.lastLogin) + '</div>' +
+      '</div>' +
+      '<select class="role-select" onchange="changeRole(\'' + acc.id + '\',this.value)" ' + (isSelf ? 'disabled' : '') + '>' +
+        ['user','staff','admin'].map(function(r) {
+          return '<option value="' + r + '"' + (acc.role === r ? ' selected' : '') + '>' + r.charAt(0).toUpperCase() + r.slice(1) + '</option>';
+        }).join('') +
+      '</select>' +
+      (!isSelf ? '<button class="btn-icon" onclick="confirmDelete(\'account\',\'' + acc.id + '\',\'' + escHtml(acc.displayName) + '\')" title="Delete"><i class="bi bi-trash3"></i></button>' : '') +
+    '</div></div>';
+  }).join('');
+}
+
+async function changeRole(accountId, role) {
+  showLoading(true);
+  try {
+    var res = await gsc('updateAccountRole', TOKEN, accountId, role);
+    if (res.success) {
+      showToast('Role updated to ' + role, 'success');
+    } else {
+      showToast(res.error || 'Failed', 'danger');
+      loadAccounts(); // refresh to revert UI
+    }
+  } catch(e) { showToast('Error: ' + e, 'danger'); }
+  showLoading(false);
+}
+
+// ================================================================
+// DELETE CONFIRM
+// ================================================================
+var _pendingDelete = null;
+
+function confirmDelete(type, id, name) {
+  var msgs = {
+    event: 'Delete event "' + name + '"? All transactions will also be deleted.',
+    friend: 'Remove "' + name + '" from your friends?',
+    tx: 'Delete transaction "' + name + '"?',
+    account: 'Delete account "' + name + '"? This cannot be undone.'
+  };
+  document.getElementById('confirmMsg').textContent = msgs[type] || 'Are you sure?';
+  _pendingDelete = { type: type, id: id };
+  openModal('modalConfirm');
+}
+
+document.getElementById('confirmOkBtn').onclick = async function() {
+  if (!_pendingDelete) return;
+  var type = _pendingDelete.type;
+  var id = _pendingDelete.id;
+  _pendingDelete = null;
+  closeModal('modalConfirm');
+  showLoading(true);
+  try {
+    var res;
+    if (type === 'event') {
+      res = await gsc('deleteEvent', TOKEN, id);
+      if (res.success) { showToast('Event deleted', 'success'); loadEvents(); }
+    } else if (type === 'friend') {
+      res = await gsc('deleteFriend', TOKEN, id);
+      if (res.success) { showToast('Friend removed', 'success'); loadFriends(); }
+    } else if (type === 'tx') {
+      res = await gsc('deleteDetail', TOKEN, id);
+      if (res.success) { showToast('Transaction deleted', 'success'); if(currentEvent) loadDetails(currentEvent.id); }
+    } else if (type === 'account') {
+      res = await gsc('deleteAccount', TOKEN, id);
+      if (res.success) { showToast('Account deleted', 'success'); loadAccounts(); }
+    }
+    if (res && !res.success) showToast(res.error || 'Failed', 'danger');
+  } catch(e) { showToast('Error: ' + e, 'danger'); }
+  showLoading(false);
+};
+
+// ================================================================
+// ENTER KEY HANDLERS
+// ================================================================
+document.getElementById('newEventName').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') submitNewEvent();
+});
+document.getElementById('newFriendName').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') submitNewFriend();
+});
+
+// ================================================================
+// BOOT
+// ================================================================
+window.addEventListener('load', async function() {
+  showLoading(true);
+  if (TOKEN && SESSION) {
+    try {
+      var res = await gsc('getSessionUser', TOKEN);
+      if (res.success) {
+        SESSION = res.user;
+        localStorage.setItem('su_session', JSON.stringify(SESSION));
+        initApp();
+        showLoading(false);
+        return;
+      }
+    } catch(e) {}
+    // Session invalid
+    TOKEN = null; SESSION = null;
+    localStorage.removeItem('su_token');
+    localStorage.removeItem('su_session');
+  }
+  document.getElementById('authSection').style.display = 'flex';
+  showLoading(false);
+});
+</script>
+</body>
+</html>
