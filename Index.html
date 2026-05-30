@@ -444,6 +444,24 @@ select.inp option{background:#1a1935;color:#fff}
 }
 .sh-btn:active{opacity:.85}
 
+/* Split mode toggle */
+.split-toggle{display:flex;gap:4px;background:var(--s2);border:1px solid var(--bd);border-radius:16px;padding:4px;margin-bottom:4px}
+.smode-btn{flex:1;padding:11px 8px;font-size:14px;font-weight:600;border:none;background:none;color:var(--t3);border-radius:12px;transition:all .2s;letter-spacing:-.1px}
+.smode-btn.on{background:var(--p-dim);color:var(--p-lt);border:1px solid rgba(124,92,252,.28)}
+
+/* Custom amount rows */
+.ca-row{display:flex;align-items:center;gap:12px;background:var(--s2);border:1px solid var(--bd);border-radius:14px;padding:12px 14px;margin-bottom:8px}
+.ca-av{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;color:#fff;flex-shrink:0}
+.ca-name{flex:1;font-size:15px;font-weight:500;color:var(--t1)}
+.ca-inp-wrap{position:relative;flex-shrink:0}
+.ca-inp-sym{position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:14px;font-weight:700;color:var(--t2);pointer-events:none}
+.ca-inp{width:110px;height:40px;background:var(--s3);border:1.5px solid var(--bd);border-radius:11px;padding:0 10px 0 24px;font-size:15px;font-weight:700;color:var(--t1);text-align:right;outline:none;transition:border-color .2s}
+.ca-inp:focus{border-color:var(--p)}
+.ca-inp::placeholder{color:var(--t3);font-weight:400}
+.ca-total-box{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:var(--p-dim);border:1px solid rgba(124,92,252,.22);border-radius:14px;margin-top:4px;margin-bottom:2px}
+.ca-total-lbl{font-size:14px;font-weight:600;color:var(--t2)}
+.ca-total-val{font-size:20px;font-weight:800;color:var(--p-lt);letter-spacing:-.3px}
+
 /* Confirm / logout sheet */
 .cf-icon{
   width:68px;height:68px;border-radius:22px;
@@ -670,18 +688,57 @@ select.inp option{background:#1a1935;color:#fff}
   <div class="sh-pill"></div>
   <div class="sh-hd"><span class="sh-title">Add Transaction</span><button class="sh-close" onclick="closeSheets()">✕</button></div>
   <div class="sh-body">
-    <div class="inp-g"><label class="inp-lbl">Description</label><input class="inp" id="inpDesc" type="text" placeholder="e.g. Dinner at restaurant" autocomplete="off"/></div>
-    <div class="inp-g"><label class="inp-lbl">Total Amount (฿)</label><input class="inp" id="inpAmt" type="number" placeholder="0.00" min="0" step="0.01" oninput="calcPP()"/></div>
-    <div class="inp-g"><label class="inp-lbl">Who Paid?</label><select class="inp" id="inpPayer" onchange="calcPP()"></select></div>
+    <!-- Description -->
     <div class="inp-g">
+      <label class="inp-lbl">Description</label>
+      <input class="inp" id="inpDesc" type="text" placeholder="e.g. Dinner at restaurant" autocomplete="off"/>
+    </div>
+
+    <!-- Split type toggle -->
+    <div class="inp-g">
+      <label class="inp-lbl">Split Type</label>
+      <div class="split-toggle">
+        <button type="button" class="smode-btn on" id="modeEq" onclick="setSplitMode('equal')">⚖️ หารเท่า</button>
+        <button type="button" class="smode-btn" id="modeCus" onclick="setSplitMode('custom')">✏️ ระบุเอง</button>
+      </div>
+    </div>
+
+    <!-- EQUAL: total amount -->
+    <div class="inp-g" id="eqAmtG">
+      <label class="inp-lbl">Total Amount (฿)</label>
+      <input class="inp" id="inpAmt" type="number" placeholder="0.00" min="0" step="0.01" oninput="calcPP()"/>
+    </div>
+
+    <!-- Who paid (shared) -->
+    <div class="inp-g">
+      <label class="inp-lbl">Who Paid?</label>
+      <select class="inp" id="inpPayer" onchange="calcPP()"></select>
+    </div>
+
+    <!-- EQUAL: checkboxes -->
+    <div class="inp-g" id="eqSplitG">
       <label class="inp-lbl">Split Between</label>
-      <div class="ck-btns"><button type="button" class="ck-btn hi" onclick="ckAll(true)">Select All</button><button type="button" class="ck-btn" onclick="ckAll(false)">Clear</button></div>
+      <div class="ck-btns">
+        <button type="button" class="ck-btn hi" onclick="ckAll(true)">Select All</button>
+        <button type="button" class="ck-btn" onclick="ckAll(false)">Clear</button>
+      </div>
       <div class="ck-list" id="inpShared"></div>
     </div>
     <div class="pp-box" id="ppBox">
       <div class="pp-label">Each person pays</div>
       <div class="pp-amt" id="ppAmt">฿0.00</div>
     </div>
+
+    <!-- CUSTOM: per-person amount inputs -->
+    <div id="cusG" style="display:none">
+      <label class="inp-lbl" style="margin-bottom:10px">จำนวนเงินของแต่ละคน</label>
+      <div id="cusRows"></div>
+      <div class="ca-total-box">
+        <span class="ca-total-lbl">รวมทั้งหมด</span>
+        <span class="ca-total-val" id="cusTotalVal">฿0.00</span>
+      </div>
+    </div>
+
     <button class="sh-btn" onclick="submitTx()">Add Transaction</button>
   </div>
 </div>
@@ -918,16 +975,57 @@ function switchTab(t){
   if(t==='sum' && CUR_EV) loadSummary(CUR_EV.id);
 }
 
+// ── Split mode ───────────────────────────────
+var splitMode = 'equal';
+function setSplitMode(m){
+  splitMode = m;
+  document.getElementById('modeEq').classList.toggle('on', m==='equal');
+  document.getElementById('modeCus').classList.toggle('on', m==='custom');
+  document.getElementById('eqAmtG').style.display   = m==='equal' ? '' : 'none';
+  document.getElementById('eqSplitG').style.display = m==='equal' ? '' : 'none';
+  document.getElementById('ppBox').style.display    = 'none';
+  document.getElementById('cusG').style.display     = m==='custom' ? '' : 'none';
+  if(m==='custom') renderCustomRows();
+}
+function renderCustomRows(){
+  var el = document.getElementById('cusRows');
+  el.innerHTML = FRIENDS.map(function(f){
+    return '<div class="ca-row">'
+      +'<div class="ca-av" style="background:'+avCol(f.name)+'">'+initials(f.name)+'</div>'
+      +'<span class="ca-name">'+esc(f.name)+'</span>'
+      +'<div class="ca-inp-wrap">'
+      +'<span class="ca-inp-sym">฿</span>'
+      +'<input class="ca-inp" type="number" id="ca_'+esc(f.id)+'" data-id="'+esc(f.id)+'" placeholder="0" min="0" step="0.01" oninput="calcCustomTotal()"/>'
+      +'</div>'
+      +'</div>';
+  }).join('');
+  calcCustomTotal();
+}
+function calcCustomTotal(){
+  var t = 0;
+  document.querySelectorAll('#cusRows .ca-inp').forEach(function(inp){ t += parseFloat(inp.value)||0 });
+  document.getElementById('cusTotalVal').textContent = '฿'+t.toFixed(2);
+}
+
 // ── FAB handler ─────────────────────────────
 function handleFab(){
   if(CUR_EV){
     document.getElementById('inpDesc').value = '';
     document.getElementById('inpAmt').value = '';
     document.getElementById('ppBox').style.display = 'none';
+    // reset to equal mode
+    splitMode = 'equal';
+    document.getElementById('modeEq').classList.add('on');
+    document.getElementById('modeCus').classList.remove('on');
+    document.getElementById('eqAmtG').style.display = '';
+    document.getElementById('eqSplitG').style.display = '';
+    document.getElementById('cusG').style.display = 'none';
+    // populate payer dropdown
     var sel = document.getElementById('inpPayer');
     sel.innerHTML = FRIENDS.map(function(f){
       return '<option value="'+esc(f.id)+'">'+esc(f.name)+'</option>';
     }).join('');
+    // populate checkboxes
     var cl = document.getElementById('inpShared');
     cl.innerHTML = FRIENDS.map(function(f){
       return '<div class="ck-row checked" onclick="toggleCk(this)" data-id="'+esc(f.id)+'">'
@@ -1067,20 +1165,27 @@ function renderDetails(){
   ord.reverse();
   el.innerHTML = ord.map(function(tid){
     var rows=grp[tid], f=rows[0];
-    var pn = fm[f.payId] || f.payId;
+    var pn    = fm[f.payId] || f.payId;
     var total = parseFloat(f.totalAmount);
-    var desc = f.description || 'Transaction';
-    var parts = rows.map(function(r){ return fm[r.friendId]||r.friendId });
+    var desc  = f.description || 'Transaction';
+    // detect custom split: not all amounts equal
+    var isCustom = rows.some(function(r){ return Math.abs(parseFloat(r.amount) - parseFloat(rows[0].amount)) > 0.01 });
+    var chips = rows.map(function(r){
+      var name = fm[r.friendId]||r.friendId;
+      return isCustom
+        ? '<span class="tx-chip">'+esc(name)+' '+fmtAmt(r.amount)+'</span>'
+        : '<span class="tx-chip">'+esc(name)+'</span>';
+    });
     return '<div class="tx-card">'
       +'<div class="tx-head">'
       +'<div class="tx-av" style="background:'+avCol(pn)+'">'+initials(pn)+'</div>'
       +'<div class="tx-meta">'
       +'<div class="tx-desc">'+esc(desc)+'</div>'
-      +'<div class="tx-by">Paid by '+esc(pn)+'</div>'
+      +'<div class="tx-by">Paid by '+esc(pn)+(isCustom?' · ระบุเอง':'')+'</div>'
       +'</div>'
       +'<div class="tx-amt">'+fmtAmt(total)+'</div>'
       +'</div>'
-      +'<div class="tx-people">'+parts.map(function(p){return'<span class="tx-chip">'+esc(p)+'</span>'}).join('')+'</div>'
+      +'<div class="tx-people">'+chips.join('')+'</div>'
       +'<div class="tx-foot">'
       +'<span class="tx-date">'+fmtDate(f.createdAt)+'</span>'
       +'<button class="btn-del" onclick="askDel(\'tx\',\''+esc(tid)+'\',\''+esc(desc)+'\')"><svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>'
@@ -1109,15 +1214,38 @@ function calcPP(){
 }
 async function submitTx(){
   var desc = document.getElementById('inpDesc').value.trim();
-  var amt  = parseFloat(document.getElementById('inpAmt').value);
   var pay  = document.getElementById('inpPayer').value;
-  var sh   = Array.from(document.querySelectorAll('#inpShared input:checked')).map(function(c){return c.value});
   if(!desc){ toast('Please enter a description','warn'); return }
-  if(!amt||amt<=0){ toast('Please enter a valid amount','warn'); return }
-  if(!sh.length){ toast('Select at least one person','warn'); return }
+
+  var friendIds, totalAmount, customAmounts = null;
+
+  if(splitMode === 'equal'){
+    var amt = parseFloat(document.getElementById('inpAmt').value);
+    var sh  = Array.from(document.querySelectorAll('#inpShared input:checked')).map(function(c){return c.value});
+    if(!amt||amt<=0){ toast('Please enter a valid amount','warn'); return }
+    if(!sh.length){ toast('Select at least one person','warn'); return }
+    friendIds   = sh;
+    totalAmount = amt;
+  } else {
+    // custom mode
+    friendIds    = [];
+    customAmounts = {};
+    totalAmount  = 0;
+    document.querySelectorAll('#cusRows .ca-inp').forEach(function(inp){
+      var a = parseFloat(inp.value) || 0;
+      if(a > 0){
+        var id = inp.getAttribute('data-id');
+        friendIds.push(id);
+        customAmounts[id] = a;
+        totalAmount += a;
+      }
+    });
+    if(!friendIds.length){ toast('ระบุจำนวนเงินอย่างน้อย 1 คน','warn'); return }
+  }
+
   closeSheets();
   try{
-    var r = await gsc('addDetail', TK, CUR_EV.id, pay, sh, amt, desc);
+    var r = await gsc('addDetail', TK, CUR_EV.id, pay, friendIds, totalAmount, desc, customAmounts);
     if(r.success){ toast('Transaction added! 💸'); loadDetails(CUR_EV.id) }
     else toast(r.error,'err');
   } catch(e){ toast(''+e,'err') }

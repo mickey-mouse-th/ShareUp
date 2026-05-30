@@ -334,7 +334,7 @@ function getDetails(token, eventId) {
   }
 }
 
-function addDetail(token, eventId, payId, friendIds, totalAmount, description) {
+function addDetail(token, eventId, payId, friendIds, totalAmount, description, customAmounts) {
   try {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
@@ -344,10 +344,13 @@ function addDetail(token, eventId, payId, friendIds, totalAmount, description) {
     var total = parseFloat(totalAmount);
     var perPerson = total / friendIds.length;
 
-    // Store a row for each participant
     for (var i = 0; i < friendIds.length; i++) {
+      var fid = friendIds[i];
+      var amount = (customAmounts && customAmounts[fid] !== undefined)
+        ? parseFloat(customAmounts[fid])
+        : perPerson;
       var id = Utilities.getUuid();
-      sheet.appendRow([id, eventId, transactionId, payId, friendIds[i], perPerson, total, description, now]);
+      sheet.appendRow([id, eventId, transactionId, payId, fid, amount, total, description, now]);
     }
 
     return { success: true, transactionId: transactionId };
