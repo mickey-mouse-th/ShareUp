@@ -1,5 +1,6 @@
 <script>
 async function loadAccounts() {
+  $('#accountsList').html(skeletonHtml(3, 'acc'));
   try {
     var r = await gsc('getAllAccounts', TK);
     if (r.success) renderAccounts(r.accounts || []);

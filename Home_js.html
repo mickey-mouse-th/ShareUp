@@ -1,14 +1,15 @@
 <script>
-async function loadEvents() {
+async function loadHomeData() {
+  $('#eventsList').html(skeletonHtml(3, 'ev'));
   try {
-    var r = await gsc('getEvents', TK);
+    var r = await gsc('getHomeData', TK);
     if (r.success) {
-      EVENTS = r.events || [];
-      renderEvents();
+      EVENTS  = r.events  || [];
+      FRIENDS = r.friends || [];
       $('#stEvents').text(EVENTS.length);
-    } else {
-      toast(r.error, 'err');
-    }
+      $('#stFriends').text(FRIENDS.length);
+      renderEvents();
+    } else toast(r.error, 'err');
   } catch (e) { toast('' + e, 'err') }
 }
 
@@ -43,14 +44,11 @@ function renderEvents() {
 }
 
 $(function () {
-  // Open event detail (delegated since list is dynamic)
   $('#eventsList').on('click', '.ev-card', function (e) {
     if ($(e.target).closest('.btn-del').length) return;
     var ev = JSON.parse($(this).attr('data-ev'));
     openDetail(ev);
   });
-
-  // Delete event
   $('#eventsList').on('click', '.ev-del', function (e) {
     e.stopPropagation();
     askDel('event', $(this).data('id'), $(this).data('name'));

@@ -50,6 +50,38 @@ function fmtDate(iso) {
   catch (e) { return iso }
 }
 
+// ── Skeleton ─────────────────────────────────
+function skeletonHtml(count, type) {
+  var card;
+  if (type === 'ev') {
+    card = '<div class="sk-card"><div class="sk-row">' +
+      '<div class="sk-ic sk-pulse"></div>' +
+      '<div class="sk-lines"><div class="sk-line sk-w60 sk-pulse"></div><div class="sk-line sk-w35 sk-pulse"></div></div>' +
+      '<div class="sk-amt sk-pulse"></div></div></div>';
+  } else if (type === 'fr') {
+    card = '<div class="sk-card"><div class="sk-row">' +
+      '<div class="sk-av sk-pulse"></div>' +
+      '<div class="sk-lines"><div class="sk-line sk-w55 sk-pulse"></div><div class="sk-line sk-w35 sk-pulse"></div></div>' +
+      '</div></div>';
+  } else if (type === 'tx') {
+    card = '<div class="sk-card">' +
+      '<div class="sk-row" style="margin-bottom:10px">' +
+      '<div class="sk-av sk-pulse"></div>' +
+      '<div class="sk-lines"><div class="sk-line sk-w65 sk-pulse"></div><div class="sk-line sk-w40 sk-pulse"></div></div>' +
+      '<div class="sk-amt sk-pulse"></div></div>' +
+      '<div class="sk-chips"><div class="sk-chip sk-pulse"></div><div class="sk-chip sk-pulse"></div><div class="sk-chip sk-pulse"></div></div>' +
+      '</div>';
+  } else {
+    card = '<div class="sk-card"><div class="sk-row">' +
+      '<div class="sk-av sk-pulse"></div>' +
+      '<div class="sk-lines"><div class="sk-line sk-w60 sk-pulse"></div><div class="sk-line sk-w35 sk-pulse"></div></div>' +
+      '</div></div>';
+  }
+  var h = '<div class="sk-wrap">';
+  for (var i = 0; i < count; i++) h += card;
+  return h + '</div>';
+}
+
 // ── GAS Bridge ───────────────────────────────
 function gsc(fn) {
   var args = Array.prototype.slice.call(arguments, 1);
@@ -99,7 +131,7 @@ function goTab(tab) {
   $('.bnav-btn').removeClass('on');
   var navMap = { home: 'navEv', friends: 'navFr', admin: 'navAd' };
   if (navMap[tab]) $('#' + navMap[tab]).addClass('on');
-  if (tab === 'home')    { loadEvents(); loadFriends() }
+  if (tab === 'home')    { loadHomeData() }
   else if (tab === 'friends') { loadFriends() }
   else if (tab === 'admin')   { loadAccounts() }
 }
@@ -116,8 +148,7 @@ function openDetail(ev) {
   $('#tabTx').addClass('on'); $('#tabSum').removeClass('on');
   $('#panelTx').show(); $('#panelSum').hide();
   $('#fab').removeClass('hide');
-  loadDetails(ev.id);
-  loadFriends();
+  loadDetailData(ev.id);
 }
 
 function goBack() {

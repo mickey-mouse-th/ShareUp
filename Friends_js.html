@@ -1,5 +1,6 @@
 <script>
 async function loadFriends() {
+  if (CUR_TAB === 'friends') $('#friendsList').html(skeletonHtml(4, 'fr'));
   try {
     var r = await gsc('getFriends', TK);
     if (r.success) {

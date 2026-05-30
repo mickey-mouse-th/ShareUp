@@ -1,9 +1,13 @@
 <script>
-async function loadDetails(id) {
+async function loadDetailData(id) {
+  $('#txList').html(skeletonHtml(3, 'tx'));
   try {
-    var r = await gsc('getDetails', TK, id);
-    if (r.success) { DETAILS = r.details || []; renderDetails(); }
-    else toast(r.error, 'err');
+    var r = await gsc('getDetailData', TK, id);
+    if (r.success) {
+      DETAILS = r.details || [];
+      FRIENDS = r.friends || [];
+      renderDetails();
+    } else toast(r.error, 'err');
   } catch (e) { toast('' + e, 'err') }
 }
 
@@ -61,6 +65,7 @@ function renderDetails() {
 }
 
 async function loadSummary(id) {
+  $('#sumList').html(skeletonHtml(2, 'sum'));
   try {
     var r = await gsc('getSummary', TK, id);
     if (r.success) renderSummary(r.settlements || []);
@@ -104,7 +109,6 @@ function renderSummary(ss) {
 $(function () {
   $('#tabTx').on('click', function () { switchTab('tx') });
   $('#tabSum').on('click', function () { switchTab('sum') });
-
   $('#txList').on('click', '.tx-del', function (e) {
     e.stopPropagation();
     askDel('tx', $(this).data('tid'), $(this).data('desc'));

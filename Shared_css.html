@@ -149,4 +149,23 @@ button,input,select,textarea{font:inherit;-webkit-appearance:none}
 .empty-icon svg{width:42px;height:42px;fill:var(--p-lt)}
 .empty-t{font-size:19px;font-weight:700;color:var(--t1);margin-bottom:8px;letter-spacing:-.3px}
 .empty-s{font-size:15px;color:var(--t2);line-height:1.6}
+
+/* ── Skeleton Loader ─────────────────────────── */
+.sk-wrap{display:flex;flex-direction:column;gap:12px}
+.sk-card{background:var(--s1);border:1px solid var(--bd);border-radius:22px;padding:16px 18px}
+.sk-row{display:flex;align-items:center;gap:14px}
+.sk-ic{width:58px;height:58px;border-radius:18px;flex-shrink:0}
+.sk-av{width:50px;height:50px;border-radius:50%;flex-shrink:0}
+.sk-lines{flex:1;display:flex;flex-direction:column;gap:9px}
+.sk-line{height:13px;border-radius:7px}
+.sk-w65{width:65%}.sk-w55{width:55%}.sk-w60{width:60%}.sk-w40{width:40%}.sk-w35{width:35%}
+.sk-amt{width:72px;height:22px;border-radius:8px;flex-shrink:0}
+.sk-chips{display:flex;gap:8px;margin-top:12px}
+.sk-chip{height:26px;width:72px;border-radius:20px}
+.sk-pulse{
+  background:linear-gradient(90deg,var(--s2) 25%,var(--s3) 50%,var(--s2) 75%);
+  background-size:200% 100%;
+  animation:sk-shimmer 1.5s ease-in-out infinite;
+}
+@keyframes sk-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 </style>

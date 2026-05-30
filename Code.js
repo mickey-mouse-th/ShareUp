@@ -243,6 +243,51 @@ function requireAuth(token) {
 }
 
 // ----------------------------------------------------------------
+// Combined data fetchers (reduce round-trips)
+// ----------------------------------------------------------------
+
+function getHomeData(token) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    var evData = ss.getSheetByName('Events').getDataRange().getValues();
+    var frData = ss.getSheetByName('Friends').getDataRange().getValues();
+    var events = [], friends = [];
+    for (var i = 1; i < evData.length; i++) {
+      if (evData[i][2] === user.id)
+        events.push({ id: evData[i][0], name: evData[i][1], accountId: evData[i][2], createdAt: evData[i][3] });
+    }
+    events.sort(function(a,b){ return b.createdAt > a.createdAt ? 1 : -1 });
+    for (var i = 1; i < frData.length; i++) {
+      if (frData[i][1] === user.id)
+        friends.push({ id: frData[i][0], accountId: frData[i][1], name: frData[i][2] });
+    }
+    return { success: true, events: events, friends: friends };
+  } catch (e) { return { success: false, error: e.toString() } }
+}
+
+function getDetailData(token, eventId) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    var dtData = ss.getSheetByName('Details').getDataRange().getValues();
+    var frData = ss.getSheetByName('Friends').getDataRange().getValues();
+    var details = [], friends = [];
+    for (var i = 1; i < dtData.length; i++) {
+      if (dtData[i][1] === eventId)
+        details.push({ id: dtData[i][0], eventId: dtData[i][1], transactionId: dtData[i][2],
+          payId: dtData[i][3], friendId: dtData[i][4], amount: dtData[i][5],
+          totalAmount: dtData[i][6], description: dtData[i][7], createdAt: dtData[i][8] });
+    }
+    for (var i = 1; i < frData.length; i++) {
+      if (frData[i][1] === user.id)
+        friends.push({ id: frData[i][0], accountId: frData[i][1], name: frData[i][2] });
+    }
+    return { success: true, details: details, friends: friends };
+  } catch (e) { return { success: false, error: e.toString() } }
+}
+
+// ----------------------------------------------------------------
 // Friends
 // ----------------------------------------------------------------
 
