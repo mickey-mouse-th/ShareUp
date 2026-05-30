@@ -110,7 +110,7 @@ function loginUser(username, password) {
 
     for (var i = 1; i < data.length; i++) {
       var row = data[i];
-      if (row[2] === username && row[3] === hashed) {
+      if (row[2].toLowerCase() === username.toLowerCase() && row[3] === hashed) {
         // Update lastLogin
         sheet.getRange(i + 1, 6).setValue(new Date().toISOString());
 
@@ -139,7 +139,7 @@ function registerUser(displayName, username, password) {
 
     // Check username uniqueness
     for (var i = 1; i < data.length; i++) {
-      if (data[i][2] === username) {
+      if (data[i][2].toLowerCase() === username.toLowerCase()) {
         return { success: false, error: 'Username already taken' };
       }
     }
@@ -147,7 +147,7 @@ function registerUser(displayName, username, password) {
     var now = new Date().toISOString();
     var id = Utilities.getUuid();
     var hashed = hashPassword(password);
-    sheet.appendRow([id, displayName, username, hashed, now, now, 'user']);
+    sheet.appendRow([id, displayName, username.toLowerCase(), hashed, now, now, 'user']);
 
     // Create "Me" friend
     var friendsSheet = ss.getSheetByName('Friends');
