@@ -1,0 +1,59 @@
+<script>
+async function loadEvents() {
+  try {
+    var r = await gsc('getEvents', TK);
+    if (r.success) {
+      EVENTS = r.events || [];
+      renderEvents();
+      $('#stEvents').text(EVENTS.length);
+    } else {
+      toast(r.error, 'err');
+    }
+  } catch (e) { toast('' + e, 'err') }
+}
+
+function renderEvents() {
+  var $el = $('#eventsList');
+  if (!EVENTS.length) {
+    $el.html(
+      '<div class="empty">' +
+      '<div class="empty-icon"><svg viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5C3.89 3 3 3.9 3 5v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/></svg></div>' +
+      '<div class="empty-t">No events yet</div>' +
+      '<div class="empty-s">Tap + to create your first shared expense event</div>' +
+      '</div>'
+    );
+    return;
+  }
+  var html = EVENTS.map(function (ev) {
+    return '<div class="ev-card" data-ev=\'' + esc(JSON.stringify(ev)) + '\'>' +
+      '<div class="ev-icon" style="background:' + evBg(ev.name) + '">' + evEmoji(ev.name) + '</div>' +
+      '<div class="ev-info">' +
+      '<div class="ev-name">' + esc(ev.name) + '</div>' +
+      '<div class="ev-date">' + fmtDate(ev.createdAt) + '</div>' +
+      '</div>' +
+      '<div class="ev-right">' +
+      '<div class="ev-chev"><svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></div>' +
+      '<button class="btn-del ev-del" data-id="' + esc(ev.id) + '" data-name="' + esc(ev.name) + '">' +
+      '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>' +
+      '</button>' +
+      '</div>' +
+      '</div>';
+  }).join('');
+  $el.html(html);
+}
+
+$(function () {
+  // Open event detail (delegated since list is dynamic)
+  $('#eventsList').on('click', '.ev-card', function (e) {
+    if ($(e.target).closest('.btn-del').length) return;
+    var ev = JSON.parse($(this).attr('data-ev'));
+    openDetail(ev);
+  });
+
+  // Delete event
+  $('#eventsList').on('click', '.ev-del', function (e) {
+    e.stopPropagation();
+    askDel('event', $(this).data('id'), $(this).data('name'));
+  });
+});
+</script>

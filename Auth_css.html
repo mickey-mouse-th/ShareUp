@@ -1,0 +1,51 @@
+<style>
+#authView{
+  min-height:100dvh;display:none;flex-direction:column;
+  align-items:center;justify-content:center;
+  padding:28px 20px calc(28px + var(--sb));
+  background:radial-gradient(ellipse 90% 50% at 50% -10%,rgba(124,92,252,.22) 0%,transparent 65%),var(--bg);
+}
+.auth-wrap{width:100%;max-width:400px}
+.auth-logo{display:flex;align-items:center;gap:14px;margin-bottom:36px}
+.auth-logo-ic{
+  width:52px;height:52px;border-radius:16px;
+  background:linear-gradient(135deg,#7C5CFC,#4F46E5);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 8px 24px rgba(124,92,252,.45);
+}
+.auth-logo-ic svg{width:28px;height:28px;fill:#fff}
+.auth-logo-name{font-size:22px;font-weight:800;letter-spacing:-.4px}
+.auth-logo-sub{font-size:13px;color:var(--t2);margin-top:2px}
+.auth-box{
+  background:rgba(255,255,255,.04);border:1px solid var(--bd2);border-radius:28px;
+  padding:28px 24px 24px;
+  box-shadow:0 24px 64px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.1);
+}
+.auth-h{font-size:24px;font-weight:800;letter-spacing:-.4px;margin-bottom:4px}
+.auth-s{font-size:15px;color:var(--t2);margin-bottom:26px}
+.fld{margin-bottom:16px}
+.fld-label{display:block;font-size:12px;font-weight:700;color:var(--t2);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px}
+.fld-row{position:relative}
+.fld-inp{
+  width:100%;height:54px;background:var(--s1);border:1.5px solid var(--bd);
+  border-radius:14px;padding:0 48px 0 18px;font-size:16px;color:var(--t1);
+  outline:none;transition:border-color .2s,background .2s;
+}
+.fld-inp::placeholder{color:var(--t3)}
+.fld-inp:focus{border-color:var(--p);background:var(--s2)}
+.pw-btn{
+  position:absolute;right:14px;top:50%;transform:translateY(-50%);
+  background:none;border:none;color:var(--t3);display:flex;align-items:center;padding:6px;cursor:pointer;
+}
+.pw-btn svg{width:22px;height:22px;fill:currentColor}
+.btn-primary{
+  width:100%;height:56px;border:none;border-radius:16px;
+  background:linear-gradient(135deg,#7C5CFC,#4F46E5);
+  color:#fff;font-size:17px;font-weight:700;letter-spacing:-.2px;
+  box-shadow:0 8px 24px rgba(124,92,252,.45);transition:transform .15s,box-shadow .15s;margin-top:6px;
+  cursor:pointer;
+}
+.btn-primary:active{transform:scale(.97);box-shadow:0 4px 12px rgba(124,92,252,.3)}
+.auth-foot{text-align:center;margin-top:20px;font-size:15px;color:var(--t2)}
+.auth-foot a{color:var(--p-lt);font-weight:700;text-decoration:none}
+</style>

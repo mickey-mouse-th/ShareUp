@@ -1,0 +1,97 @@
+<!-- Sheet: New Event -->
+<div class="sheet" id="shEvent">
+  <div class="sh-pill"></div>
+  <div class="sh-hd"><span class="sh-title">New Event</span><button class="sh-close" id="shEventClose">✕</button></div>
+  <div class="sh-body">
+    <div class="inp-g"><label class="inp-lbl">Event Name</label><input class="inp" id="inpEv" type="text" placeholder="e.g. Chiang Mai Trip" autocomplete="off"/></div>
+    <button class="sh-btn" id="btnSubmitEvent">Create Event</button>
+  </div>
+</div>
+
+<!-- Sheet: Add Friend -->
+<div class="sheet" id="shFriend">
+  <div class="sh-pill"></div>
+  <div class="sh-hd"><span class="sh-title">Add Friend</span><button class="sh-close" id="shFriendClose">✕</button></div>
+  <div class="sh-body">
+    <div class="inp-g"><label class="inp-lbl">Friend's Name</label><input class="inp" id="inpFr" type="text" placeholder="e.g. Sarah" autocomplete="off"/></div>
+    <button class="sh-btn" id="btnSubmitFriend">Add Friend</button>
+  </div>
+</div>
+
+<!-- Sheet: Add Transaction -->
+<div class="sheet" id="shTx">
+  <div class="sh-pill"></div>
+  <div class="sh-hd"><span class="sh-title">Add Transaction</span><button class="sh-close" id="shTxClose">✕</button></div>
+  <div class="sh-body">
+    <div class="inp-g">
+      <label class="inp-lbl">Description</label>
+      <input class="inp" id="inpDesc" type="text" placeholder="e.g. Dinner at restaurant" autocomplete="off"/>
+    </div>
+    <div class="inp-g">
+      <label class="inp-lbl">Split Type</label>
+      <div class="split-toggle">
+        <button type="button" class="smode-btn on" id="modeEq">⚖️ หารเท่า</button>
+        <button type="button" class="smode-btn" id="modeCus">✏️ ระบุเอง</button>
+      </div>
+    </div>
+    <div class="inp-g" id="eqAmtG">
+      <label class="inp-lbl">Total Amount (฿)</label>
+      <input class="inp" id="inpAmt" type="number" placeholder="0.00" min="0" step="0.01"/>
+    </div>
+    <div class="inp-g">
+      <label class="inp-lbl">Who Paid?</label>
+      <select class="inp" id="inpPayer"></select>
+    </div>
+    <div class="inp-g" id="eqSplitG">
+      <label class="inp-lbl">Split Between</label>
+      <div class="ck-btns">
+        <button type="button" class="ck-btn hi" id="btnCkAll">Select All</button>
+        <button type="button" class="ck-btn" id="btnCkNone">Clear</button>
+      </div>
+      <div class="ck-list" id="inpShared"></div>
+    </div>
+    <div class="pp-box" id="ppBox" style="display:none">
+      <div class="pp-label">Each person pays</div>
+      <div class="pp-amt" id="ppAmt">฿0.00</div>
+    </div>
+    <div id="cusG" style="display:none">
+      <label class="inp-lbl" style="margin-bottom:10px">จำนวนเงินของแต่ละคน</label>
+      <div id="cusRows"></div>
+      <div class="ca-total-box">
+        <span class="ca-total-lbl">รวมทั้งหมด</span>
+        <span class="ca-total-val" id="cusTotalVal">฿0.00</span>
+      </div>
+    </div>
+    <button class="sh-btn" id="btnSubmitTx">Add Transaction</button>
+  </div>
+</div>
+
+<!-- Sheet: Confirm Delete -->
+<div class="sheet" id="shConfirm">
+  <div class="sh-pill"></div>
+  <div class="sh-body" style="padding-top:28px">
+    <div class="cf-icon"><svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></div>
+    <div class="cf-title" id="cfTitle">Delete?</div>
+    <div class="cf-msg" id="cfMsg">This action cannot be undone.</div>
+    <div class="cf-btns">
+      <button class="btn-cancel" id="cfCancel">Cancel</button>
+      <button class="btn-confirm" id="cfOk">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sheet: Logout -->
+<div class="sheet" id="shLogout">
+  <div class="sh-pill"></div>
+  <div class="sh-body" style="padding-top:28px">
+    <div class="cf-icon" style="background:var(--p-dim);border-color:rgba(124,92,252,.22)">
+      <svg viewBox="0 0 24 24" style="fill:var(--p-lt)"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
+    </div>
+    <div class="cf-title">Sign Out?</div>
+    <div class="cf-msg" style="color:var(--t2)">You'll be returned to the login screen.</div>
+    <div class="cf-btns">
+      <button class="btn-cancel" id="logoutCancel">Cancel</button>
+      <button class="btn-confirm" style="background:var(--p);box-shadow:0 6px 20px rgba(124,92,252,.4)" id="btnDoLogout">Sign Out</button>
+    </div>
+  </div>
+</div>

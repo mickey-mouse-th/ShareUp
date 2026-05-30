@@ -1,0 +1,113 @@
+<script>
+async function loadDetails(id) {
+  try {
+    var r = await gsc('getDetails', TK, id);
+    if (r.success) { DETAILS = r.details || []; renderDetails(); }
+    else toast(r.error, 'err');
+  } catch (e) { toast('' + e, 'err') }
+}
+
+function renderDetails() {
+  var $el = $('#txList');
+  if (!DETAILS.length) {
+    $el.html(
+      '<div class="empty">' +
+      '<div class="empty-icon"><svg viewBox="0 0 24 24"><path d="M18 17H6v-2h12v2zm0-4H6v-2h12v2zm0-4H6V7h12v2zM3 22l1.5-1.5L6 22l1.5-1.5L9 22l1.5-1.5L12 22l1.5-1.5L15 22l1.5-1.5L18 22l1.5-1.5L21 22V2l-1.5 1.5L18 2l-1.5 1.5L15 2l-1.5 1.5L12 2l-1.5 1.5L9 2 7.5 3.5 6 2 4.5 3.5 3 2v20z"/></svg></div>' +
+      '<div class="empty-t">No transactions yet</div>' +
+      '<div class="empty-s">Tap + to record the first expense</div>' +
+      '</div>'
+    );
+    return;
+  }
+  var fm = {};
+  $.each(FRIENDS, function (_, f) { fm[f.id] = f.name });
+  var grp = {}, ord = [];
+  $.each(DETAILS, function (_, d) {
+    if (!grp[d.transactionId]) { grp[d.transactionId] = []; ord.push(d.transactionId) }
+    grp[d.transactionId].push(d);
+  });
+  ord.reverse();
+  var html = $.map(ord, function (tid) {
+    var rows = grp[tid], f = rows[0];
+    var pn    = fm[f.payId] || f.payId;
+    var total = parseFloat(f.totalAmount);
+    var desc  = f.description || 'Transaction';
+    var isCustom = $.grep(rows, function (r) {
+      return Math.abs(parseFloat(r.amount) - parseFloat(rows[0].amount)) > 0.01;
+    }).length > 0;
+    var chips = $.map(rows, function (r) {
+      var name = fm[r.friendId] || r.friendId;
+      return '<span class="tx-chip">' + esc(name) + (isCustom ? ' ' + fmtAmt(r.amount) : '') + '</span>';
+    }).join('');
+    return '<div class="tx-card">' +
+      '<div class="tx-head">' +
+      '<div class="tx-av" style="background:' + avCol(pn) + '">' + initials(pn) + '</div>' +
+      '<div class="tx-meta">' +
+      '<div class="tx-desc">' + esc(desc) + '</div>' +
+      '<div class="tx-by">Paid by ' + esc(pn) + (isCustom ? ' · ระบุเอง' : '') + '</div>' +
+      '</div>' +
+      '<div class="tx-amt">' + fmtAmt(total) + '</div>' +
+      '</div>' +
+      '<div class="tx-people">' + chips + '</div>' +
+      '<div class="tx-foot">' +
+      '<span class="tx-date">' + fmtDate(f.createdAt) + '</span>' +
+      '<button class="btn-del tx-del" data-tid="' + esc(tid) + '" data-desc="' + esc(desc) + '">' +
+      '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>' +
+      '</button>' +
+      '</div>' +
+      '</div>';
+  }).join('');
+  $el.html(html);
+}
+
+async function loadSummary(id) {
+  try {
+    var r = await gsc('getSummary', TK, id);
+    if (r.success) renderSummary(r.settlements || []);
+    else toast(r.error, 'err');
+  } catch (e) { toast('' + e, 'err') }
+}
+
+function renderSummary(ss) {
+  var $el = $('#sumList');
+  if (!ss.length) {
+    $el.html(
+      '<div class="empty">' +
+      '<div class="empty-icon" style="background:var(--g-dim);border-color:rgba(34,197,94,.2)">' +
+      '<svg viewBox="0 0 24 24" style="fill:var(--g)"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>' +
+      '</div>' +
+      '<div class="empty-t" style="color:var(--g)">All Settled! 🎉</div>' +
+      '<div class="empty-s">Everyone is even — no payments needed</div>' +
+      '</div>'
+    );
+    return;
+  }
+  var html = $.map(ss, function (x) {
+    return '<div class="settle-card">' +
+      '<div class="se-person">' +
+      '<div class="se-av" style="background:' + avCol(x.fromName) + '">' + initials(x.fromName) + '</div>' +
+      '<div class="se-name">' + esc(x.fromName) + '</div>' +
+      '</div>' +
+      '<div class="se-mid">' +
+      '<div class="se-label">owes <span class="se-arrow">→</span></div>' +
+      '<div class="se-amt">' + fmtAmt(x.amount) + '</div>' +
+      '</div>' +
+      '<div class="se-person">' +
+      '<div class="se-av" style="background:' + avCol(x.toName) + '">' + initials(x.toName) + '</div>' +
+      '<div class="se-name">' + esc(x.toName) + '</div>' +
+      '</div>' +
+      '</div>';
+  }).join('');
+  $el.html(html);
+}
+
+$(function () {
+  $('#tabTx').on('click', function () { switchTab('tx') });
+  $('#tabSum').on('click', function () { switchTab('sum') });
+
+  $('#txList').on('click', '.tx-del', function (e) {
+    e.stopPropagation();
+    askDel('tx', $(this).data('tid'), $(this).data('desc'));
+  });
+});
+</script>

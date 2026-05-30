@@ -1,0 +1,58 @@
+<script>
+async function loadAccounts() {
+  try {
+    var r = await gsc('getAllAccounts', TK);
+    if (r.success) renderAccounts(r.accounts || []);
+    else toast(r.error, 'err');
+  } catch (e) { toast('' + e, 'err') }
+}
+
+function renderAccounts(list) {
+  var $el = $('#accountsList');
+  if (!list.length) {
+    $el.html('<div class="empty"><div class="empty-t">No accounts found</div></div>');
+    return;
+  }
+  var html = $.map(list, function (a) {
+    var isMe = ME && a.id === ME.id;
+    var youBadge = isMe
+      ? ' <small style="font-size:11px;color:var(--p-lt);background:var(--p-dim);border-radius:6px;padding:2px 8px;border:1px solid rgba(124,92,252,.22)">You</small>'
+      : '';
+    var roles = ['user', 'staff', 'admin'].map(function (r) {
+      return '<option value="' + r + '"' + (a.role === r ? ' selected' : '') + '>' + r[0].toUpperCase() + r.slice(1) + '</option>';
+    }).join('');
+    var delBtn = !isMe
+      ? '<button class="btn-del acc-del" data-id="' + esc(a.id) + '" data-name="' + esc(a.displayName) + '">' +
+        '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>' +
+        '</button>'
+      : '';
+    return '<div class="acc-card"><div class="acc-row">' +
+      '<div class="acc-av" style="background:' + avCol(a.displayName) + '">' + initials(a.displayName) + '</div>' +
+      '<div class="acc-info">' +
+      '<div class="acc-name">' + esc(a.displayName) + youBadge + '</div>' +
+      '<div class="acc-user">@' + esc(a.username) + '</div>' +
+      '<div class="acc-date">' + fmtDate(a.lastLogin) + '</div>' +
+      '</div>' +
+      '<select class="role-sel" data-id="' + esc(a.id) + '"' + (isMe ? ' disabled' : '') + '>' + roles + '</select>' +
+      delBtn +
+      '</div></div>';
+  }).join('');
+  $el.html(html);
+}
+
+$(function () {
+  $('#accountsList').on('change', '.role-sel', async function () {
+    var id   = $(this).data('id');
+    var role = $(this).val();
+    try {
+      var r = await gsc('updateAccountRole', TK, id, role);
+      if (r.success) toast('Role updated');
+      else { toast(r.error, 'err'); loadAccounts(); }
+    } catch (e) { toast('' + e, 'err') }
+  });
+
+  $('#accountsList').on('click', '.acc-del', function () {
+    askDel('account', $(this).data('id'), $(this).data('name'));
+  });
+});
+</script>

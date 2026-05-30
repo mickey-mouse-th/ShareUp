@@ -1,0 +1,203 @@
+<script>
+var splitMode = 'equal';
+var _del = null;
+
+function setSplitMode(m) {
+  splitMode = m;
+  $('#modeEq').toggleClass('on', m === 'equal');
+  $('#modeCus').toggleClass('on', m === 'custom');
+  $('#eqAmtG').toggle(m === 'equal');
+  $('#eqSplitG').toggle(m === 'equal');
+  $('#ppBox').hide();
+  $('#cusG').toggle(m === 'custom');
+  if (m === 'custom') renderCustomRows();
+}
+
+function renderCustomRows() {
+  var html = $.map(FRIENDS, function (f) {
+    return '<div class="ca-row">' +
+      '<div class="ca-av" style="background:' + avCol(f.name) + '">' + initials(f.name) + '</div>' +
+      '<span class="ca-name">' + esc(f.name) + '</span>' +
+      '<div class="ca-inp-wrap">' +
+      '<span class="ca-inp-sym">฿</span>' +
+      '<input class="ca-inp" type="number" data-id="' + esc(f.id) + '" placeholder="0" min="0" step="0.01"/>' +
+      '</div>' +
+      '</div>';
+  }).join('');
+  $('#cusRows').html(html);
+  calcCustomTotal();
+}
+
+function calcCustomTotal() {
+  var t = 0;
+  $('#cusRows .ca-inp').each(function () { t += parseFloat($(this).val()) || 0 });
+  $('#cusTotalVal').text('฿' + t.toFixed(2));
+}
+
+function calcPP() {
+  var a = parseFloat($('#inpAmt').val()) || 0;
+  var c = $('#inpShared input:checked').length;
+  if (a > 0 && c > 0) {
+    $('#ppAmt').text('฿' + (a / c).toFixed(2));
+    $('#ppBox').show();
+  } else {
+    $('#ppBox').hide();
+  }
+}
+
+function handleFab() {
+  if (CUR_EV) {
+    $('#inpDesc').val('');
+    $('#inpAmt').val('');
+    $('#ppBox').hide();
+    splitMode = 'equal';
+    $('#modeEq').addClass('on'); $('#modeCus').removeClass('on');
+    $('#eqAmtG').show(); $('#eqSplitG').show(); $('#cusG').hide();
+    var payerHtml = $.map(FRIENDS, function (f) {
+      return '<option value="' + esc(f.id) + '">' + esc(f.name) + '</option>';
+    }).join('');
+    $('#inpPayer').html(payerHtml);
+    var ckHtml = $.map(FRIENDS, function (f) {
+      return '<div class="ck-row checked" data-id="' + esc(f.id) + '">' +
+        '<input type="checkbox" value="' + esc(f.id) + '" checked/>' +
+        '<label>' + esc(f.name) + '</label>' +
+        '</div>';
+    }).join('');
+    $('#inpShared').html(ckHtml);
+    openSheet('shTx');
+  } else if (CUR_TAB === 'friends') {
+    $('#inpFr').val('');
+    openSheet('shFriend');
+  } else {
+    $('#inpEv').val('');
+    openSheet('shEvent');
+  }
+}
+
+async function submitEvent() {
+  var n = $('#inpEv').val().trim();
+  if (!n) { toast('Please enter an event name', 'warn'); return }
+  closeSheets();
+  try {
+    var r = await gsc('addEvent', TK, n);
+    if (r.success) { toast('Event created! 🎉'); loadEvents(); }
+    else toast(r.error, 'err');
+  } catch (e) { toast('' + e, 'err') }
+}
+
+async function submitTx() {
+  var desc = $('#inpDesc').val().trim();
+  var pay  = $('#inpPayer').val();
+  if (!desc) { toast('Please enter a description', 'warn'); return }
+  var friendIds, totalAmount, customAmounts = null;
+  if (splitMode === 'equal') {
+    var amt = parseFloat($('#inpAmt').val());
+    var sh  = $('#inpShared input:checked').map(function () { return $(this).val() }).get();
+    if (!amt || amt <= 0) { toast('Please enter a valid amount', 'warn'); return }
+    if (!sh.length) { toast('Select at least one person', 'warn'); return }
+    friendIds = sh; totalAmount = amt;
+  } else {
+    friendIds = []; customAmounts = {}; totalAmount = 0;
+    $('#cusRows .ca-inp').each(function () {
+      var a = parseFloat($(this).val()) || 0;
+      if (a > 0) {
+        var id = $(this).data('id');
+        friendIds.push(id); customAmounts[id] = a; totalAmount += a;
+      }
+    });
+    if (!friendIds.length) { toast('ระบุจำนวนเงินอย่างน้อย 1 คน', 'warn'); return }
+  }
+  closeSheets();
+  try {
+    var r = await gsc('addDetail', TK, CUR_EV.id, pay, friendIds, totalAmount, desc, customAmounts);
+    if (r.success) { toast('Transaction added! 💸'); loadDetails(CUR_EV.id); }
+    else toast(r.error, 'err');
+  } catch (e) { toast('' + e, 'err') }
+}
+
+function askDel(type, id, name) {
+  var msgs = {
+    event:   'Delete "' + name + '"? All transactions will be permanently removed.',
+    friend:  'Remove "' + name + '" from your friends list?',
+    tx:      'Delete this transaction? This cannot be undone.',
+    account: 'Delete account "' + name + '"?'
+  };
+  $('#cfTitle').text('Delete ' + type[0].toUpperCase() + type.slice(1) + '?');
+  $('#cfMsg').text(msgs[type] || 'Are you sure?');
+  _del = { type: type, id: id };
+  openSheet('shConfirm');
+}
+
+$(function () {
+  // Close buttons
+  $('#shEventClose, #shFriendClose, #shTxClose').on('click', closeSheets);
+  $('#cfCancel, #logoutCancel').on('click', closeSheets);
+
+  // Submit buttons
+  $('#btnSubmitEvent').on('click', submitEvent);
+  $('#btnSubmitFriend').on('click', submitFriend);
+  $('#btnSubmitTx').on('click', submitTx);
+
+  // Split mode toggle
+  $('#modeEq').on('click', function () { setSplitMode('equal') });
+  $('#modeCus').on('click', function () { setSplitMode('custom') });
+
+  // Equal mode: checkbox toggle
+  $('#inpShared').on('click', '.ck-row', function () {
+    var inp = $(this).find('input');
+    inp.prop('checked', !inp.prop('checked'));
+    $(this).toggleClass('checked', inp.prop('checked'));
+    calcPP();
+  });
+
+  // Equal mode: amount input
+  $('#inpAmt').on('input', calcPP);
+  $('#inpPayer').on('change', calcPP);
+
+  // Custom mode: amount inputs (delegated since rendered dynamically)
+  $('#cusRows').on('input', '.ca-inp', calcCustomTotal);
+
+  // Select all / clear
+  $('#btnCkAll').on('click', function () {
+    $('#inpShared .ck-row').each(function () {
+      $(this).find('input').prop('checked', true);
+      $(this).addClass('checked');
+    });
+    calcPP();
+  });
+  $('#btnCkNone').on('click', function () {
+    $('#inpShared .ck-row').each(function () {
+      $(this).find('input').prop('checked', false);
+      $(this).removeClass('checked');
+    });
+    calcPP();
+  });
+
+  // Confirm delete
+  $('#cfOk').on('click', async function () {
+    if (!_del) return;
+    var t = _del.type, id = _del.id; _del = null; closeSheets();
+    try {
+      var r;
+      if (t === 'event')        r = await gsc('deleteEvent',   TK, id);
+      else if (t === 'friend')  r = await gsc('deleteFriend',  TK, id);
+      else if (t === 'tx')      r = await gsc('deleteDetail',  TK, id);
+      else if (t === 'account') r = await gsc('deleteAccount', TK, id);
+      if (r && r.success) {
+        toast('Deleted');
+        if (t === 'event')        loadEvents();
+        else if (t === 'friend')  loadFriends();
+        else if (t === 'tx' && CUR_EV) loadDetails(CUR_EV.id);
+        else if (t === 'account') loadAccounts();
+      } else if (r) toast(r.error, 'err');
+    } catch (e) { toast('' + e, 'err') }
+  });
+
+  // Logout confirm
+  $('#btnDoLogout').on('click', doLogout);
+
+  // Enter key shortcuts
+  $('#inpEv').on('keydown', function (e) { if (e.key === 'Enter') submitEvent() });
+  $('#inpFr').on('keydown', function (e) { if (e.key === 'Enter') submitFriend() });
+});
+</script>

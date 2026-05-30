@@ -1,0 +1,59 @@
+<script>
+function authPg(p) {
+  if (p === 'login') {
+    $('#loginPanel').show();
+    $('#regPanel').hide();
+  } else {
+    $('#loginPanel').hide();
+    $('#regPanel').show();
+  }
+}
+
+$(function () {
+  $('#goRegister').on('click', function (e) { e.preventDefault(); authPg('reg') });
+  $('#goLogin').on('click', function (e) { e.preventDefault(); authPg('login') });
+
+  // Toggle password visibility
+  $(document).on('click', '.pw-btn', function () {
+    var id = $(this).data('target');
+    var inp = $('#' + id);
+    inp.attr('type', inp.attr('type') === 'password' ? 'text' : 'password');
+  });
+
+  // Login
+  $('#loginForm').on('submit', async function (e) {
+    e.preventDefault();
+    var u = $('#loginUser').val().trim();
+    var p = $('#loginPass').val();
+    try {
+      var r = await gsc('loginUser', u, p);
+      if (r.success) {
+        TK = r.token; ME = r.user;
+        localStorage.setItem('su_tk', TK);
+        localStorage.setItem('su_me', JSON.stringify(ME));
+        startApp();
+      } else {
+        toast(r.error || 'Login failed', 'err');
+      }
+    } catch (e) { toast('' + e, 'err') }
+  });
+
+  // Register
+  $('#regForm').on('submit', async function (e) {
+    e.preventDefault();
+    var n = $('#regName').val().trim();
+    var u = $('#regUser').val().trim();
+    var p = $('#regPass').val();
+    try {
+      var r = await gsc('registerUser', n, u, p);
+      if (r.success) {
+        toast('Account created! Sign in 🎉');
+        $('#regForm')[0].reset();
+        authPg('login');
+      } else {
+        toast(r.error || 'Failed', 'err');
+      }
+    } catch (e) { toast('' + e, 'err') }
+  });
+});
+</script>

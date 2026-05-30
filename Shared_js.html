@@ -1,0 +1,211 @@
+<script>
+// ── Global State ──────────────────────────────
+var TK      = localStorage.getItem('su_tk')  || null;
+var ME      = JSON.parse(localStorage.getItem('su_me') || 'null');
+var CUR_TAB = 'home';
+var CUR_EV  = null;
+var CUR_DT  = 'tx';
+var FRIENDS = [];
+var EVENTS  = [];
+var DETAILS = [];
+
+// ── Color / Emoji Constants ───────────────────
+var AV_COLORS = [
+  'linear-gradient(135deg,#7C5CFC,#A78BFA)',
+  'linear-gradient(135deg,#3B82F6,#93C5FD)',
+  'linear-gradient(135deg,#10B981,#6EE7B7)',
+  'linear-gradient(135deg,#F59E0B,#FCD34D)',
+  'linear-gradient(135deg,#EF4444,#FCA5A5)',
+  'linear-gradient(135deg,#EC4899,#F9A8D4)',
+  'linear-gradient(135deg,#8B5CF6,#C4B5FD)',
+  'linear-gradient(135deg,#06B6D4,#67E8F9)'
+];
+var EV_BG = [
+  'rgba(124,92,252,.18)','rgba(59,130,246,.18)','rgba(16,185,129,.18)',
+  'rgba(245,158,11,.18)','rgba(239,68,68,.18)','rgba(236,72,153,.18)',
+  'rgba(139,92,246,.18)','rgba(6,182,212,.18)','rgba(249,115,22,.18)'
+];
+var EMOJIS = ['🎉','🍕','✈️','🎬','🏖️','🎂','🍜','⚽','🎮','🛒','🏕️','🎵','🎸','🚂','🏔️'];
+
+function _hash(s, mod) {
+  var h = 0;
+  for (var i = 0; i < (s || '').length; i++) h = (h * 31 + s.charCodeAt(i)) & 0xFFFF;
+  return h % mod;
+}
+function avCol(s)    { return AV_COLORS[_hash(s, AV_COLORS.length)] }
+function evEmoji(s)  { return EMOJIS[_hash(s, EMOJIS.length)] }
+function evBg(s)     { return EV_BG[_hash(s, EV_BG.length)] }
+function initials(s) { return (s || '?')[0].toUpperCase() }
+
+// ── Utilities ─────────────────────────────────
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmtAmt(n) {
+  return '฿' + parseFloat(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtDate(iso) {
+  if (!iso) return '';
+  try { return new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) }
+  catch (e) { return iso }
+}
+
+// ── GAS Bridge ───────────────────────────────
+function gsc(fn) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  return new Promise(function (res, rej) {
+    var r = google.script.run.withSuccessHandler(res).withFailureHandler(rej);
+    r[fn].apply(r, args);
+  });
+}
+
+// ── Toast ────────────────────────────────────
+function toast(msg, type) {
+  type = type || 'ok';
+  var $el = $('<div>').addClass('toast ' + type)
+    .append($('<div>').addClass('toast-dot'))
+    .append($('<span>').text(msg));
+  $('#toastWrap').append($el);
+  setTimeout(function () { $el.remove() }, 3200);
+}
+
+// ── Sheet management ─────────────────────────
+var _activeSheet = null;
+function openSheet(id) {
+  closeSheets();
+  _activeSheet = id;
+  $('#overlay').addClass('on');
+  requestAnimationFrame(function () { $('#' + id).addClass('on') });
+  setTimeout(function () { $('#' + id + ' input:not([type=checkbox])').first().trigger('focus') }, 360);
+}
+function closeSheets() {
+  $('#overlay').removeClass('on');
+  $('.sheet.on').removeClass('on');
+  _activeSheet = null;
+}
+
+// ── Navigation ───────────────────────────────
+function goTab(tab) {
+  CUR_TAB = tab; CUR_EV = null;
+  var titles = { home: 'ShareUp', friends: 'Friends', admin: 'Admin' };
+  $('#hdrTitle').text(titles[tab] || 'ShareUp');
+  $('#appHdr').removeClass('show-back');
+  var pgMap = { home: 'pgHome', friends: 'pgFriends', admin: 'pgAdmin' };
+  $.each(pgMap, function (t, pgId) {
+    $('#' + pgId).toggleClass('hidden', t !== tab).removeClass('behind');
+  });
+  $('#pgDetail').addClass('hidden').removeClass('behind');
+  $('#fab').toggleClass('hide', tab === 'admin');
+  $('.bnav-btn').removeClass('on');
+  var navMap = { home: 'navEv', friends: 'navFr', admin: 'navAd' };
+  if (navMap[tab]) $('#' + navMap[tab]).addClass('on');
+  if (tab === 'home')    { loadEvents(); loadFriends() }
+  else if (tab === 'friends') { loadFriends() }
+  else if (tab === 'admin')   { loadAccounts() }
+}
+
+function openDetail(ev) {
+  CUR_EV = ev; CUR_DT = 'tx';
+  $('#hdrTitle').text(ev.name);
+  $('#appHdr').addClass('show-back');
+  var pgMap = { home: 'pgHome', friends: 'pgFriends', admin: 'pgAdmin' };
+  var prev = pgMap[CUR_TAB];
+  $.each(pgMap, function (_, pgId) { $('#' + pgId).addClass('hidden') });
+  if (prev) { $('#' + prev).removeClass('hidden').addClass('behind') }
+  $('#pgDetail').removeClass('hidden behind');
+  $('#tabTx').addClass('on'); $('#tabSum').removeClass('on');
+  $('#panelTx').show(); $('#panelSum').hide();
+  $('#fab').removeClass('hide');
+  loadDetails(ev.id);
+  loadFriends();
+}
+
+function goBack() {
+  CUR_EV = null;
+  $('#pgDetail').addClass('hidden');
+  $('#appHdr').removeClass('show-back');
+  var titles = { home: 'ShareUp', friends: 'Friends', admin: 'Admin' };
+  $('#hdrTitle').text(titles[CUR_TAB] || 'ShareUp');
+  var pgMap = { home: 'pgHome', friends: 'pgFriends', admin: 'pgAdmin' };
+  $.each(pgMap, function (t, pgId) {
+    $('#' + pgId).removeClass('behind').toggleClass('hidden', t !== CUR_TAB);
+  });
+  $('#fab').toggleClass('hide', CUR_TAB === 'admin');
+}
+
+function switchTab(t) {
+  CUR_DT = t;
+  $('#tabTx').toggleClass('on', t === 'tx');
+  $('#tabSum').toggleClass('on', t === 'sum');
+  $('#panelTx').toggle(t === 'tx');
+  $('#panelSum').toggle(t === 'sum');
+  if (t === 'sum' && CUR_EV) loadSummary(CUR_EV.id);
+}
+
+// ── App boot ─────────────────────────────────
+function startApp() {
+  $('#authView').hide();
+  $('#appView').css('display', 'flex');
+  var name = (ME.displayName || ME.username || '');
+  $('#heroName').text(name);
+  $('#hdrAv').text(initials(name)).css('background', avCol(name));
+  if (ME.role === 'admin') $('#navAd').show(); else $('#navAd').hide();
+  goTab('home');
+}
+
+function doLogout() {
+  closeSheets();
+  gsc('logoutUser', TK).catch(function () {});
+  TK = null; ME = null;
+  localStorage.removeItem('su_tk');
+  localStorage.removeItem('su_me');
+  $('#appView').hide();
+  $('#authView').css('display', 'flex');
+  authPg('login');
+}
+
+function hideSplash() {
+  $('#splash').addClass('out');
+  setTimeout(function () { $('#splash').hide() }, 500);
+}
+
+// ── Document Ready ────────────────────────────
+$(function () {
+  // Navigation
+  $('#btnBack').on('click', goBack);
+  $('#navEv').on('click',  function () { goTab('home') });
+  $('#navFr').on('click',  function () { goTab('friends') });
+  $('#navAd').on('click',  function () { goTab('admin') });
+  $('#fab').on('click',    handleFab);
+  $('#hdrAv').on('click',  function () { openSheet('shLogout') });
+  $('#overlay').on('click', closeSheets);
+
+  // Boot
+  if (TK && ME) {
+    gsc('getSessionUser', TK)
+      .then(function (r) {
+        if (r.success) {
+          ME = r.user;
+          localStorage.setItem('su_me', JSON.stringify(ME));
+          hideSplash();
+          startApp();
+        } else { _bootFail() }
+      })
+      .catch(_bootFail);
+  } else {
+    hideSplash();
+    _showAuth();
+  }
+});
+
+function _bootFail() {
+  TK = null; ME = null;
+  localStorage.removeItem('su_tk');
+  localStorage.removeItem('su_me');
+  hideSplash();
+  _showAuth();
+}
+function _showAuth() {
+  $('#authView').css('display', 'flex');
+}
+</script>

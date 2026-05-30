@@ -1,0 +1,44 @@
+<style>
+.hero{
+  border-radius:24px;overflow:hidden;margin-bottom:16px;
+  background:linear-gradient(135deg,rgba(124,92,252,.22) 0%,rgba(79,70,229,.16) 60%,rgba(56,189,248,.12) 100%);
+  border:1px solid rgba(124,92,252,.28);padding:24px 22px 22px;position:relative;
+}
+.hero-deco{position:absolute;pointer-events:none}
+.hero-deco1{top:-40px;right:-30px;width:180px;height:180px;border-radius:50%;background:radial-gradient(circle,rgba(124,92,252,.25) 0%,transparent 65%)}
+.hero-deco2{bottom:-30px;left:-20px;width:130px;height:130px;border-radius:50%;background:radial-gradient(circle,rgba(56,189,248,.18) 0%,transparent 65%)}
+.hero-hi{font-size:14px;color:rgba(255,255,255,.65);font-weight:500;position:relative}
+.hero-name{font-size:30px;font-weight:800;letter-spacing:-.6px;color:#fff;margin-top:4px;position:relative}
+.hero-sub{font-size:14px;color:rgba(255,255,255,.55);margin-top:6px;position:relative}
+
+.stat-row{display:flex;gap:12px;margin-bottom:6px}
+.stat-card{
+  flex:1;background:var(--s1);border:1px solid var(--bd);border-radius:20px;
+  padding:18px 16px;display:flex;align-items:center;gap:14px;
+}
+.stat-ic{
+  width:44px;height:44px;border-radius:14px;background:var(--p-dim);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.stat-ic svg{width:24px;height:24px;fill:var(--p-lt)}
+.stat-num{font-size:28px;font-weight:800;color:var(--t1);letter-spacing:-.5px;line-height:1}
+.stat-lbl{font-size:13px;color:var(--t2);margin-top:3px;font-weight:500}
+
+.ev-card{
+  background:var(--s1);border:1px solid var(--bd);border-radius:20px;
+  margin-bottom:10px;overflow:hidden;cursor:pointer;
+  display:flex;align-items:center;padding:14px 12px 14px 14px;gap:14px;
+  transition:background .15s;
+}
+.ev-card:active{background:var(--s2)}
+.ev-icon{
+  width:54px;height:54px;border-radius:16px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:26px;flex-shrink:0;border:1px solid var(--bd);
+}
+.ev-info{flex:1;min-width:0}
+.ev-name{font-size:17px;font-weight:700;color:var(--t1);letter-spacing:-.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev-date{font-size:13px;color:var(--t2);margin-top:3px;font-weight:500}
+.ev-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.ev-chev svg{width:18px;height:18px;fill:var(--t3)}
+</style>
