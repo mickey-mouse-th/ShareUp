@@ -10,6 +10,16 @@ var EVENTS  = [];
 var DETAILS = [];
 
 // ── Color / Emoji Constants ───────────────────
+var BANNER_GRADS = [
+  'linear-gradient(135deg,#4338ca,#818cf8)',
+  'linear-gradient(135deg,#0f766e,#2dd4bf)',
+  'linear-gradient(135deg,#b45309,#fbbf24)',
+  'linear-gradient(135deg,#7C5CFC,#A78BFA)',
+  'linear-gradient(135deg,#0369a1,#38bdf8)',
+  'linear-gradient(135deg,#be185d,#f9a8d4)',
+  'linear-gradient(135deg,#4d7c0f,#a3e635)',
+  'linear-gradient(135deg,#9a3412,#fb923c)'
+];
 var AV_COLORS = [
   'linear-gradient(135deg,#7C5CFC,#A78BFA)',
   'linear-gradient(135deg,#3B82F6,#93C5FD)',
@@ -32,10 +42,11 @@ function _hash(s, mod) {
   for (var i = 0; i < (s || '').length; i++) h = (h * 31 + s.charCodeAt(i)) & 0xFFFF;
   return h % mod;
 }
-function avCol(s)    { return AV_COLORS[_hash(s, AV_COLORS.length)] }
-function evEmoji(s)  { return EMOJIS[_hash(s, EMOJIS.length)] }
-function evBg(s)     { return EV_BG[_hash(s, EV_BG.length)] }
-function initials(s) { return (s || '?')[0].toUpperCase() }
+function avCol(s)      { return AV_COLORS[_hash(s, AV_COLORS.length)] }
+function evEmoji(s)    { return EMOJIS[_hash(s, EMOJIS.length)] }
+function evBg(s)       { return EV_BG[_hash(s, EV_BG.length)] }
+function bannerGrad(s) { return BANNER_GRADS[_hash(s, BANNER_GRADS.length)] }
+function initials(s)   { return (s || '?')[0].toUpperCase() }
 
 // ── Utilities ─────────────────────────────────
 function esc(s) {
@@ -140,6 +151,10 @@ function openDetail(ev) {
   CUR_EV = ev; CUR_DT = 'tx';
   $('#hdrTitle').text(ev.name);
   $('#appHdr').addClass('show-back');
+  $('#detailBanner').css('background', bannerGrad(ev.name));
+  $('#detailEmoji').text(evEmoji(ev.name));
+  $('#detailBannerName').text(ev.name);
+  $('#detailBannerDate').text(fmtDate(ev.createdAt));
   var pgMap = { home: 'pgHome', friends: 'pgFriends', admin: 'pgAdmin' };
   var prev = pgMap[CUR_TAB];
   $.each(pgMap, function (_, pgId) { $('#' + pgId).addClass('hidden') });

@@ -1,4 +1,28 @@
 <style>
+/* ── Event detail banner (trip-manager style) ── */
+.ev-detail-banner{
+  border-radius:24px;padding:22px 20px 20px;
+  position:relative;overflow:hidden;
+  display:flex;align-items:center;gap:18px;margin-bottom:16px;
+  background:linear-gradient(135deg,#7C5CFC,#4F46E5);
+}
+.ev-detail-dots{
+  position:absolute;inset:0;pointer-events:none;
+  background-image:radial-gradient(circle,rgba(255,255,255,.12) 1.5px,transparent 1.5px);
+  background-size:18px 18px;
+}
+.ev-detail-emoji{
+  font-size:54px;line-height:1;position:relative;z-index:1;
+  filter:drop-shadow(0 4px 12px rgba(0,0,0,.3));flex-shrink:0;
+}
+.ev-detail-info{flex:1;position:relative;z-index:1;min-width:0}
+.ev-detail-name{
+  font-size:22px;font-weight:800;color:#fff;
+  letter-spacing:-.5px;line-height:1.2;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.ev-detail-date{font-size:13px;color:rgba(255,255,255,.7);margin-top:6px;font-weight:500}
+
 .tab-bar{
   display:flex;background:var(--s1);border:1px solid var(--bd);
   border-radius:20px;padding:5px;margin-bottom:16px;gap:4px;

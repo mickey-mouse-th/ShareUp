@@ -27,7 +27,7 @@ function renderEvents() {
   }
   var html = EVENTS.map(function (ev) {
     return '<div class="ev-card" data-ev=\'' + esc(JSON.stringify(ev)) + '\'>' +
-      '<div class="ev-icon" style="background:' + evBg(ev.name) + '">' + evEmoji(ev.name) + '</div>' +
+      '<div class="ev-icon" style="background:' + bannerGrad(ev.name) + '">' + evEmoji(ev.name) + '</div>' +
       '<div class="ev-info">' +
       '<div class="ev-name">' + esc(ev.name) + '</div>' +
       '<div class="ev-date">' + fmtDate(ev.createdAt) + '</div>' +
