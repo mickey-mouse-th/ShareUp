@@ -4,6 +4,7 @@
 
 var SPREADSHEET_NAME = 'ShareUp_Database';
 var CACHE_EXPIRY = 21600; // 6 hours
+var SESSION_DAYS = 30;   // persistent session lifetime
 
 // ----------------------------------------------------------------
 // Database Setup
@@ -58,6 +59,9 @@ function initSheets(ss) {
   var detailsSheet = ss.insertSheet('Details');
   detailsSheet.appendRow(['id', 'eventId', 'transactionId', 'payId', 'friendId', 'amount', 'totalAmount', 'description', 'createdAt']);
 
+  var sessionsSheet = ss.insertSheet('Sessions');
+  sessionsSheet.appendRow(['token', 'accountId', 'userInfo', 'createdAt', 'expiresAt']);
+
   if (defaultSheet) {
     ss.deleteSheet(defaultSheet);
   }
@@ -80,6 +84,45 @@ function generateToken() {
 
 function getCache() {
   return CacheService.getScriptCache();
+}
+
+function getSessionsSheet() {
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName('Sessions');
+  if (!sheet) {
+    sheet = ss.insertSheet('Sessions');
+    sheet.appendRow(['token', 'accountId', 'userInfo', 'createdAt', 'expiresAt']);
+  }
+  return sheet;
+}
+
+function _lookupSession(token) {
+  var sheet = getSessionsSheet();
+  var data = sheet.getDataRange().getValues();
+  var now = new Date();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0] === token) {
+      if (now < new Date(data[i][4])) {
+        return { row: i + 1, userInfo: JSON.parse(data[i][2]) };
+      }
+      sheet.deleteRow(i + 1);
+      return null;
+    }
+  }
+  return null;
+}
+
+function _cleanExpiredSessions() {
+  try {
+    var sheet = getSessionsSheet();
+    var data = sheet.getDataRange().getValues();
+    var now = new Date();
+    for (var i = data.length - 1; i >= 1; i--) {
+      if (data[i][4] && now > new Date(data[i][4])) {
+        sheet.deleteRow(i + 1);
+      }
+    }
+  } catch (e) {}
 }
 
 // ----------------------------------------------------------------
@@ -121,7 +164,11 @@ function loginUser(username, password) {
           username: row[2],
           role: row[6]
         };
+        var now = new Date();
+        var expires = new Date(now.getTime() + SESSION_DAYS * 86400000);
         getCache().put('token_' + token, JSON.stringify(userInfo), CACHE_EXPIRY);
+        getSessionsSheet().appendRow([token, row[0], JSON.stringify(userInfo), now.toISOString(), expires.toISOString()]);
+        _cleanExpiredSessions();
         return { success: true, token: token, user: userInfo };
       }
     }
@@ -162,6 +209,11 @@ function registerUser(displayName, username, password) {
 function logoutUser(token) {
   try {
     getCache().remove('token_' + token);
+    var sheet = getSessionsSheet();
+    var data = sheet.getDataRange().getValues();
+    for (var i = data.length - 1; i >= 1; i--) {
+      if (data[i][0] === token) { sheet.deleteRow(i + 1); break; }
+    }
     return { success: true };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -171,8 +223,11 @@ function logoutUser(token) {
 function getSessionUser(token) {
   try {
     var cached = getCache().get('token_' + token);
-    if (!cached) return { success: false, error: 'Session expired' };
-    return { success: true, user: JSON.parse(cached) };
+    if (cached) return { success: true, user: JSON.parse(cached) };
+    var found = _lookupSession(token);
+    if (!found) return { success: false, error: 'Session expired' };
+    getCache().put('token_' + token, JSON.stringify(found.userInfo), CACHE_EXPIRY);
+    return { success: true, user: found.userInfo };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -180,8 +235,11 @@ function getSessionUser(token) {
 
 function requireAuth(token) {
   var cached = getCache().get('token_' + token);
-  if (!cached) throw new Error('Unauthorized');
-  return JSON.parse(cached);
+  if (cached) return JSON.parse(cached);
+  var found = _lookupSession(token);
+  if (!found) throw new Error('Unauthorized');
+  getCache().put('token_' + token, JSON.stringify(found.userInfo), CACHE_EXPIRY);
+  return found.userInfo;
 }
 
 // ----------------------------------------------------------------
