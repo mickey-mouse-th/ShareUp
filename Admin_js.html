@@ -4,8 +4,8 @@ async function loadAccounts() {
   try {
     var r = await gsc('getAllAccounts', TK);
     if (r.success) renderAccounts(r.accounts || []);
-    else toast(r.error, 'err');
-  } catch (e) { toast('' + e, 'err') }
+    else _handleDataError(r.error);
+  } catch (e) { _handleDataError('' + e) }
 }
 
 function renderAccounts(list) {

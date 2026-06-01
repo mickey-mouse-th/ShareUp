@@ -7,8 +7,8 @@ async function loadDetailData(id) {
       DETAILS = r.details || [];
       FRIENDS = r.friends || [];
       renderDetails();
-    } else toast(r.error, 'err');
-  } catch (e) { toast('' + e, 'err') }
+    } else _handleDataError(r.error);
+  } catch (e) { _handleDataError('' + e) }
 }
 
 function renderDetails() {
@@ -69,8 +69,8 @@ async function loadSummary(id) {
   try {
     var r = await gsc('getSummary', TK, id);
     if (r.success) renderSummary(r.settlements || []);
-    else toast(r.error, 'err');
-  } catch (e) { toast('' + e, 'err') }
+    else _handleDataError(r.error);
+  } catch (e) { _handleDataError('' + e) }
 }
 
 function renderSummary(ss) {

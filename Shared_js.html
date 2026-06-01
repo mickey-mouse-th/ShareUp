@@ -236,10 +236,8 @@ $(function () {
         if (r.success) {
           ME = r.user;
           localStorage.setItem('su_me', JSON.stringify(ME));
-        } else {
-          // Server confirmed session is invalid — force logout
-          doLogout();
         }
+        // Don't force logout here — expired sessions are caught by data-load calls
       })
       .catch(function () {
         // Network / GAS cold-start error — stay logged in with cached data
@@ -249,6 +247,15 @@ $(function () {
     _showAuth();
   }
 });
+
+function _handleDataError(msg) {
+  var s = String(msg || '');
+  if (s.indexOf('Unauthorized') >= 0 || s.indexOf('Session expired') >= 0) {
+    doLogout();
+    return;
+  }
+  toast(s, 'err');
+}
 
 function _bootFail() {
   TK = null; ME = null;

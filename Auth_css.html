@@ -2,20 +2,20 @@
 #authView{
   min-height:100dvh;display:none;flex-direction:column;
   align-items:center;justify-content:center;
-  padding:28px 20px calc(28px + var(--sb));
+  padding:calc(var(--si)+24px) 20px calc(24px + var(--sb));
   background:radial-gradient(ellipse 90% 50% at 50% -10%,rgba(124,92,252,.22) 0%,transparent 65%),var(--bg);
 }
-.auth-wrap{width:100%;max-width:400px}
-.auth-logo{display:flex;align-items:center;gap:14px;margin-bottom:36px}
+.auth-wrap{width:100%;max-width:420px}
+.auth-logo{display:flex;align-items:center;gap:16px;margin-bottom:40px}
 .auth-logo-ic{
-  width:52px;height:52px;border-radius:16px;
+  width:64px;height:64px;border-radius:20px;
   background:linear-gradient(135deg,#7C5CFC,#4F46E5);
   display:flex;align-items:center;justify-content:center;
-  box-shadow:0 8px 24px rgba(124,92,252,.45);
+  box-shadow:0 8px 28px rgba(124,92,252,.55);flex-shrink:0;
 }
-.auth-logo-ic svg{width:28px;height:28px;fill:#fff}
-.auth-logo-name{font-size:22px;font-weight:800;letter-spacing:-.4px}
-.auth-logo-sub{font-size:13px;color:var(--t2);margin-top:2px}
+.auth-logo-ic svg{width:34px;height:34px;fill:#fff}
+.auth-logo-name{font-size:26px;font-weight:800;letter-spacing:-.5px}
+.auth-logo-sub{font-size:14px;color:var(--t2);margin-top:3px}
 .auth-box{
   background:rgba(255,255,255,.04);border:1px solid var(--bd2);border-radius:28px;
   padding:28px 24px 24px;

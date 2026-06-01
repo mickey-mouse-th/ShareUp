@@ -9,8 +9,8 @@ async function loadHomeData() {
       $('#stEvents').text(EVENTS.length);
       $('#stFriends').text(FRIENDS.length);
       renderEvents();
-    } else toast(r.error, 'err');
-  } catch (e) { toast('' + e, 'err') }
+    } else _handleDataError(r.error);
+  } catch (e) { _handleDataError('' + e) }
 }
 
 function renderEvents() {
