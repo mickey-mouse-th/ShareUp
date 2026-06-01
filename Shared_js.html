@@ -226,18 +226,24 @@ $(function () {
   $('#hdrAv').on('click',  function () { openSheet('shLogout') });
   $('#overlay').on('click', closeSheets);
 
-  // Boot
+  // Boot — optimistic: show app immediately with cached data,
+  // validate session in background to avoid login on every cold start
   if (TK && ME) {
+    hideSplash();
+    startApp();
     gsc('getSessionUser', TK)
       .then(function (r) {
         if (r.success) {
           ME = r.user;
           localStorage.setItem('su_me', JSON.stringify(ME));
-          hideSplash();
-          startApp();
-        } else { _bootFail() }
+        } else {
+          // Server confirmed session is invalid — force logout
+          doLogout();
+        }
       })
-      .catch(_bootFail);
+      .catch(function () {
+        // Network / GAS cold-start error — stay logged in with cached data
+      });
   } else {
     hideSplash();
     _showAuth();
