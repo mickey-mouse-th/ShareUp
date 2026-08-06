@@ -297,28 +297,6 @@ function getDetailData(token, eventId) {
 }
 
 // ----------------------------------------------------------------
-// Friends
-// ----------------------------------------------------------------
-
-function getFriends(token) {
-  try {
-    var user = requireAuth(token);
-    var ss = getSpreadsheet();
-    var sheet = ss.getSheetByName('Friends');
-    var data = sheet.getDataRange().getValues();
-    var friends = [];
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][1] === user.id) {
-        friends.push({ id: data[i][0], accountId: data[i][1], name: data[i][2] });
-      }
-    }
-    return { success: true, friends: friends };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  }
-}
-
-// ----------------------------------------------------------------
 // Event-scoped friend membership
 // ----------------------------------------------------------------
 
@@ -333,11 +311,15 @@ function _eventOwnedBy(ss, eventId, accountId) {
 // Friends currently linked to an event. Self-healing migration: the first time
 // an event with existing transactions but no EventFriends rows yet is read,
 // membership is derived from who already appears in its Details and persisted.
-function _getEventFriends(ss, eventId, accountId) {
-  var frData = ss.getSheetByName('Friends').getDataRange().getValues();
-  var friendMap = {};
-  for (var i = 1; i < frData.length; i++) {
-    if (frData[i][1] === accountId) friendMap[frData[i][0]] = frData[i][2];
+// Pass friendMapOpt when the caller already read the Friends sheet this request.
+function _getEventFriends(ss, eventId, accountId, friendMapOpt) {
+  var friendMap = friendMapOpt;
+  if (!friendMap) {
+    friendMap = {};
+    var frData = ss.getSheetByName('Friends').getDataRange().getValues();
+    for (var i = 1; i < frData.length; i++) {
+      if (frData[i][1] === accountId) friendMap[frData[i][0]] = frData[i][2];
+    }
   }
 
   var efSheet = getEventFriendsSheet();
@@ -375,12 +357,26 @@ function _getEventFriends(ss, eventId, accountId) {
   });
 }
 
-function getEventFriends(token, eventId) {
+// Combined fetch for the Add/Manage Friends sheet — one round trip instead of
+// separate getFriends + getEventFriends calls.
+function getEventFriendsData(token, eventId) {
   try {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
     if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
-    return { success: true, friends: _getEventFriends(ss, eventId, user.id) };
+
+    var frData = ss.getSheetByName('Friends').getDataRange().getValues();
+    var friendMap = {};
+    var allFriends = [];
+    for (var i = 1; i < frData.length; i++) {
+      if (frData[i][1] === user.id) {
+        friendMap[frData[i][0]] = frData[i][2];
+        allFriends.push({ id: frData[i][0], name: frData[i][2] });
+      }
+    }
+
+    var linkedFriends = _getEventFriends(ss, eventId, user.id, friendMap);
+    return { success: true, allFriends: allFriends, linkedFriends: linkedFriends };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -430,6 +426,7 @@ function setEventFriends(token, eventId, friendIds) {
     var ss = getSpreadsheet();
     if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
 
+    // Read each sheet exactly once for this request.
     var frData = ss.getSheetByName('Friends').getDataRange().getValues();
     var ownedFriendMap = {};
     for (var i = 1; i < frData.length; i++) {
@@ -437,40 +434,66 @@ function setEventFriends(token, eventId, friendIds) {
     }
     var wantedIds = (friendIds || []).filter(function (fid) { return ownedFriendMap.hasOwnProperty(fid); });
 
-    var currentIds = _getEventFriends(ss, eventId, user.id).map(function (f) { return f.id; });
-
     var dtData = ss.getSheetByName('Details').getDataRange().getValues();
     var usedInEvent = {};
+    var derivedFromDetails = {};
     for (var i = 1; i < dtData.length; i++) {
       if (dtData[i][1] === eventId) {
         usedInEvent[dtData[i][3]] = true;
         usedInEvent[dtData[i][4]] = true;
+        if (ownedFriendMap.hasOwnProperty(dtData[i][3])) derivedFromDetails[dtData[i][3]] = true;
+        if (ownedFriendMap.hasOwnProperty(dtData[i][4])) derivedFromDetails[dtData[i][4]] = true;
       }
     }
 
+    var efSheet = getEventFriendsSheet();
+    var efData = efSheet.getDataRange().getValues();
+    var hasAnyLink = false;
+    var currentIdSet = {};
+    for (var i = 1; i < efData.length; i++) {
+      if (efData[i][1] === eventId) {
+        hasAnyLink = true;
+        if (ownedFriendMap.hasOwnProperty(efData[i][2])) currentIdSet[efData[i][2]] = true;
+      }
+    }
+    // Same lazy migration as _getEventFriends, inlined to avoid re-reading Details/EventFriends.
+    if (!hasAnyLink) {
+      Object.keys(derivedFromDetails).forEach(function (fid) { currentIdSet[fid] = true; });
+    }
+
     var blocked = [];
-    var toAdd = wantedIds.filter(function (fid) { return currentIds.indexOf(fid) === -1; });
-    var toRemove = currentIds.filter(function (fid) {
+    var toAdd = wantedIds.filter(function (fid) { return !currentIdSet[fid]; });
+    var toRemove = Object.keys(currentIdSet).filter(function (fid) {
       if (wantedIds.indexOf(fid) !== -1) return false;
       if (usedInEvent[fid]) { blocked.push({ id: fid, name: ownedFriendMap[fid] }); return false; }
       return true;
     });
 
-    var efSheet = getEventFriendsSheet();
-    if (toAdd.length) {
-      var now = new Date().toISOString();
-      toAdd.forEach(function (fid) { efSheet.appendRow([Utilities.getUuid(), eventId, fid, now]); });
-    }
+    // Delete first, using the single efData read above (row positions still valid).
     if (toRemove.length) {
-      var efData = efSheet.getDataRange().getValues();
       for (var i = efData.length - 1; i >= 1; i--) {
         if (efData[i][1] === eventId && toRemove.indexOf(efData[i][2]) !== -1) {
           efSheet.deleteRow(i + 1);
         }
       }
+      toRemove.forEach(function (fid) { delete currentIdSet[fid]; });
     }
 
-    return { success: true, friends: _getEventFriends(ss, eventId, user.id), blocked: blocked };
+    var now = new Date().toISOString();
+    if (!hasAnyLink) {
+      Object.keys(derivedFromDetails).forEach(function (fid) {
+        if (toRemove.indexOf(fid) === -1) efSheet.appendRow([Utilities.getUuid(), eventId, fid, now]);
+      });
+    }
+    toAdd.forEach(function (fid) {
+      efSheet.appendRow([Utilities.getUuid(), eventId, fid, now]);
+      currentIdSet[fid] = true;
+    });
+
+    var finalFriends = Object.keys(currentIdSet).map(function (fid) {
+      return { id: fid, name: ownedFriendMap[fid] };
+    });
+    return { success: true, friends: finalFriends, blocked: blocked };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

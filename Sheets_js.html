@@ -111,10 +111,11 @@ async function openEventFriendsSheet(eventId, mode, pendingEvent) {
   $('#efList').html(skeletonHtml(3, 'fr'));
   openSheet('shEventFriends');
   try {
-    var all = await gsc('getFriends', TK);
-    var linked = await gsc('getEventFriends', TK, eventId);
-    var linkedIds = (linked.success ? linked.friends : []).map(function (f) { return f.id });
-    renderEfList(all.success ? all.friends : [], linkedIds);
+    var r = await gsc('getEventFriendsData', TK, eventId);
+    if (r.success) {
+      var linkedIds = r.linkedFriends.map(function (f) { return f.id });
+      renderEfList(r.allFriends, linkedIds);
+    } else toast(r.error, 'err');
   } catch (e) { toast('' + e, 'err') }
 }
 
