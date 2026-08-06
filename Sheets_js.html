@@ -107,6 +107,7 @@ async function openEventFriendsSheet(eventId, mode, pendingEvent) {
   _efMode = mode;
   _pendingNewEvent = pendingEvent || null;
   $('#efTitle').text(mode === 'create' ? 'Add Friends' : 'Manage Friends');
+  $('#btnEfDone').text(mode === 'create' ? 'Create Event' : 'Save');
   $('#inpEfNew').val('');
   $('#efList').html(skeletonHtml(3, 'fr'));
   openSheet('shEventFriends');

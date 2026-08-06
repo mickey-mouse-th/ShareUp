@@ -15,16 +15,16 @@
   <div class="sh-body">
     <div class="inp-g">
       <label class="inp-lbl">Add New Friend</label>
-      <div style="display:flex;gap:10px">
-        <input class="inp" id="inpEfNew" type="text" placeholder="e.g. Sarah" autocomplete="off" style="flex:1"/>
-        <button type="button" class="ck-btn hi" id="btnEfAddNew" style="height:58px;padding:0 20px;flex-shrink:0">Add</button>
+      <div class="inp-row">
+        <input class="inp" id="inpEfNew" type="text" placeholder="e.g. Sarah" autocomplete="off"/>
+        <button type="button" class="ck-btn hi" id="btnEfAddNew">Add</button>
       </div>
     </div>
     <div class="inp-g">
       <label class="inp-lbl">Select Friends</label>
       <div class="ck-list" id="efList"></div>
     </div>
-    <button class="sh-btn" id="btnEfDone">Done</button>
+    <button class="sh-btn" id="btnEfDone">Save</button>
   </div>
 </div>
 
@@ -94,14 +94,14 @@
 <div class="sheet" id="shLogout">
   <div class="sh-pill"></div>
   <div class="sh-body" style="padding-top:28px">
-    <div class="cf-icon" style="background:var(--p-dim);border-color:rgba(124,92,252,.22)">
+    <div class="cf-icon" style="background:var(--p-dim);border-color:rgba(147,51,234,.22)">
       <svg viewBox="0 0 24 24" style="fill:var(--p-lt)"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
     </div>
     <div class="cf-title">Sign Out?</div>
     <div class="cf-msg" style="color:var(--t2)">You'll be returned to the login screen.</div>
     <div class="cf-btns">
       <button class="btn-cancel" id="logoutCancel">Cancel</button>
-      <button class="btn-confirm" style="background:var(--p);box-shadow:0 6px 20px rgba(124,92,252,.4)" id="btnDoLogout">Sign Out</button>
+      <button class="btn-confirm" style="background:var(--p);box-shadow:0 6px 20px rgba(147,51,234,.4)" id="btnDoLogout">Sign Out</button>
     </div>
   </div>
 </div>

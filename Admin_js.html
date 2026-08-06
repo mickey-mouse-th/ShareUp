@@ -17,7 +17,7 @@ function renderAccounts(list) {
   var html = $.map(list, function (a) {
     var isMe = ME && a.id === ME.id;
     var youBadge = isMe
-      ? ' <small style="font-size:11px;color:var(--p-lt);background:var(--p-dim);border-radius:6px;padding:2px 8px;border:1px solid rgba(124,92,252,.22)">You</small>'
+      ? ' <small style="font-size:11px;color:var(--p-lt);background:var(--p-dim);border-radius:6px;padding:2px 8px;border:1px solid rgba(147,51,234,.22)">You</small>'
       : '';
     var roles = ['user', 'staff', 'admin'].map(function (r) {
       return '<option value="' + r + '"' + (a.role === r ? ' selected' : '') + '>' + r[0].toUpperCase() + r.slice(1) + '</option>';
