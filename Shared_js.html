@@ -130,20 +130,19 @@ function closeSheets() {
 // ── Navigation ───────────────────────────────
 function goTab(tab) {
   CUR_TAB = tab; CUR_EV = null;
-  var titles = { home: 'ShareUp', friends: 'Friends', admin: 'Admin' };
+  var titles = { home: 'ShareUp', admin: 'Admin' };
   $('#hdrTitle').text(titles[tab] || 'ShareUp');
   $('#appHdr').removeClass('show-back');
-  var pgMap = { home: 'pgHome', friends: 'pgFriends', admin: 'pgAdmin' };
+  var pgMap = { home: 'pgHome', admin: 'pgAdmin' };
   $.each(pgMap, function (t, pgId) {
     $('#' + pgId).toggleClass('hidden', t !== tab).removeClass('behind');
   });
   $('#pgDetail').addClass('hidden').removeClass('behind');
   $('#fab').toggleClass('hide', tab === 'admin');
   $('.bnav-btn').removeClass('on');
-  var navMap = { home: 'navEv', friends: 'navFr', admin: 'navAd' };
+  var navMap = { home: 'navEv', admin: 'navAd' };
   if (navMap[tab]) $('#' + navMap[tab]).addClass('on');
   if (tab === 'home')    { loadHomeData() }
-  else if (tab === 'friends') { loadFriends() }
   else if (tab === 'admin')   { loadAccounts() }
 }
 
@@ -155,13 +154,13 @@ function openDetail(ev) {
   $('#detailEmoji').text(evEmoji(ev.name));
   $('#detailBannerName').text(ev.name);
   $('#detailBannerDate').text(fmtDate(ev.createdAt));
-  var pgMap = { home: 'pgHome', friends: 'pgFriends', admin: 'pgAdmin' };
+  var pgMap = { home: 'pgHome', admin: 'pgAdmin' };
   var prev = pgMap[CUR_TAB];
   $.each(pgMap, function (_, pgId) { $('#' + pgId).addClass('hidden') });
   if (prev) { $('#' + prev).removeClass('hidden').addClass('behind') }
   $('#pgDetail').removeClass('hidden behind');
-  $('#tabTx').addClass('on'); $('#tabSum').removeClass('on');
-  $('#panelTx').show(); $('#panelSum').hide();
+  $('#tabTx').addClass('on'); $('#tabSum').removeClass('on'); $('#tabFr').removeClass('on');
+  $('#panelTx').show(); $('#panelSum').hide(); $('#panelFr').hide();
   $('#fab').removeClass('hide');
   loadDetailData(ev.id);
 }
@@ -170,9 +169,9 @@ function goBack() {
   CUR_EV = null;
   $('#pgDetail').addClass('hidden');
   $('#appHdr').removeClass('show-back');
-  var titles = { home: 'ShareUp', friends: 'Friends', admin: 'Admin' };
+  var titles = { home: 'ShareUp', admin: 'Admin' };
   $('#hdrTitle').text(titles[CUR_TAB] || 'ShareUp');
-  var pgMap = { home: 'pgHome', friends: 'pgFriends', admin: 'pgAdmin' };
+  var pgMap = { home: 'pgHome', admin: 'pgAdmin' };
   $.each(pgMap, function (t, pgId) {
     $('#' + pgId).removeClass('behind').toggleClass('hidden', t !== CUR_TAB);
   });
@@ -183,9 +182,12 @@ function switchTab(t) {
   CUR_DT = t;
   $('#tabTx').toggleClass('on', t === 'tx');
   $('#tabSum').toggleClass('on', t === 'sum');
+  $('#tabFr').toggleClass('on', t === 'friends');
   $('#panelTx').toggle(t === 'tx');
   $('#panelSum').toggle(t === 'sum');
+  $('#panelFr').toggle(t === 'friends');
   if (t === 'sum' && CUR_EV) loadSummary(CUR_EV.id);
+  if (t === 'friends') renderEventFriends();
 }
 
 // ── App boot ─────────────────────────────────
@@ -220,7 +222,6 @@ $(function () {
   // Navigation
   $('#btnBack').on('click', goBack);
   $('#navEv').on('click',  function () { goTab('home') });
-  $('#navFr').on('click',  function () { goTab('friends') });
   $('#navAd').on('click',  function () { goTab('admin') });
   $('#fab').on('click',    handleFab);
   $('#hdrAv').on('click',  function () { openSheet('shLogout') });

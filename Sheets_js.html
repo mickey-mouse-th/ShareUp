@@ -1,6 +1,11 @@
 <script>
 var splitMode = 'equal';
 var _del = null;
+var _evMode = 'create';   // 'create' | 'rename'
+var _evEditId = null;
+var _efEventId = null;    // 'create' | 'manage'
+var _efMode = 'manage';
+var _pendingNewEvent = null;
 
 function setSplitMode(m) {
   splitMode = m;
@@ -45,8 +50,145 @@ function calcPP() {
   }
 }
 
+// ── New Event / Rename Event ─────────────────
+function openNewEventSheet() {
+  _evMode = 'create'; _evEditId = null;
+  $('#evTitle').text('New Event');
+  $('#btnSubmitEvent').text('Next');
+  $('#inpEv').val('');
+  openSheet('shEvent');
+}
+
+function openRenameEventSheet(ev) {
+  _evMode = 'rename'; _evEditId = ev.id;
+  $('#evTitle').text('Edit Event');
+  $('#btnSubmitEvent').text('Save');
+  $('#inpEv').val(ev.name);
+  openSheet('shEvent');
+}
+
+async function submitEvent() {
+  var n = $('#inpEv').val().trim();
+  if (!n) { toast('Please enter an event name', 'warn'); return }
+
+  if (_evMode === 'rename') {
+    closeSheets();
+    try {
+      var r = await gsc('renameEvent', TK, _evEditId, n);
+      if (r.success) {
+        toast('Event renamed');
+        var idx = -1;
+        for (var i = 0; i < EVENTS.length; i++) { if (EVENTS[i].id === _evEditId) { idx = i; break } }
+        if (idx !== -1) EVENTS[idx].name = r.name;
+        refreshEventsUI();
+        if (CUR_EV && CUR_EV.id === _evEditId) {
+          CUR_EV.name = r.name;
+          $('#hdrTitle').text(r.name);
+          $('#detailBannerName').text(r.name);
+        }
+      } else toast(r.error, 'err');
+    } catch (e) { toast('' + e, 'err') }
+    return;
+  }
+
+  try {
+    var r = await gsc('addEvent', TK, n);
+    if (r.success) {
+      EVENTS.unshift(r.event);
+      refreshEventsUI();
+      openEventFriendsSheet(r.event.id, 'create', r.event);
+    } else toast(r.error, 'err');
+  } catch (e) { toast('' + e, 'err') }
+}
+
+// ── Add / Manage Event Friends ────────────────
+async function openEventFriendsSheet(eventId, mode, pendingEvent) {
+  _efEventId = eventId;
+  _efMode = mode;
+  _pendingNewEvent = pendingEvent || null;
+  $('#efTitle').text(mode === 'create' ? 'Add Friends' : 'Manage Friends');
+  $('#inpEfNew').val('');
+  $('#efList').html(skeletonHtml(3, 'fr'));
+  openSheet('shEventFriends');
+  try {
+    var all = await gsc('getFriends', TK);
+    var linked = await gsc('getEventFriends', TK, eventId);
+    var linkedIds = (linked.success ? linked.friends : []).map(function (f) { return f.id });
+    renderEfList(all.success ? all.friends : [], linkedIds);
+  } catch (e) { toast('' + e, 'err') }
+}
+
+function renderEfList(allFriends, linkedIds) {
+  if (!allFriends.length) {
+    $('#efList').html('<div class="empty"><div class="empty-t">No friends yet</div><div class="empty-s">Add one above</div></div>');
+    return;
+  }
+  var html = $.map(allFriends, function (f) {
+    var checked = linkedIds.indexOf(f.id) !== -1;
+    return '<div class="ck-row' + (checked ? ' checked' : '') + '" data-id="' + esc(f.id) + '">' +
+      '<input type="checkbox" value="' + esc(f.id) + '"' + (checked ? ' checked' : '') + '/>' +
+      '<label>' + esc(f.name) + '</label>' +
+      '</div>';
+  }).join('');
+  $('#efList').html(html);
+}
+
+async function submitEfAddNew() {
+  var n = $('#inpEfNew').val().trim();
+  if (!n) return;
+  try {
+    var r = await gsc('addFriendToEvent', TK, _efEventId, n);
+    if (r.success) {
+      $('#inpEfNew').val('');
+      var $existing = $('#efList .ck-row[data-id="' + r.friend.id + '"]');
+      if ($existing.length) {
+        $existing.addClass('checked').find('input').prop('checked', true);
+      } else {
+        $('#efList .empty').remove();
+        $('#efList').append(
+          '<div class="ck-row checked" data-id="' + esc(r.friend.id) + '">' +
+          '<input type="checkbox" value="' + esc(r.friend.id) + '" checked/>' +
+          '<label>' + esc(r.friend.name) + '</label>' +
+          '</div>'
+        );
+      }
+    } else toast(r.error, 'err');
+  } catch (e) { toast('' + e, 'err') }
+}
+
+async function submitEfDone() {
+  var ids = $('#efList .ck-row input:checked').map(function () { return $(this).val() }).get();
+  var mode = _efMode, eventId = _efEventId, pendingEvent = _pendingNewEvent;
+  closeSheets();
+  try {
+    var r = await gsc('setEventFriends', TK, eventId, ids);
+    if (r.success) {
+      if (r.blocked && r.blocked.length) {
+        toast(r.blocked.map(function (b) { return b.name }).join(', ') + ' has transactions here and can\'t be removed', 'warn');
+      }
+      if (mode === 'create') {
+        toast('Event created! 🎉');
+        if (pendingEvent) { FRIENDS = r.friends; openDetail(pendingEvent) }
+      } else if (CUR_EV && CUR_EV.id === eventId) {
+        FRIENDS = r.friends;
+        if (typeof renderEventFriends === 'function') renderEventFriends();
+      }
+    } else toast(r.error, 'err');
+  } catch (e) { toast('' + e, 'err') }
+}
+
+// ── FAB ────────────────────────────────────────
 function handleFab() {
   if (CUR_EV) {
+    if (CUR_DT === 'friends') {
+      openEventFriendsSheet(CUR_EV.id, 'manage');
+      return;
+    }
+    if (!FRIENDS.length) {
+      toast('Add at least one friend to this event first', 'warn');
+      openEventFriendsSheet(CUR_EV.id, 'manage');
+      return;
+    }
     $('#inpDesc').val('');
     $('#inpAmt').val('');
     $('#ppBox').hide();
@@ -65,24 +207,9 @@ function handleFab() {
     }).join('');
     $('#inpShared').html(ckHtml);
     openSheet('shTx');
-  } else if (CUR_TAB === 'friends') {
-    $('#inpFr').val('');
-    openSheet('shFriend');
   } else {
-    $('#inpEv').val('');
-    openSheet('shEvent');
+    openNewEventSheet();
   }
-}
-
-async function submitEvent() {
-  var n = $('#inpEv').val().trim();
-  if (!n) { toast('Please enter an event name', 'warn'); return }
-  closeSheets();
-  try {
-    var r = await gsc('addEvent', TK, n);
-    if (r.success) { toast('Event created! 🎉'); loadEvents(); }
-    else toast(r.error, 'err');
-  } catch (e) { toast('' + e, 'err') }
 }
 
 async function submitTx() {
@@ -110,19 +237,33 @@ async function submitTx() {
   closeSheets();
   try {
     var r = await gsc('addDetail', TK, CUR_EV.id, pay, friendIds, totalAmount, desc, customAmounts);
-    if (r.success) { toast('Transaction added! 💸'); loadDetails(CUR_EV.id); }
-    else toast(r.error, 'err');
+    if (r.success) {
+      toast('Transaction added! 💸');
+      var now = new Date().toISOString();
+      var perPerson = totalAmount / friendIds.length;
+      var newRows = friendIds.map(function (fid) {
+        var amt = (customAmounts && customAmounts[fid] !== undefined) ? parseFloat(customAmounts[fid]) : perPerson;
+        return { id: r.transactionId + '_' + fid, eventId: CUR_EV.id, transactionId: r.transactionId,
+          payId: pay, friendId: fid, amount: amt, totalAmount: totalAmount, description: desc, createdAt: now };
+      });
+      DETAILS = DETAILS.concat(newRows);
+      renderDetails();
+    } else toast(r.error, 'err');
   } catch (e) { toast('' + e, 'err') }
 }
 
 function askDel(type, id, name) {
+  var titles = {
+    event:   'Delete Event?',
+    tx:      'Delete Transaction?',
+    account: 'Delete Account?'
+  };
   var msgs = {
     event:   'Delete "' + name + '"? All transactions will be permanently removed.',
-    friend:  'Remove "' + name + '" from your friends list?',
     tx:      'Delete this transaction? This cannot be undone.',
     account: 'Delete account "' + name + '"?'
   };
-  $('#cfTitle').text('Delete ' + type[0].toUpperCase() + type.slice(1) + '?');
+  $('#cfTitle').text(titles[type] || 'Delete?');
   $('#cfMsg').text(msgs[type] || 'Are you sure?');
   _del = { type: type, id: id };
   openSheet('shConfirm');
@@ -130,12 +271,13 @@ function askDel(type, id, name) {
 
 $(function () {
   // Close buttons
-  $('#shEventClose, #shFriendClose, #shTxClose').on('click', closeSheets);
+  $('#shEventClose, #shEfClose, #shTxClose').on('click', closeSheets);
   $('#cfCancel, #logoutCancel').on('click', closeSheets);
 
   // Submit buttons
   $('#btnSubmitEvent').on('click', submitEvent);
-  $('#btnSubmitFriend').on('click', submitFriend);
+  $('#btnEfAddNew').on('click', submitEfAddNew);
+  $('#btnEfDone').on('click', submitEfDone);
   $('#btnSubmitTx').on('click', submitTx);
 
   // Split mode toggle
@@ -148,6 +290,13 @@ $(function () {
     inp.prop('checked', !inp.prop('checked'));
     $(this).toggleClass('checked', inp.prop('checked'));
     calcPP();
+  });
+
+  // Event-friends checklist: local toggle only, submitted in one batch by Done
+  $('#efList').on('click', '.ck-row', function () {
+    var inp = $(this).find('input');
+    inp.prop('checked', !inp.prop('checked'));
+    $(this).toggleClass('checked', inp.prop('checked'));
   });
 
   // Equal mode: amount input
@@ -180,15 +329,19 @@ $(function () {
     try {
       var r;
       if (t === 'event')        r = await gsc('deleteEvent',   TK, id);
-      else if (t === 'friend')  r = await gsc('deleteFriend',  TK, id);
       else if (t === 'tx')      r = await gsc('deleteDetail',  TK, id);
       else if (t === 'account') r = await gsc('deleteAccount', TK, id);
       if (r && r.success) {
         toast('Deleted');
-        if (t === 'event')        loadEvents();
-        else if (t === 'friend')  loadFriends();
-        else if (t === 'tx' && CUR_EV) loadDetails(CUR_EV.id);
-        else if (t === 'account') loadAccounts();
+        if (t === 'event') {
+          EVENTS = EVENTS.filter(function (e) { return e.id !== id });
+          refreshEventsUI();
+        } else if (t === 'tx' && CUR_EV) {
+          DETAILS = DETAILS.filter(function (d) { return d.transactionId !== id });
+          renderDetails();
+        } else if (t === 'account') {
+          $('.acc-del[data-id="' + id + '"]').closest('.acc-card').remove();
+        }
       } else if (r) toast(r.error, 'err');
     } catch (e) { toast('' + e, 'err') }
   });
@@ -198,6 +351,6 @@ $(function () {
 
   // Enter key shortcuts
   $('#inpEv').on('keydown', function (e) { if (e.key === 'Enter') submitEvent() });
-  $('#inpFr').on('keydown', function (e) { if (e.key === 'Enter') submitFriend() });
+  $('#inpEfNew').on('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); submitEfAddNew() } });
 });
 </script>

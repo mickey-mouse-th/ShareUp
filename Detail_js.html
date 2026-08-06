@@ -106,12 +106,58 @@ function renderSummary(ss) {
   $el.html(html);
 }
 
+function renderEventFriends() {
+  var $el = $('#detailFriendsList');
+  if (!FRIENDS.length) {
+    $el.html(
+      '<div class="empty">' +
+      '<div class="empty-t">No friends in this event yet</div>' +
+      '<div class="empty-s">Tap + to add friends</div>' +
+      '</div>'
+    );
+    return;
+  }
+  var html = $.map(FRIENDS, function (f, i) {
+    return (i > 0 ? '<div class="fr-sep"></div>' : '') +
+      '<div class="fr-row">' +
+      '<div class="fr-av" style="background:' + avCol(f.name) + '">' + initials(f.name) + '</div>' +
+      '<span class="fr-name">' + esc(f.name) + '</span>' +
+      '<button class="btn-del ef-remove" data-id="' + esc(f.id) + '">' +
+      '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>' +
+      '</button>' +
+      '</div>';
+  }).join('');
+  $el.html(html);
+}
+
+async function removeEventFriend(friendId) {
+  var ids = FRIENDS.filter(function (f) { return f.id !== friendId }).map(function (f) { return f.id });
+  try {
+    var r = await gsc('setEventFriends', TK, CUR_EV.id, ids);
+    if (r.success) {
+      FRIENDS = r.friends;
+      renderEventFriends();
+      if (r.blocked && r.blocked.length) {
+        toast(r.blocked.map(function (b) { return b.name }).join(', ') + ' has transactions here and can\'t be removed', 'warn');
+      }
+    } else toast(r.error, 'err');
+  } catch (e) { toast('' + e, 'err') }
+}
+
 $(function () {
   $('#tabTx').on('click', function () { switchTab('tx') });
   $('#tabSum').on('click', function () { switchTab('sum') });
+  $('#tabFr').on('click', function () { switchTab('friends') });
   $('#txList').on('click', '.tx-del', function (e) {
     e.stopPropagation();
     askDel('tx', $(this).data('tid'), $(this).data('desc'));
+  });
+  $('#detailFriendsList').on('click', '.ef-remove', function (e) {
+    e.stopPropagation();
+    removeEventFriend($(this).data('id'));
+  });
+  $('#btnEditEvent').on('click', function () {
+    if (CUR_EV) openRenameEventSheet(CUR_EV);
   });
 });
 </script>

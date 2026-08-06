@@ -13,6 +13,11 @@ async function loadHomeData() {
   } catch (e) { _handleDataError('' + e) }
 }
 
+function refreshEventsUI() {
+  $('#stEvents').text(EVENTS.length);
+  renderEvents();
+}
+
 function renderEvents() {
   var $el = $('#eventsList');
   if (!EVENTS.length) {

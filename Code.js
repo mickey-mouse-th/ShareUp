@@ -59,6 +59,9 @@ function initSheets(ss) {
   var detailsSheet = ss.insertSheet('Details');
   detailsSheet.appendRow(['id', 'eventId', 'transactionId', 'payId', 'friendId', 'amount', 'totalAmount', 'description', 'createdAt']);
 
+  var eventFriendsSheet = ss.insertSheet('EventFriends');
+  eventFriendsSheet.appendRow(['id', 'eventId', 'friendId', 'createdAt']);
+
   var sessionsSheet = ss.insertSheet('Sessions');
   sessionsSheet.appendRow(['token', 'accountId', 'userInfo', 'createdAt', 'expiresAt']);
 
@@ -84,6 +87,16 @@ function generateToken() {
 
 function getCache() {
   return CacheService.getScriptCache();
+}
+
+function getEventFriendsSheet() {
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName('EventFriends');
+  if (!sheet) {
+    sheet = ss.insertSheet('EventFriends');
+    sheet.appendRow(['id', 'eventId', 'friendId', 'createdAt']);
+  }
+  return sheet;
 }
 
 function getSessionsSheet() {
@@ -271,18 +284,14 @@ function getDetailData(token, eventId) {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
     var dtData = ss.getSheetByName('Details').getDataRange().getValues();
-    var frData = ss.getSheetByName('Friends').getDataRange().getValues();
-    var details = [], friends = [];
+    var details = [];
     for (var i = 1; i < dtData.length; i++) {
       if (dtData[i][1] === eventId)
         details.push({ id: dtData[i][0], eventId: dtData[i][1], transactionId: dtData[i][2],
           payId: dtData[i][3], friendId: dtData[i][4], amount: dtData[i][5],
           totalAmount: dtData[i][6], description: dtData[i][7], createdAt: dtData[i][8] });
     }
-    for (var i = 1; i < frData.length; i++) {
-      if (frData[i][1] === user.id)
-        friends.push({ id: frData[i][0], accountId: frData[i][1], name: frData[i][2] });
-    }
+    var friends = _getEventFriends(ss, eventId, user.id);
     return { success: true, details: details, friends: friends };
   } catch (e) { return { success: false, error: e.toString() } }
 }
@@ -309,34 +318,159 @@ function getFriends(token) {
   }
 }
 
-function addFriend(token, name) {
+// ----------------------------------------------------------------
+// Event-scoped friend membership
+// ----------------------------------------------------------------
+
+function _eventOwnedBy(ss, eventId, accountId) {
+  var data = ss.getSheetByName('Events').getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0] === eventId && data[i][2] === accountId) return true;
+  }
+  return false;
+}
+
+// Friends currently linked to an event. Self-healing migration: the first time
+// an event with existing transactions but no EventFriends rows yet is read,
+// membership is derived from who already appears in its Details and persisted.
+function _getEventFriends(ss, eventId, accountId) {
+  var frData = ss.getSheetByName('Friends').getDataRange().getValues();
+  var friendMap = {};
+  for (var i = 1; i < frData.length; i++) {
+    if (frData[i][1] === accountId) friendMap[frData[i][0]] = frData[i][2];
+  }
+
+  var efSheet = getEventFriendsSheet();
+  var efData = efSheet.getDataRange().getValues();
+  var hasAnyLink = false;
+  var linkedIds = [];
+  for (var i = 1; i < efData.length; i++) {
+    if (efData[i][1] === eventId) {
+      hasAnyLink = true;
+      if (friendMap.hasOwnProperty(efData[i][2])) linkedIds.push(efData[i][2]);
+    }
+  }
+
+  if (!hasAnyLink) {
+    var dtData = ss.getSheetByName('Details').getDataRange().getValues();
+    var derived = {};
+    for (var i = 1; i < dtData.length; i++) {
+      if (dtData[i][1] === eventId) {
+        if (friendMap.hasOwnProperty(dtData[i][3])) derived[dtData[i][3]] = true;
+        if (friendMap.hasOwnProperty(dtData[i][4])) derived[dtData[i][4]] = true;
+      }
+    }
+    var derivedIds = Object.keys(derived);
+    if (derivedIds.length) {
+      var now = new Date().toISOString();
+      derivedIds.forEach(function (fid) {
+        efSheet.appendRow([Utilities.getUuid(), eventId, fid, now]);
+      });
+      linkedIds = derivedIds;
+    }
+  }
+
+  return linkedIds.map(function (fid) {
+    return { id: fid, name: friendMap[fid] };
+  });
+}
+
+function getEventFriends(token, eventId) {
   try {
     var user = requireAuth(token);
-    if (!name || name.trim() === '') return { success: false, error: 'Name is required' };
     var ss = getSpreadsheet();
-    var sheet = ss.getSheetByName('Friends');
-    var id = Utilities.getUuid();
-    sheet.appendRow([id, user.id, name.trim()]);
-    return { success: true, friend: { id: id, accountId: user.id, name: name.trim() } };
+    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
+    return { success: true, friends: _getEventFriends(ss, eventId, user.id) };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
 }
 
-function deleteFriend(token, friendId) {
+function addFriendToEvent(token, eventId, name) {
+  try {
+    var user = requireAuth(token);
+    if (!name || name.trim() === '') return { success: false, error: 'Name is required' };
+    var ss = getSpreadsheet();
+    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
+    var trimmed = name.trim();
+
+    var frSheet = ss.getSheetByName('Friends');
+    var frData = frSheet.getDataRange().getValues();
+    var friendId = null;
+    for (var i = 1; i < frData.length; i++) {
+      if (frData[i][1] === user.id && frData[i][2].toLowerCase() === trimmed.toLowerCase()) {
+        friendId = frData[i][0];
+        break;
+      }
+    }
+    if (!friendId) {
+      friendId = Utilities.getUuid();
+      frSheet.appendRow([friendId, user.id, trimmed]);
+    }
+
+    var efSheet = getEventFriendsSheet();
+    var efData = efSheet.getDataRange().getValues();
+    var alreadyLinked = false;
+    for (var i = 1; i < efData.length; i++) {
+      if (efData[i][1] === eventId && efData[i][2] === friendId) { alreadyLinked = true; break; }
+    }
+    if (!alreadyLinked) {
+      efSheet.appendRow([Utilities.getUuid(), eventId, friendId, new Date().toISOString()]);
+    }
+
+    return { success: true, friend: { id: friendId, name: trimmed } };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function setEventFriends(token, eventId, friendIds) {
   try {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
-    var sheet = ss.getSheetByName('Friends');
-    var data = sheet.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][0] === friendId && data[i][1] === user.id) {
-        if (data[i][2] === 'Me') return { success: false, error: 'Cannot delete "Me"' };
-        sheet.deleteRow(i + 1);
-        return { success: true };
+    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
+
+    var frData = ss.getSheetByName('Friends').getDataRange().getValues();
+    var ownedFriendMap = {};
+    for (var i = 1; i < frData.length; i++) {
+      if (frData[i][1] === user.id) ownedFriendMap[frData[i][0]] = frData[i][2];
+    }
+    var wantedIds = (friendIds || []).filter(function (fid) { return ownedFriendMap.hasOwnProperty(fid); });
+
+    var currentIds = _getEventFriends(ss, eventId, user.id).map(function (f) { return f.id; });
+
+    var dtData = ss.getSheetByName('Details').getDataRange().getValues();
+    var usedInEvent = {};
+    for (var i = 1; i < dtData.length; i++) {
+      if (dtData[i][1] === eventId) {
+        usedInEvent[dtData[i][3]] = true;
+        usedInEvent[dtData[i][4]] = true;
       }
     }
-    return { success: false, error: 'Friend not found' };
+
+    var blocked = [];
+    var toAdd = wantedIds.filter(function (fid) { return currentIds.indexOf(fid) === -1; });
+    var toRemove = currentIds.filter(function (fid) {
+      if (wantedIds.indexOf(fid) !== -1) return false;
+      if (usedInEvent[fid]) { blocked.push({ id: fid, name: ownedFriendMap[fid] }); return false; }
+      return true;
+    });
+
+    var efSheet = getEventFriendsSheet();
+    if (toAdd.length) {
+      var now = new Date().toISOString();
+      toAdd.forEach(function (fid) { efSheet.appendRow([Utilities.getUuid(), eventId, fid, now]); });
+    }
+    if (toRemove.length) {
+      var efData = efSheet.getDataRange().getValues();
+      for (var i = efData.length - 1; i >= 1; i--) {
+        if (efData[i][1] === eventId && toRemove.indexOf(efData[i][2]) !== -1) {
+          efSheet.deleteRow(i + 1);
+        }
+      }
+    }
+
+    return { success: true, friends: _getEventFriends(ss, eventId, user.id), blocked: blocked };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -375,7 +509,36 @@ function addEvent(token, name) {
     var id = Utilities.getUuid();
     var now = new Date().toISOString();
     sheet.appendRow([id, name.trim(), user.id, now]);
+
+    // Auto-link the account's "Me" friend so every event starts with yourself in it
+    var frData = ss.getSheetByName('Friends').getDataRange().getValues();
+    for (var i = 1; i < frData.length; i++) {
+      if (frData[i][1] === user.id && frData[i][2] === 'Me') {
+        getEventFriendsSheet().appendRow([Utilities.getUuid(), id, frData[i][0], now]);
+        break;
+      }
+    }
+
     return { success: true, event: { id: id, name: name.trim(), accountId: user.id, createdAt: now } };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function renameEvent(token, eventId, name) {
+  try {
+    var user = requireAuth(token);
+    if (!name || name.trim() === '') return { success: false, error: 'Event name is required' };
+    var ss = getSpreadsheet();
+    var sheet = ss.getSheetByName('Events');
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] === eventId && data[i][2] === user.id) {
+        sheet.getRange(i + 1, 2).setValue(name.trim());
+        return { success: true, name: name.trim() };
+      }
+    }
+    return { success: false, error: 'Event not found' };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -392,6 +555,15 @@ function deleteEvent(token, eventId) {
     for (var i = detailsData.length - 1; i >= 1; i--) {
       if (detailsData[i][1] === eventId) {
         detailsSheet.deleteRow(i + 1);
+      }
+    }
+
+    // Delete event-friend links
+    var efSheet = getEventFriendsSheet();
+    var efData = efSheet.getDataRange().getValues();
+    for (var i = efData.length - 1; i >= 1; i--) {
+      if (efData[i][1] === eventId) {
+        efSheet.deleteRow(i + 1);
       }
     }
 

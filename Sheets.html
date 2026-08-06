@@ -1,20 +1,30 @@
-<!-- Sheet: New Event -->
+<!-- Sheet: New Event / Edit Event -->
 <div class="sheet" id="shEvent">
   <div class="sh-pill"></div>
-  <div class="sh-hd"><span class="sh-title">New Event</span><button class="sh-close" id="shEventClose">✕</button></div>
+  <div class="sh-hd"><span class="sh-title" id="evTitle">New Event</span><button class="sh-close" id="shEventClose">✕</button></div>
   <div class="sh-body">
     <div class="inp-g"><label class="inp-lbl">Event Name</label><input class="inp" id="inpEv" type="text" placeholder="e.g. Chiang Mai Trip" autocomplete="off"/></div>
-    <button class="sh-btn" id="btnSubmitEvent">Create Event</button>
+    <button class="sh-btn" id="btnSubmitEvent">Next</button>
   </div>
 </div>
 
-<!-- Sheet: Add Friend -->
-<div class="sheet" id="shFriend">
+<!-- Sheet: Add / Manage Event Friends -->
+<div class="sheet" id="shEventFriends">
   <div class="sh-pill"></div>
-  <div class="sh-hd"><span class="sh-title">Add Friend</span><button class="sh-close" id="shFriendClose">✕</button></div>
+  <div class="sh-hd"><span class="sh-title" id="efTitle">Add Friends</span><button class="sh-close" id="shEfClose">✕</button></div>
   <div class="sh-body">
-    <div class="inp-g"><label class="inp-lbl">Friend's Name</label><input class="inp" id="inpFr" type="text" placeholder="e.g. Sarah" autocomplete="off"/></div>
-    <button class="sh-btn" id="btnSubmitFriend">Add Friend</button>
+    <div class="inp-g">
+      <label class="inp-lbl">Add New Friend</label>
+      <div style="display:flex;gap:10px">
+        <input class="inp" id="inpEfNew" type="text" placeholder="e.g. Sarah" autocomplete="off" style="flex:1"/>
+        <button type="button" class="ck-btn hi" id="btnEfAddNew" style="height:58px;padding:0 20px;flex-shrink:0">Add</button>
+      </div>
+    </div>
+    <div class="inp-g">
+      <label class="inp-lbl">Select Friends</label>
+      <div class="ck-list" id="efList"></div>
+    </div>
+    <button class="sh-btn" id="btnEfDone">Done</button>
   </div>
 </div>
 
