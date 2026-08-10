@@ -69,9 +69,37 @@ function renderDetails() {
   $el.html(html);
 }
 
-function exportExpensesCsv() {
+// Lazy-loaded on first export so a normal page load never pays for these.
+var _pdfLibsPromise = null;
+function _loadPdfLibs() {
+  if (_pdfLibsPromise) return _pdfLibsPromise;
+  _pdfLibsPromise = new Promise(function (resolve, reject) {
+    var s1 = document.createElement('script');
+    s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    s1.onload = function () {
+      var s2 = document.createElement('script');
+      s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      s2.onload = resolve;
+      s2.onerror = reject;
+      document.head.appendChild(s2);
+    };
+    s1.onerror = reject;
+    document.head.appendChild(s1);
+  });
+  return _pdfLibsPromise;
+}
+
+async function exportExpensesPdf() {
   if (!CUR_EV) return;
   if (!DETAILS.length) { toast('No expenses to export yet', 'warn'); return }
+
+  toast('Preparing PDF…');
+  try {
+    await _loadPdfLibs();
+  } catch (e) {
+    toast('Could not load the PDF library — check your connection', 'err');
+    return;
+  }
 
   var fm = {};
   $.each(FRIENDS, function (_, f) { fm[f.id] = f.name });
@@ -82,31 +110,78 @@ function exportExpensesCsv() {
   });
   ord.reverse();
 
-  var rows = [['Date', 'Description', 'Paid By', 'Amount', 'Split Between']];
-  ord.forEach(function (tid) {
+  var txRowsHtml = ord.map(function (tid) {
     var group = grp[tid], f = group[0];
     var payerName = fm[f.payId] || f.payId;
-    var names = group.map(function (r) { return fm[r.friendId] || r.friendId }).join('; ');
-    rows.push([fmtDate(f.createdAt), f.description || 'Transaction', payerName, parseFloat(f.totalAmount).toFixed(2), names]);
+    var total = parseFloat(f.totalAmount);
+    var perPerson = total / group.length;
+    return '<tr>' +
+      '<td style="padding:8px;border:1px solid #ddd">' + esc(fmtDate(f.createdAt)) + '</td>' +
+      '<td style="padding:8px;border:1px solid #ddd">' + esc(f.description || 'Transaction') + '</td>' +
+      '<td style="padding:8px;border:1px solid #ddd;text-align:right">' + esc(fmtAmt(total)) + '</td>' +
+      '<td style="padding:8px;border:1px solid #ddd">' + esc(payerName) + '</td>' +
+      '<td style="padding:8px;border:1px solid #ddd;text-align:right">' + esc(fmtAmt(perPerson)) + '</td>' +
+      '</tr>';
+  }).join('');
+
+  var settlements = null;
+  try {
+    var r = await gsc('getSummary', TK, CUR_EV.id);
+    if (r.success) settlements = r.settlements || [];
+  } catch (e) {}
+
+  var settleHtml;
+  if (settlements === null) {
+    settleHtml = '<tr><td colspan="4" style="padding:10px;text-align:center;color:#999">Unable to load summary</td></tr>';
+  } else if (!settlements.length) {
+    settleHtml = '<tr><td colspan="4" style="padding:10px;text-align:center;color:#16a34a">All settled — no payments needed</td></tr>';
+  } else {
+    settleHtml = settlements.map(function (s) {
+      return '<tr>' +
+        '<td style="padding:8px;border:1px solid #ddd">' + esc(s.fromName) + '</td>' +
+        '<td style="padding:8px;border:1px solid #ddd;text-align:center">→</td>' +
+        '<td style="padding:8px;border:1px solid #ddd">' + esc(s.toName) + '</td>' +
+        '<td style="padding:8px;border:1px solid #ddd;text-align:right">' + esc(fmtAmt(s.amount)) + '</td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  var container = document.createElement('div');
+  container.style.cssText = 'position:fixed;left:-9999px;top:0;width:760px;padding:32px;background:#fff;font-family:\'Segoe UI\',sans-serif;color:#111;';
+  container.innerHTML =
+    '<h1 style="font-size:22px;margin:0 0 4px">' + esc(CUR_EV.name) + '</h1>' +
+    '<div style="font-size:13px;color:#666;margin-bottom:24px">' + esc(fmtDate(CUR_EV.createdAt)) + '</div>' +
+    '<h2 style="font-size:16px;margin:0 0 10px">รายการค่าใช้จ่าย</h2>' +
+    '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:28px">' +
+    '<thead><tr style="background:#f3f0fa">' +
+    '<th style="padding:8px;border:1px solid #ddd;text-align:left">วันที่บันทึก</th>' +
+    '<th style="padding:8px;border:1px solid #ddd;text-align:left">รายละเอียด</th>' +
+    '<th style="padding:8px;border:1px solid #ddd;text-align:right">ราคารวม</th>' +
+    '<th style="padding:8px;border:1px solid #ddd;text-align:left">ใครจ่าย</th>' +
+    '<th style="padding:8px;border:1px solid #ddd;text-align:right">ตกคนละเท่าไหร่</th>' +
+    '</tr></thead><tbody>' + txRowsHtml + '</tbody></table>' +
+    '<h2 style="font-size:16px;margin:0 0 10px">สรุปรวม — ใครต้องจ่ายใครบ้าง</h2>' +
+    '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+    '<thead><tr style="background:#f3f0fa">' +
+    '<th style="padding:8px;border:1px solid #ddd;text-align:left">ผู้จ่าย</th>' +
+    '<th style="padding:8px;border:1px solid #ddd"></th>' +
+    '<th style="padding:8px;border:1px solid #ddd;text-align:left">ผู้รับเงิน</th>' +
+    '<th style="padding:8px;border:1px solid #ddd;text-align:right">จำนวนเงิน</th>' +
+    '</tr></thead><tbody>' + settleHtml + '</tbody></table>';
+  document.body.appendChild(container);
+
+  var jsPDF = window.jspdf.jsPDF;
+  var doc = new jsPDF('p', 'pt', 'a4');
+  var filename = (CUR_EV.name || 'expenses').replace(/[^\w฀-๿ -]/g, '') + '_expenses.pdf';
+  doc.html(container, {
+    x: 20, y: 20,
+    width: 555,
+    windowWidth: 760,
+    callback: function (doc) {
+      document.body.removeChild(container);
+      doc.save(filename);
+    }
   });
-
-  var csv = rows.map(function (row) {
-    return row.map(function (cell) {
-      var s = String(cell == null ? '' : cell);
-      if (/[",\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
-      return s;
-    }).join(',');
-  }).join('\r\n');
-
-  var blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement('a');
-  a.href = url;
-  a.download = (CUR_EV.name || 'expenses').replace(/[^\w฀-๿ -]/g, '') + '_expenses.csv';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(function () { URL.revokeObjectURL(url) }, 1000);
 }
 
 async function loadSummary(id) {
@@ -208,6 +283,6 @@ $(function () {
   $('#btnEditEvent').on('click', function () {
     if (CUR_EV) openRenameEventSheet(CUR_EV);
   });
-  $('#btnExportTx').on('click', exportExpensesCsv);
+  $('#btnExportTx').on('click', exportExpensesPdf);
 });
 </script>
