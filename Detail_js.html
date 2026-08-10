@@ -146,8 +146,10 @@ async function exportExpensesPdf() {
     }).join('');
   }
 
+  var hideWrap = document.createElement('div');
+  hideWrap.style.cssText = 'position:absolute;top:0;left:0;width:0;height:0;overflow:hidden;';
   var container = document.createElement('div');
-  container.style.cssText = 'position:fixed;left:-9999px;top:0;width:760px;padding:32px;background:#fff;font-family:\'Segoe UI\',sans-serif;color:#111;';
+  container.style.cssText = 'width:760px;padding:32px;background:#fff;font-family:\'Segoe UI\',sans-serif;color:#111;';
   container.innerHTML =
     '<h1 style="font-size:22px;margin:0 0 4px">' + esc(CUR_EV.name) + '</h1>' +
     '<div style="font-size:13px;color:#666;margin-bottom:24px">' + esc(fmtDate(CUR_EV.createdAt)) + '</div>' +
@@ -168,7 +170,8 @@ async function exportExpensesPdf() {
     '<th style="padding:8px;border:1px solid #ddd;text-align:left">ผู้รับเงิน</th>' +
     '<th style="padding:8px;border:1px solid #ddd;text-align:right">จำนวนเงิน</th>' +
     '</tr></thead><tbody>' + settleHtml + '</tbody></table>';
-  document.body.appendChild(container);
+  hideWrap.appendChild(container);
+  document.body.appendChild(hideWrap);
 
   var jsPDF = window.jspdf.jsPDF;
   var doc = new jsPDF('p', 'pt', 'a4');
@@ -178,7 +181,7 @@ async function exportExpensesPdf() {
     width: 555,
     windowWidth: 760,
     callback: function (doc) {
-      document.body.removeChild(container);
+      document.body.removeChild(hideWrap);
       doc.save(filename);
     }
   });
