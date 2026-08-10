@@ -40,6 +40,15 @@
 }
 .tab-btn.on{background:var(--p-dim);color:var(--p-lt);border:1px solid rgba(147,51,234,.28)}
 
+.tx-toolbar{display:flex;justify-content:flex-end;margin-bottom:12px}
+.btn-export{
+  display:flex;align-items:center;gap:8px;padding:10px 18px;border-radius:14px;
+  background:var(--p-dim);border:1px solid rgba(147,51,234,.28);color:var(--p-lt);
+  font-size:14px;font-weight:600;cursor:pointer;transition:background .15s;
+}
+.btn-export:active{background:rgba(147,51,234,.28)}
+.btn-export svg{width:16px;height:16px;fill:currentColor}
+
 .tx-card{
   background:var(--s1);border:1px solid var(--bd);border-radius:22px;
   margin-bottom:12px;overflow:hidden;padding:18px 20px;
@@ -61,6 +70,14 @@
 }
 .tx-foot{display:flex;align-items:center;justify-content:space-between}
 .tx-date{font-size:13px;color:var(--t3)}
+.tx-actions{display:flex;gap:8px}
+.btn-edit{
+  width:36px;height:36px;border-radius:12px;background:var(--p-dim);
+  border:1px solid rgba(147,51,234,.22);display:flex;align-items:center;
+  justify-content:center;flex-shrink:0;transition:background .15s;cursor:pointer;
+}
+.btn-edit:active{background:rgba(147,51,234,.32)}
+.btn-edit svg{width:17px;height:17px;fill:var(--p-lt)}
 
 .settle-card{
   background:var(--s1);border:1px solid var(--bd);border-radius:22px;

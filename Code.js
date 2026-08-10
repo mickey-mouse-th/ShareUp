@@ -662,6 +662,40 @@ function addDetail(token, eventId, payId, friendIds, totalAmount, description, c
   }
 }
 
+function updateDetail(token, transactionId, payId, friendIds, totalAmount, description, customAmounts) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    var sheet = ss.getSheetByName('Details');
+    var data = sheet.getDataRange().getValues();
+
+    var eventId = null, createdAt = null;
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][2] === transactionId) { eventId = data[i][1]; createdAt = data[i][8]; break; }
+    }
+    if (!eventId) return { success: false, error: 'Transaction not found' };
+    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Transaction not found' };
+
+    for (var i = data.length - 1; i >= 1; i--) {
+      if (data[i][2] === transactionId) sheet.deleteRow(i + 1);
+    }
+
+    var total = parseFloat(totalAmount);
+    var perPerson = total / friendIds.length;
+    for (var i = 0; i < friendIds.length; i++) {
+      var fid = friendIds[i];
+      var amount = (customAmounts && customAmounts[fid] !== undefined)
+        ? parseFloat(customAmounts[fid])
+        : perPerson;
+      sheet.appendRow([Utilities.getUuid(), eventId, transactionId, payId, fid, amount, total, description, createdAt]);
+    }
+
+    return { success: true, transactionId: transactionId };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
 function deleteDetail(token, transactionId) {
   try {
     var user = requireAuth(token);

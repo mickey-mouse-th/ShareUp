@@ -6,8 +6,9 @@ var _evEditId = null;
 var _efEventId = null;    // 'create' | 'manage'
 var _efMode = 'manage';
 var _pendingNewEvent = null;
+var _editTxId = null;     // set while editing an existing transaction, else null
 
-function setSplitMode(m) {
+function setSplitMode(m, prefill) {
   splitMode = m;
   $('#modeEq').toggleClass('on', m === 'equal');
   $('#modeCus').toggleClass('on', m === 'custom');
@@ -15,17 +16,18 @@ function setSplitMode(m) {
   $('#eqSplitG').toggle(m === 'equal');
   $('#ppBox').hide();
   $('#cusG').toggle(m === 'custom');
-  if (m === 'custom') renderCustomRows();
+  if (m === 'custom') renderCustomRows(prefill);
 }
 
-function renderCustomRows() {
+function renderCustomRows(prefill) {
   var html = $.map(FRIENDS, function (f) {
+    var val = (prefill && prefill[f.id] !== undefined) ? parseFloat(prefill[f.id]).toFixed(2) : '';
     return '<div class="ca-row">' +
       '<div class="ca-av" style="background:' + avCol(f.name) + '">' + initials(f.name) + '</div>' +
       '<span class="ca-name">' + esc(f.name) + '</span>' +
       '<div class="ca-inp-wrap">' +
       '<span class="ca-inp-sym">฿</span>' +
-      '<input class="ca-inp" type="number" data-id="' + esc(f.id) + '" placeholder="0" min="0" step="0.01"/>' +
+      '<input class="ca-inp" type="number" data-id="' + esc(f.id) + '" placeholder="0" min="0" step="0.01" value="' + val + '"/>' +
       '</div>' +
       '</div>';
   }).join('');
@@ -180,6 +182,21 @@ async function submitEfDone() {
 }
 
 // ── FAB ────────────────────────────────────────
+function buildTxFriendPickers(checkedIds) {
+  var payerHtml = $.map(FRIENDS, function (f) {
+    return '<option value="' + esc(f.id) + '">' + esc(f.name) + '</option>';
+  }).join('');
+  $('#inpPayer').html(payerHtml);
+  var ckHtml = $.map(FRIENDS, function (f) {
+    var checked = checkedIds.indexOf(f.id) !== -1;
+    return '<div class="ck-row' + (checked ? ' checked' : '') + '" data-id="' + esc(f.id) + '">' +
+      '<input type="checkbox" value="' + esc(f.id) + '"' + (checked ? ' checked' : '') + '/>' +
+      '<label>' + esc(f.name) + '</label>' +
+      '</div>';
+  }).join('');
+  $('#inpShared').html(ckHtml);
+}
+
 function handleFab() {
   if (CUR_EV) {
     if (CUR_DT === 'friends') {
@@ -191,27 +208,55 @@ function handleFab() {
       openEventFriendsSheet(CUR_EV.id, 'manage');
       return;
     }
+    _editTxId = null;
+    $('#txTitle').text('Add Transaction');
+    $('#btnSubmitTx').text('Add Transaction');
     $('#inpDesc').val('');
     $('#inpAmt').val('');
     $('#ppBox').hide();
-    splitMode = 'equal';
-    $('#modeEq').addClass('on'); $('#modeCus').removeClass('on');
-    $('#eqAmtG').show(); $('#eqSplitG').show(); $('#cusG').hide();
-    var payerHtml = $.map(FRIENDS, function (f) {
-      return '<option value="' + esc(f.id) + '">' + esc(f.name) + '</option>';
-    }).join('');
-    $('#inpPayer').html(payerHtml);
-    var ckHtml = $.map(FRIENDS, function (f) {
-      return '<div class="ck-row checked" data-id="' + esc(f.id) + '">' +
-        '<input type="checkbox" value="' + esc(f.id) + '" checked/>' +
-        '<label>' + esc(f.name) + '</label>' +
-        '</div>';
-    }).join('');
-    $('#inpShared').html(ckHtml);
+    setSplitMode('equal');
+    buildTxFriendPickers(FRIENDS.map(function (f) { return f.id }));
     openSheet('shTx');
   } else {
     openNewEventSheet();
   }
+}
+
+function openEditTxSheet(tid) {
+  var rows = DETAILS.filter(function (d) { return d.transactionId === tid });
+  if (!rows.length) return;
+  var f = rows[0];
+  var friendIds = rows.map(function (r) { return r.friendId });
+  var isCustom = $.grep(rows, function (r) {
+    return Math.abs(parseFloat(r.amount) - parseFloat(rows[0].amount)) > 0.01;
+  }).length > 0;
+
+  _editTxId = tid;
+  $('#txTitle').text('Edit Transaction');
+  $('#btnSubmitTx').text('Save Changes');
+  $('#inpDesc').val(f.description || '');
+  buildTxFriendPickers(friendIds);
+  $('#inpPayer').val(f.payId);
+
+  if (isCustom) {
+    var prefill = {};
+    rows.forEach(function (r) { prefill[r.friendId] = r.amount });
+    setSplitMode('custom', prefill);
+  } else {
+    setSplitMode('equal');
+    $('#inpAmt').val(parseFloat(f.totalAmount));
+    calcPP();
+  }
+  openSheet('shTx');
+}
+
+function _buildLocalDetailRows(transactionId, payId, friendIds, totalAmount, description, customAmounts, createdAt) {
+  var perPerson = totalAmount / friendIds.length;
+  return friendIds.map(function (fid) {
+    var amount = (customAmounts && customAmounts[fid] !== undefined) ? parseFloat(customAmounts[fid]) : perPerson;
+    return { id: transactionId + '_' + fid, eventId: CUR_EV.id, transactionId: transactionId,
+      payId: payId, friendId: fid, amount: amount, totalAmount: totalAmount, description: description, createdAt: createdAt };
+  });
 }
 
 async function submitTx() {
@@ -236,22 +281,29 @@ async function submitTx() {
     });
     if (!friendIds.length) { toast('ระบุจำนวนเงินอย่างน้อย 1 คน', 'warn'); return }
   }
+  var editId = _editTxId;
   closeSheets();
   try {
-    var r = await gsc('addDetail', TK, CUR_EV.id, pay, friendIds, totalAmount, desc, customAmounts);
-    if (r.success) {
-      toast('Transaction added! 💸');
-      var now = new Date().toISOString();
-      var perPerson = totalAmount / friendIds.length;
-      var newRows = friendIds.map(function (fid) {
-        var amt = (customAmounts && customAmounts[fid] !== undefined) ? parseFloat(customAmounts[fid]) : perPerson;
-        return { id: r.transactionId + '_' + fid, eventId: CUR_EV.id, transactionId: r.transactionId,
-          payId: pay, friendId: fid, amount: amt, totalAmount: totalAmount, description: desc, createdAt: now };
-      });
-      DETAILS = DETAILS.concat(newRows);
-      renderDetails();
-    } else toast(r.error, 'err');
+    if (editId) {
+      var r = await gsc('updateDetail', TK, editId, pay, friendIds, totalAmount, desc, customAmounts);
+      if (r.success) {
+        toast('Transaction updated');
+        var existing = DETAILS.filter(function (d) { return d.transactionId === editId })[0];
+        var createdAt = existing ? existing.createdAt : new Date().toISOString();
+        DETAILS = DETAILS.filter(function (d) { return d.transactionId !== editId })
+          .concat(_buildLocalDetailRows(editId, pay, friendIds, totalAmount, desc, customAmounts, createdAt));
+        renderDetails();
+      } else toast(r.error, 'err');
+    } else {
+      var r = await gsc('addDetail', TK, CUR_EV.id, pay, friendIds, totalAmount, desc, customAmounts);
+      if (r.success) {
+        toast('Transaction added! 💸');
+        DETAILS = DETAILS.concat(_buildLocalDetailRows(r.transactionId, pay, friendIds, totalAmount, desc, customAmounts, new Date().toISOString()));
+        renderDetails();
+      } else toast(r.error, 'err');
+    }
   } catch (e) { toast('' + e, 'err') }
+  _editTxId = null;
 }
 
 function askDel(type, id, name) {

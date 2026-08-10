@@ -55,13 +55,58 @@ function renderDetails() {
       '<div class="tx-people">' + chips + '</div>' +
       '<div class="tx-foot">' +
       '<span class="tx-date">' + fmtDate(f.createdAt) + '</span>' +
+      '<div class="tx-actions">' +
+      '<button class="btn-edit tx-edit" data-tid="' + esc(tid) + '">' +
+      '<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>' +
+      '</button>' +
       '<button class="btn-del tx-del" data-tid="' + esc(tid) + '" data-desc="' + esc(desc) + '">' +
       '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>' +
       '</button>' +
       '</div>' +
+      '</div>' +
       '</div>';
   }).join('');
   $el.html(html);
+}
+
+function exportExpensesCsv() {
+  if (!CUR_EV) return;
+  if (!DETAILS.length) { toast('No expenses to export yet', 'warn'); return }
+
+  var fm = {};
+  $.each(FRIENDS, function (_, f) { fm[f.id] = f.name });
+  var grp = {}, ord = [];
+  $.each(DETAILS, function (_, d) {
+    if (!grp[d.transactionId]) { grp[d.transactionId] = []; ord.push(d.transactionId) }
+    grp[d.transactionId].push(d);
+  });
+  ord.reverse();
+
+  var rows = [['Date', 'Description', 'Paid By', 'Amount', 'Split Between']];
+  ord.forEach(function (tid) {
+    var group = grp[tid], f = group[0];
+    var payerName = fm[f.payId] || f.payId;
+    var names = group.map(function (r) { return fm[r.friendId] || r.friendId }).join('; ');
+    rows.push([fmtDate(f.createdAt), f.description || 'Transaction', payerName, parseFloat(f.totalAmount).toFixed(2), names]);
+  });
+
+  var csv = rows.map(function (row) {
+    return row.map(function (cell) {
+      var s = String(cell == null ? '' : cell);
+      if (/[",\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    }).join(',');
+  }).join('\r\n');
+
+  var blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = (CUR_EV.name || 'expenses').replace(/[^\w฀-๿ -]/g, '') + '_expenses.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url) }, 1000);
 }
 
 async function loadSummary(id) {
@@ -152,6 +197,10 @@ $(function () {
     e.stopPropagation();
     askDel('tx', $(this).data('tid'), $(this).data('desc'));
   });
+  $('#txList').on('click', '.tx-edit', function (e) {
+    e.stopPropagation();
+    openEditTxSheet($(this).data('tid'));
+  });
   $('#detailFriendsList').on('click', '.ef-remove', function (e) {
     e.stopPropagation();
     removeEventFriend($(this).data('id'));
@@ -159,5 +208,6 @@ $(function () {
   $('#btnEditEvent').on('click', function () {
     if (CUR_EV) openRenameEventSheet(CUR_EV);
   });
+  $('#btnExportTx').on('click', exportExpensesCsv);
 });
 </script>
