@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+<meta name="theme-color" content="#100F22"/>
+<title>ShareUp - Shared Event</title>
+<?!= include('Shared_css') ?>
+<?!= include('Detail_css') ?>
+<style>
+  .shared-wrap{max-width:520px;margin:0 auto;padding:calc(var(--si)+20px) 16px calc(24px + var(--sb))}
+  .shared-hdr{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+  .shared-hdr .hdr-brand{width:34px;height:34px;border-radius:11px}
+  .shared-hdr .hdr-brand svg{width:19px;height:19px}
+  .shared-hdr-name{font-size:17px;font-weight:700}
+  .shared-badge{
+    font-size:12px;font-weight:700;color:var(--p-lt);background:var(--p-dim);
+    border:1px solid rgba(147,51,234,.28);border-radius:20px;padding:6px 14px;
+    display:inline-flex;align-items:center;gap:6px;margin-bottom:18px;
+  }
+  .shared-badge svg{width:14px;height:14px;fill:currentColor}
+  .shared-state{text-align:center;padding:60px 0;color:var(--t2)}
+</style>
+</head>
+<body>
+<div class="shared-wrap">
+  <div class="shared-hdr">
+    <div class="hdr-brand"><svg viewBox="0 0 24 24"><path d="M12 12L12.7 4.03A8 8 0 0 1 19.25 15.38Z M12 12L18.55 16.59A8 8 0 0 1 5.45 16.59Z M12 12L4.75 15.38A8 8 0 0 1 11.3 4.03Z"/></svg></div>
+    <span class="shared-hdr-name">ShareUp</span>
+  </div>
+  <div class="shared-badge">
+    <svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+    View only
+  </div>
+
+  <div id="shLoading" class="shared-state">Loading…</div>
+
+  <div id="shError" class="empty" style="display:none">
+    <div class="empty-t">Link not available</div>
+    <div class="empty-s" id="shErrorMsg">This share link may have been turned off.</div>
+  </div>
+
+  <div id="shContent" style="display:none">
+    <div class="ev-detail-banner" id="shBanner">
+      <div class="ev-detail-dots"></div>
+      <div class="ev-detail-emoji" id="shEmoji">🎉</div>
+      <div class="ev-detail-info">
+        <div class="ev-detail-name" id="shName"></div>
+        <div class="ev-detail-date" id="shDate"></div>
+      </div>
+    </div>
+
+    <div class="sec-row"><span class="sec-lbl">Expenses</span><div class="sec-line"></div></div>
+    <div id="shTxList"></div>
+
+    <div class="sec-row"><span class="sec-lbl">Summary</span><div class="sec-line"></div></div>
+    <div id="shSumList"></div>
+  </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script>
+var SHARE_TOKEN = '<?!= shareToken ?>';
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmtAmt(n) {
+  return '฿' + parseFloat(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtDate(iso) {
+  if (!iso) return '';
+  try { return new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) }
+  catch (e) { return iso }
+}
+function initials(s) { return (s || '?')[0].toUpperCase() }
+
+var BANNER_GRADS = [
+  'linear-gradient(135deg,#3730A3,#A5B4FC)', 'linear-gradient(135deg,#065F46,#5EEAD4)',
+  'linear-gradient(135deg,#92400E,#FCD34D)', 'linear-gradient(135deg,#6D28D9,#C4B5FD)',
+  'linear-gradient(135deg,#075985,#7DD3FC)', 'linear-gradient(135deg,#9D174D,#FDA4AF)',
+  'linear-gradient(135deg,#14532D,#6EE7B7)', 'linear-gradient(135deg,#7C2D12,#FDBA74)'
+];
+var AV_COLORS = [
+  'linear-gradient(135deg,#6D28D9,#C4B5FD)', 'linear-gradient(135deg,#1D4ED8,#93C5FD)',
+  'linear-gradient(135deg,#047857,#6EE7B7)', 'linear-gradient(135deg,#B45309,#FCD34D)',
+  'linear-gradient(135deg,#B91C1C,#FCA5A5)', 'linear-gradient(135deg,#BE185D,#F9A8D4)',
+  'linear-gradient(135deg,#5B21B6,#DDD6FE)', 'linear-gradient(135deg,#0E7490,#67E8F9)'
+];
+var EMOJIS = ['🎉','🍕','✈️','🎬','🏖️','🎂','🍜','⚽','🎮','🛒','🏕️','🎵','🎸','🚂','🏔️'];
+function _hash(s, mod) {
+  var h = 0;
+  for (var i = 0; i < (s || '').length; i++) h = (h * 31 + s.charCodeAt(i)) & 0xFFFF;
+  return h % mod;
+}
+function avCol(s) { return AV_COLORS[_hash(s, AV_COLORS.length)] }
+function evEmoji(s) { return EMOJIS[_hash(s, EMOJIS.length)] }
+function bannerGrad(s) { return BANNER_GRADS[_hash(s, BANNER_GRADS.length)] }
+
+function renderTx(details) {
+  var $el = $('#shTxList');
+  if (!details.length) {
+    $el.html('<div class="empty"><div class="empty-t">No expenses yet</div></div>');
+    return;
+  }
+  var grp = {}, ord = [];
+  details.forEach(function (d) {
+    if (!grp[d.transactionId]) { grp[d.transactionId] = []; ord.push(d.transactionId) }
+    grp[d.transactionId].push(d);
+  });
+  var html = ord.map(function (tid) {
+    var rows = grp[tid], f = rows[0];
+    var total = parseFloat(f.totalAmount);
+    var desc = f.description || 'Transaction';
+    var isCustom = rows.some(function (r) { return Math.abs(parseFloat(r.amount) - parseFloat(rows[0].amount)) > 0.01 });
+    var chips = rows.map(function (r) {
+      return '<span class="tx-chip">' + esc(r.friendName) + (isCustom ? ' ' + fmtAmt(r.amount) : '') + '</span>';
+    }).join('');
+    return '<div class="tx-card">' +
+      '<div class="tx-head">' +
+      '<div class="tx-av" style="background:' + avCol(f.payerName) + '">' + initials(f.payerName) + '</div>' +
+      '<div class="tx-meta">' +
+      '<div class="tx-desc">' + esc(desc) + '</div>' +
+      '<div class="tx-by">Paid by ' + esc(f.payerName) + (isCustom ? ' · ระบุเอง' : '') + '</div>' +
+      '</div>' +
+      '<div class="tx-amt">' + fmtAmt(total) + '</div>' +
+      '</div>' +
+      '<div class="tx-people">' + chips + '</div>' +
+      '<div class="tx-foot"><span class="tx-date">' + fmtDate(f.createdAt) + '</span></div>' +
+      '</div>';
+  }).join('');
+  $el.html(html);
+}
+
+function renderSummary(ss) {
+  var $el = $('#shSumList');
+  if (!ss.length) {
+    $el.html(
+      '<div class="empty">' +
+      '<div class="empty-icon" style="background:var(--g-dim);border-color:rgba(34,197,94,.2)">' +
+      '<svg viewBox="0 0 24 24" style="fill:var(--g)"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>' +
+      '</div>' +
+      '<div class="empty-t" style="color:var(--g)">All Settled! 🎉</div>' +
+      '<div class="empty-s">Everyone is even — no payments needed</div>' +
+      '</div>'
+    );
+    return;
+  }
+  var html = ss.map(function (x) {
+    return '<div class="settle-card">' +
+      '<div class="se-person">' +
+      '<div class="se-av" style="background:' + avCol(x.fromName) + '">' + initials(x.fromName) + '</div>' +
+      '<div class="se-name">' + esc(x.fromName) + '</div>' +
+      '</div>' +
+      '<div class="se-mid">' +
+      '<div class="se-label">owes <span class="se-arrow">→</span></div>' +
+      '<div class="se-amt">' + fmtAmt(x.amount) + '</div>' +
+      '</div>' +
+      '<div class="se-person">' +
+      '<div class="se-av" style="background:' + avCol(x.toName) + '">' + initials(x.toName) + '</div>' +
+      '<div class="se-name">' + esc(x.toName) + '</div>' +
+      '</div>' +
+      '</div>';
+  }).join('');
+  $el.html(html);
+}
+
+function onFail(err) {
+  $('#shLoading').hide();
+  $('#shErrorMsg').text('' + err);
+  $('#shError').show();
+}
+
+function onData(r) {
+  $('#shLoading').hide();
+  if (!r.success) {
+    $('#shErrorMsg').text(r.error || 'This share link is no longer active');
+    $('#shError').show();
+    return;
+  }
+  $('#shName').text(r.event.name);
+  $('#shDate').text(fmtDate(r.event.createdAt));
+  $('#shEmoji').text(evEmoji(r.event.name));
+  $('#shBanner').css('background', bannerGrad(r.event.name));
+  renderTx(r.details);
+  renderSummary(r.settlements || []);
+  $('#shContent').show();
+}
+
+if (!SHARE_TOKEN) {
+  onFail('Invalid link');
+} else {
+  google.script.run.withSuccessHandler(onData).withFailureHandler(onFail).getSharedEventView(SHARE_TOKEN);
+}
+</script>
+</body>
+</html>

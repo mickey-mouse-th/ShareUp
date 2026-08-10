@@ -76,6 +76,27 @@
   </div>
 </div>
 
+<!-- Sheet: Share Event -->
+<div class="sheet" id="shShare">
+  <div class="sh-pill"></div>
+  <div class="sh-hd"><span class="sh-title">Share Event</span><button class="sh-close" id="shShareClose">✕</button></div>
+  <div class="sh-body">
+    <div id="shareOff">
+      <div class="empty-s" style="margin-bottom:18px">Anyone with the link can view this event's expenses and summary — they won't be able to add, edit, or delete anything.</div>
+      <button class="sh-btn" id="btnEnableShare">Create Share Link</button>
+    </div>
+    <div id="shareOn" style="display:none">
+      <label class="inp-lbl">Share Link</label>
+      <div class="inp-row">
+        <input class="inp" id="shareLinkInp" type="text" readonly/>
+        <button type="button" class="ck-btn hi" id="btnCopyShare">Copy</button>
+      </div>
+      <div class="empty-s" style="margin:14px 0 18px">Anyone with this link can view — but not edit — this event. Turn it off anytime to revoke access.</div>
+      <button class="btn-confirm" id="btnDisableShare" style="width:100%;background:var(--r)">Stop Sharing</button>
+    </div>
+  </div>
+</div>
+
 <!-- Sheet: Confirm Delete -->
 <div class="sheet" id="shConfirm">
   <div class="sh-pill"></div>

@@ -62,6 +62,9 @@ function initSheets(ss) {
   var eventFriendsSheet = ss.insertSheet('EventFriends');
   eventFriendsSheet.appendRow(['id', 'eventId', 'friendId', 'createdAt']);
 
+  var eventSharesSheet = ss.insertSheet('EventShares');
+  eventSharesSheet.appendRow(['eventId', 'token', 'createdAt']);
+
   var sessionsSheet = ss.insertSheet('Sessions');
   sessionsSheet.appendRow(['token', 'accountId', 'userInfo', 'createdAt', 'expiresAt']);
 
@@ -95,6 +98,16 @@ function getEventFriendsSheet() {
   if (!sheet) {
     sheet = ss.insertSheet('EventFriends');
     sheet.appendRow(['id', 'eventId', 'friendId', 'createdAt']);
+  }
+  return sheet;
+}
+
+function getEventSharesSheet() {
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName('EventShares');
+  if (!sheet) {
+    sheet = ss.insertSheet('EventShares');
+    sheet.appendRow(['eventId', 'token', 'createdAt']);
   }
   return sheet;
 }
@@ -142,7 +155,17 @@ function _cleanExpiredSessions() {
 // Entry Point
 // ----------------------------------------------------------------
 
-function doGet() {
+function doGet(e) {
+  var rawToken = e && e.parameter && e.parameter.share;
+  if (rawToken) {
+    // Strict allowlist so this can be embedded directly into the page's inline script safely.
+    var shareToken = /^[a-zA-Z0-9-]{10,100}$/.test(rawToken) ? rawToken : '';
+    var tpl = HtmlService.createTemplateFromFile('SharedView');
+    tpl.shareToken = shareToken;
+    return tpl.evaluate()
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+      .setTitle('ShareUp - Shared Event');
+  }
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
@@ -590,6 +613,15 @@ function deleteEvent(token, eventId) {
       }
     }
 
+    // Delete any share link
+    var shSheet = getEventSharesSheet();
+    var shData = shSheet.getDataRange().getValues();
+    for (var i = shData.length - 1; i >= 1; i--) {
+      if (shData[i][0] === eventId) {
+        shSheet.deleteRow(i + 1);
+      }
+    }
+
     // Delete event
     var eventsSheet = ss.getSheetByName('Events');
     var eventsData = eventsSheet.getDataRange().getValues();
@@ -600,6 +632,123 @@ function deleteEvent(token, eventId) {
       }
     }
     return { success: false, error: 'Event not found' };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+// ----------------------------------------------------------------
+// Event Sharing (public read-only link)
+// ----------------------------------------------------------------
+
+function getShareLink(token, eventId) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
+    var data = getEventSharesSheet().getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] === eventId) {
+        return { success: true, shareToken: data[i][1], shareUrl: ScriptApp.getService().getUrl() + '?share=' + data[i][1] };
+      }
+    }
+    return { success: true, shareToken: null };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function enableEventShare(token, eventId) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
+
+    var sheet = getEventSharesSheet();
+    var data = sheet.getDataRange().getValues();
+    var shareToken = null;
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] === eventId) { shareToken = data[i][1]; break; }
+    }
+    if (!shareToken) {
+      shareToken = Utilities.getUuid();
+      sheet.appendRow([eventId, shareToken, new Date().toISOString()]);
+    }
+    return { success: true, shareToken: shareToken, shareUrl: ScriptApp.getService().getUrl() + '?share=' + shareToken };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function disableEventShare(token, eventId) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
+    var sheet = getEventSharesSheet();
+    var data = sheet.getDataRange().getValues();
+    for (var i = data.length - 1; i >= 1; i--) {
+      if (data[i][0] === eventId) sheet.deleteRow(i + 1);
+    }
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+// Public — intentionally takes no auth token. Only ever returns the one
+// event a valid, unguessable share token points to; never account data.
+function getSharedEventView(shareToken) {
+  try {
+    if (!shareToken) return { success: false, error: 'Invalid link' };
+    var ss = getSpreadsheet();
+
+    var shData = getEventSharesSheet().getDataRange().getValues();
+    var eventId = null;
+    for (var i = 1; i < shData.length; i++) {
+      if (shData[i][1] === shareToken) { eventId = shData[i][0]; break; }
+    }
+    if (!eventId) return { success: false, error: 'This share link is no longer active' };
+
+    var evData = ss.getSheetByName('Events').getDataRange().getValues();
+    var eventRow = null;
+    for (var i = 1; i < evData.length; i++) {
+      if (evData[i][0] === eventId) { eventRow = evData[i]; break; }
+    }
+    if (!eventRow) return { success: false, error: 'This share link is no longer active' };
+    var accountId = eventRow[2];
+
+    var dtData = ss.getSheetByName('Details').getDataRange().getValues();
+    var rawDetails = [];
+    for (var i = 1; i < dtData.length; i++) {
+      if (dtData[i][1] === eventId) {
+        rawDetails.push({ transactionId: dtData[i][2], payId: dtData[i][3], friendId: dtData[i][4],
+          amount: dtData[i][5], totalAmount: dtData[i][6], description: dtData[i][7], createdAt: dtData[i][8] });
+      }
+    }
+
+    var friends = _getEventFriends(ss, eventId, accountId);
+    var friendMap = {};
+    friends.forEach(function (f) { friendMap[f.id] = f.name });
+
+    var details = rawDetails.map(function (d) {
+      return {
+        transactionId: d.transactionId,
+        payerName: friendMap[d.payId] || d.payId,
+        friendName: friendMap[d.friendId] || d.friendId,
+        amount: d.amount,
+        totalAmount: d.totalAmount,
+        description: d.description,
+        createdAt: d.createdAt
+      };
+    });
+
+    return {
+      success: true,
+      event: { name: eventRow[1], createdAt: eventRow[3] },
+      details: details,
+      settlements: _computeSettlements(rawDetails, friendMap)
+    };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -717,86 +866,84 @@ function deleteDetail(token, transactionId) {
 // Summary / Settlement Calculation
 // ----------------------------------------------------------------
 
+// detailRows: array of {payId, friendId, amount}. friendMap: id -> name.
+function _computeSettlements(detailRows, friendMap) {
+  // debt[debtor][creditor] = amount debtor owes creditor
+  var debt = {};
+  detailRows.forEach(function (row) {
+    var payerId = row.payId;
+    var participantId = row.friendId;
+    var amount = parseFloat(row.amount);
+    if (participantId !== payerId) {
+      if (!debt[participantId]) debt[participantId] = {};
+      if (!debt[participantId][payerId]) debt[participantId][payerId] = 0;
+      debt[participantId][payerId] += amount;
+    }
+  });
+
+  // Net pairwise debts
+  var netDebt = {};
+  var processed = {};
+  Object.keys(debt).forEach(function (debtor) {
+    Object.keys(debt[debtor]).forEach(function (creditor) {
+      var key1 = debtor + '_' + creditor;
+      var key2 = creditor + '_' + debtor;
+      if (processed[key1] || processed[key2]) return;
+      processed[key1] = true;
+      processed[key2] = true;
+
+      var owes = debt[debtor][creditor] || 0;
+      var oweBack = (debt[creditor] && debt[creditor][debtor]) ? debt[creditor][debtor] : 0;
+      var net = owes - oweBack;
+
+      if (Math.abs(net) < 0.01) return; // negligible
+
+      if (net > 0) {
+        if (!netDebt[debtor]) netDebt[debtor] = {};
+        netDebt[debtor][creditor] = net;
+      } else {
+        if (!netDebt[creditor]) netDebt[creditor] = {};
+        netDebt[creditor][debtor] = -net;
+      }
+    });
+  });
+
+  // Build settlements array
+  var settlements = [];
+  Object.keys(netDebt).forEach(function (from) {
+    Object.keys(netDebt[from]).forEach(function (to) {
+      settlements.push({
+        from: from,
+        fromName: friendMap[from] || from,
+        to: to,
+        toName: friendMap[to] || to,
+        amount: Math.round(netDebt[from][to] * 100) / 100
+      });
+    });
+  });
+  return settlements;
+}
+
 function getSummary(token, eventId) {
   try {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
 
-    // Get friends map for this user
-    var friendsSheet = ss.getSheetByName('Friends');
-    var friendsData = friendsSheet.getDataRange().getValues();
+    var friendsData = ss.getSheetByName('Friends').getDataRange().getValues();
     var friendMap = {};
     for (var f = 1; f < friendsData.length; f++) {
-      if (friendsData[f][1] === user.id) {
-        friendMap[friendsData[f][0]] = friendsData[f][2];
-      }
+      if (friendsData[f][1] === user.id) friendMap[friendsData[f][0]] = friendsData[f][2];
     }
 
-    // Get all details for this event
-    var detailsSheet = ss.getSheetByName('Details');
-    var detailsData = detailsSheet.getDataRange().getValues();
-
-    // debt[debtor][creditor] = amount debtor owes creditor
-    var debt = {};
-
+    var detailsData = ss.getSheetByName('Details').getDataRange().getValues();
+    var rows = [];
     for (var i = 1; i < detailsData.length; i++) {
-      var row = detailsData[i];
-      if (row[1] !== eventId) continue;
-
-      var payerId = row[3];   // who paid
-      var participantId = row[4]; // who shares this row
-      var amount = parseFloat(row[5]); // per-person share
-
-      // If the participant is NOT the payer, they owe the payer
-      if (participantId !== payerId) {
-        if (!debt[participantId]) debt[participantId] = {};
-        if (!debt[participantId][payerId]) debt[participantId][payerId] = 0;
-        debt[participantId][payerId] += amount;
+      if (detailsData[i][1] === eventId) {
+        rows.push({ payId: detailsData[i][3], friendId: detailsData[i][4], amount: detailsData[i][5] });
       }
     }
 
-    // Net pairwise debts
-    var netDebt = {};
-    var processed = {};
-    Object.keys(debt).forEach(function(debtor) {
-      Object.keys(debt[debtor]).forEach(function(creditor) {
-        var key1 = debtor + '_' + creditor;
-        var key2 = creditor + '_' + debtor;
-        if (processed[key1] || processed[key2]) return;
-        processed[key1] = true;
-        processed[key2] = true;
-
-        var owes = debt[debtor][creditor] || 0;
-        var oweBack = (debt[creditor] && debt[creditor][debtor]) ? debt[creditor][debtor] : 0;
-        var net = owes - oweBack;
-
-        if (Math.abs(net) < 0.01) return; // negligible
-
-        if (net > 0) {
-          if (!netDebt[debtor]) netDebt[debtor] = {};
-          netDebt[debtor][creditor] = net;
-        } else {
-          if (!netDebt[creditor]) netDebt[creditor] = {};
-          netDebt[creditor][debtor] = -net;
-        }
-      });
-    });
-
-    // Build settlements array
-    var settlements = [];
-    Object.keys(netDebt).forEach(function(from) {
-      Object.keys(netDebt[from]).forEach(function(to) {
-        settlements.push({
-          from: from,
-          fromName: friendMap[from] || from,
-          to: to,
-          toName: friendMap[to] || to,
-          amount: Math.round(netDebt[from][to] * 100) / 100
-        });
-      });
-    });
-
-    return { success: true, settlements: settlements };
+    return { success: true, settlements: _computeSettlements(rows, friendMap) };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
