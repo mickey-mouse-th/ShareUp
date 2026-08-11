@@ -50,11 +50,18 @@
       </div>
     </div>
 
-    <div class="sec-row"><span class="sec-lbl">Expenses</span><div class="sec-line"></div></div>
-    <div id="shTxList"></div>
+    <div class="tx-toolbar">
+      <button class="btn-export" id="shExportBtn" title="Export expenses as PDF">
+        <svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/></svg>
+        <span>Export</span>
+      </button>
+    </div>
 
     <div class="sec-row"><span class="sec-lbl">Summary</span><div class="sec-line"></div></div>
     <div id="shSumList"></div>
+
+    <div class="sec-row"><span class="sec-lbl">Expenses</span><div class="sec-line"></div></div>
+    <div id="shTxList"></div>
   </div>
 </div>
 
@@ -171,6 +178,8 @@ function onFail(err) {
   $('#shError').show();
 }
 
+var SHARE_DATA = null;
+
 function onData(r) {
   $('#shLoading').hide();
   if (!r.success) {
@@ -178,14 +187,181 @@ function onData(r) {
     $('#shError').show();
     return;
   }
+  SHARE_DATA = r;
   $('#shName').text(r.event.name);
   $('#shDate').text(fmtDate(r.event.createdAt));
   $('#shEmoji').text(evEmoji(r.event.name));
   $('#shBanner').css('background', bannerGrad(r.event.name));
-  renderTx(r.details);
   renderSummary(r.settlements || []);
+  renderTx(r.details);
   $('#shContent').show();
 }
+
+// ── Export PDF ──────────────────────────────────
+var _pdfLibsPromise = null;
+function _loadPdfLibs() {
+  if (_pdfLibsPromise) return _pdfLibsPromise;
+  _pdfLibsPromise = new Promise(function (resolve, reject) {
+    var s1 = document.createElement('script');
+    s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    s1.onload = function () {
+      var s2 = document.createElement('script');
+      s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      s2.onload = resolve;
+      s2.onerror = reject;
+      document.head.appendChild(s2);
+    };
+    s1.onerror = reject;
+    document.head.appendChild(s1);
+  });
+  return _pdfLibsPromise;
+}
+
+async function exportSharedPdf() {
+  if (!SHARE_DATA) return;
+  var details = SHARE_DATA.details || [];
+  if (!details.length) return;
+
+  try { await _loadPdfLibs() } catch (e) { return }
+
+  var grp = {}, ord = [];
+  details.forEach(function (d) {
+    if (!grp[d.transactionId]) { grp[d.transactionId] = []; ord.push(d.transactionId) }
+    grp[d.transactionId].push(d);
+  });
+  ord.reverse();
+
+  var members = {};
+  details.forEach(function (d) { members[d.payerName] = 1; members[d.friendName] = 1 });
+
+  var grandTotal = 0;
+  var txRowsHtml = ord.map(function (tid, idx) {
+    var group = grp[tid], f = group[0];
+    var total = parseFloat(f.totalAmount);
+    grandTotal += total;
+    var isCustom = group.some(function (g) {
+      return Math.abs(parseFloat(g.amount) - parseFloat(group[0].amount)) > 0.01;
+    });
+    var paidForHtml = group.map(function (g) {
+      var n = esc(g.friendName);
+      return isCustom ? n + ' <span style="color:#9333EA">(' + esc(fmtAmt(g.amount)) + ')</span>' : n;
+    }).join(', ');
+    var perPersonCell = isCustom ? 'ระบุเอง' : esc(fmtAmt(total / group.length));
+    var rowBg = idx % 2 ? 'background:#FBF7FF' : '';
+    var td = 'padding:9px 10px;border-bottom:1px solid #EDE4FB;vertical-align:top';
+    return '<tr style="' + rowBg + '">' +
+      '<td style="' + td + ';color:#6B7280;white-space:nowrap">' + esc(fmtDate(f.createdAt)) + '</td>' +
+      '<td style="' + td + ';color:#1F2937;font-weight:600">' + esc(f.description || 'Transaction') + '</td>' +
+      '<td style="' + td + ';text-align:right;color:#1F2937;font-weight:700">' + esc(fmtAmt(total)) + '</td>' +
+      '<td style="' + td + ';color:#1F2937">' + esc(f.payerName) + '</td>' +
+      '<td style="' + td + ';color:#4B5563">' + paidForHtml + '</td>' +
+      '<td style="' + td + ';text-align:right;color:#581C87;font-weight:700;white-space:nowrap">' + perPersonCell + '</td>' +
+      '</tr>';
+  }).join('');
+
+  var settlements = SHARE_DATA.settlements || [];
+  var settleHtml;
+  if (!settlements.length) {
+    settleHtml = '<div style="background:#ECFDF5;border:1px solid #A7F3D0;border-radius:12px;padding:14px 16px;text-align:center;color:#047857;font-weight:700;font-size:13px">🎉 ยอดเคลียร์เรียบร้อย ไม่มีใครต้องจ่ายใคร</div>';
+  } else {
+    settleHtml = settlements.map(function (s) {
+      return '<div style="display:flex;align-items:center;gap:10px;background:#FBF7FF;border:1px solid #E9D5FF;border-radius:12px;padding:11px 16px;margin-bottom:8px">' +
+        '<div style="font-weight:700;font-size:12.5px;color:#1F2937;flex:1">' + esc(s.fromName) + '</div>' +
+        '<div style="font-size:11px;color:#9333EA;font-weight:600;white-space:nowrap">ต้องจ่าย →</div>' +
+        '<div style="font-weight:700;font-size:12.5px;color:#1F2937;flex:1">' + esc(s.toName) + '</div>' +
+        '<div style="font-weight:800;font-size:13.5px;color:#581C87;min-width:90px;text-align:right">' + esc(fmtAmt(s.amount)) + '</div>' +
+        '</div>';
+    }).join('');
+  }
+
+  var now = new Date();
+  var generatedAt = now.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) +
+    ' ' + now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+
+  var hideWrap = document.createElement('div');
+  hideWrap.style.cssText = 'position:absolute;top:0;left:0;width:0;height:0;overflow:hidden;';
+  var container = document.createElement('div');
+  container.style.cssText = 'width:760px;padding:36px;background:#fff;font-family:\'Sarabun\',\'Segoe UI\',sans-serif;color:#1F2937;';
+  container.innerHTML =
+    '<div style="background:linear-gradient(135deg,#C084FC 0%,#9333EA 55%,#581C87 100%);border-radius:18px;padding:26px 30px;margin-bottom:26px;color:#fff">' +
+    '<div style="font-size:11px;letter-spacing:2px;font-weight:700;opacity:.85;margin-bottom:8px">SHAREUP · สรุปรายจ่าย</div>' +
+    '<div style="font-size:26px;font-weight:800;margin-bottom:4px">' + esc(SHARE_DATA.event.name) + '</div>' +
+    '<div style="font-size:12px;opacity:.85">สร้างเมื่อ ' + esc(fmtDate(SHARE_DATA.event.createdAt)) + ' · ออกรายงาน ' + esc(generatedAt) + '</div>' +
+    '</div>' +
+
+    '<div style="display:flex;gap:12px;margin-bottom:28px">' +
+    '<div style="flex:1;background:#FBF7FF;border:1px solid #E9D5FF;border-radius:14px;padding:14px 18px">' +
+    '<div style="font-size:11px;color:#7E22CE;font-weight:700;margin-bottom:5px">ยอดรวมทั้งหมด</div>' +
+    '<div style="font-size:19px;font-weight:800;color:#581C87">' + esc(fmtAmt(grandTotal)) + '</div>' +
+    '</div>' +
+    '<div style="flex:1;background:#FBF7FF;border:1px solid #E9D5FF;border-radius:14px;padding:14px 18px">' +
+    '<div style="font-size:11px;color:#7E22CE;font-weight:700;margin-bottom:5px">รายการทั้งหมด</div>' +
+    '<div style="font-size:19px;font-weight:800;color:#581C87">' + ord.length + ' รายการ</div>' +
+    '</div>' +
+    '<div style="flex:1;background:#FBF7FF;border:1px solid #E9D5FF;border-radius:14px;padding:14px 18px">' +
+    '<div style="font-size:11px;color:#7E22CE;font-weight:700;margin-bottom:5px">สมาชิก</div>' +
+    '<div style="font-size:19px;font-weight:800;color:#581C87">' + Object.keys(members).length + ' คน</div>' +
+    '</div>' +
+    '</div>' +
+
+    '<div style="font-size:15px;font-weight:800;color:#581C87;margin-bottom:12px">' +
+    '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#9333EA;margin-right:8px"></span>' +
+    'สรุปยอด — ใครต้องจ่ายใครบ้าง</div>' +
+    '<div style="margin-bottom:30px">' + settleHtml + '</div>' +
+
+    '<div style="font-size:15px;font-weight:800;color:#581C87;margin-bottom:12px">' +
+    '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#9333EA;margin-right:8px"></span>' +
+    'รายการค่าใช้จ่ายทั้งหมด</div>' +
+    '<table style="width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed">' +
+    '<colgroup><col style="width:11%"><col style="width:16%"><col style="width:11%"><col style="width:13%"><col style="width:34%"><col style="width:15%"></colgroup>' +
+    '<thead><tr style="background:#F3E8FF">' +
+    '<th style="padding:9px 10px;text-align:left;color:#581C87;font-size:10.5px;letter-spacing:.3px">วันที่บันทึก</th>' +
+    '<th style="padding:9px 10px;text-align:left;color:#581C87;font-size:10.5px;letter-spacing:.3px">รายละเอียด</th>' +
+    '<th style="padding:9px 10px;text-align:right;color:#581C87;font-size:10.5px;letter-spacing:.3px">ราคารวม</th>' +
+    '<th style="padding:9px 10px;text-align:left;color:#581C87;font-size:10.5px;letter-spacing:.3px">ใครจ่าย</th>' +
+    '<th style="padding:9px 10px;text-align:left;color:#581C87;font-size:10.5px;letter-spacing:.3px">จ่ายให้ใครไปบ้าง</th>' +
+    '<th style="padding:9px 10px;text-align:right;color:#581C87;font-size:10.5px;letter-spacing:.3px">ตกคนละเท่าไหร่</th>' +
+    '</tr></thead><tbody>' + txRowsHtml + '</tbody></table>' +
+
+    '<div style="margin-top:26px;text-align:center;font-size:10px;color:#B9A6D1">สร้างจากแอป ShareUp</div>';
+  hideWrap.appendChild(container);
+  document.body.appendChild(hideWrap);
+
+  var filename = (SHARE_DATA.event.name || 'expenses').replace(/[^\w฀-๿ -]/g, '') + '_expenses.pdf';
+  try {
+    var canvas = await html2canvas(container, { scale: 2, backgroundColor: '#fff', windowWidth: 760 });
+    document.body.removeChild(hideWrap);
+
+    var jsPDF = window.jspdf.jsPDF;
+    var doc = new jsPDF('p', 'pt', 'a4');
+    var margin = 20;
+    var pageW = doc.internal.pageSize.getWidth();
+    var pageH = doc.internal.pageSize.getHeight();
+    var usableW = pageW - margin * 2;
+    var usableH = pageH - margin * 2;
+    var imgH = canvas.height * usableW / canvas.width;
+    var imgData = canvas.toDataURL('image/png');
+
+    var heightLeft = imgH;
+    var y = margin;
+    doc.addImage(imgData, 'PNG', margin, y, usableW, imgH);
+    heightLeft -= usableH;
+    while (heightLeft > 0) {
+      doc.addPage();
+      y = margin - (imgH - heightLeft);
+      doc.addImage(imgData, 'PNG', margin, y, usableW, imgH);
+      heightLeft -= usableH;
+    }
+
+    doc.save(filename);
+  } catch (e) {
+    if (hideWrap.parentNode) document.body.removeChild(hideWrap);
+  }
+}
+
+$(function () {
+  $('#shExportBtn').on('click', exportSharedPdf);
+});
 
 if (!SHARE_TOKEN) {
   onFail('Invalid link');

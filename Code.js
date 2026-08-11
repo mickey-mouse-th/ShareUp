@@ -33,7 +33,7 @@ function getSpreadsheet() {
     var adminId = Utilities.getUuid();
     var now = new Date().toISOString();
     var accountsSheet = ss.getSheetByName('Accounts');
-    accountsSheet.appendRow([adminId, 'Admin', 'admin', adminPassword, now, now, 'admin']);
+    accountsSheet.appendRow([adminId, 'Admin', 'admin', adminPassword, now, now, 'admin', 'active', '']);
 
     // Create "Me" friend for admin
     var friendsSheet = ss.getSheetByName('Friends');
@@ -48,7 +48,7 @@ function initSheets(ss) {
   var defaultSheet = ss.getSheetByName('Sheet1');
 
   var accountsSheet = ss.insertSheet('Accounts');
-  accountsSheet.appendRow(['id', 'displayName', 'username', 'password', 'firstLogin', 'lastLogin', 'role']);
+  accountsSheet.appendRow(['id', 'displayName', 'username', 'password', 'firstLogin', 'lastLogin', 'role', 'status', 'email']);
 
   var friendsSheet = ss.insertSheet('Friends');
   friendsSheet.appendRow(['id', 'accountId', 'name']);
@@ -122,6 +122,16 @@ function getSessionsSheet() {
   return sheet;
 }
 
+function getSettlementPaymentsSheet() {
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName('SettlementPayments');
+  if (!sheet) {
+    sheet = ss.insertSheet('SettlementPayments');
+    sheet.appendRow(['id', 'eventId', 'fromId', 'toId', 'amount', 'markedAt']);
+  }
+  return sheet;
+}
+
 function _lookupSession(token) {
   var sheet = getSessionsSheet();
   var data = sheet.getDataRange().getValues();
@@ -129,13 +139,25 @@ function _lookupSession(token) {
   for (var i = 1; i < data.length; i++) {
     if (data[i][0] === token) {
       if (now < new Date(data[i][4])) {
-        return { row: i + 1, userInfo: JSON.parse(data[i][2]) };
+        var userInfo = JSON.parse(data[i][2]);
+        if (_isAccountDisabled(userInfo.id)) { sheet.deleteRow(i + 1); return null }
+        return { row: i + 1, userInfo: userInfo };
       }
       sheet.deleteRow(i + 1);
       return null;
     }
   }
   return null;
+}
+
+// Only consulted on session-cache misses (~every CACHE_EXPIRY), so a disabled
+// account is locked out within a few hours without a per-request sheet read.
+function _isAccountDisabled(accountId) {
+  var data = getSpreadsheet().getSheetByName('Accounts').getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0] === accountId) return data[i][7] === 'disabled';
+  }
+  return false;
 }
 
 function _cleanExpiredSessions() {
@@ -190,6 +212,7 @@ function loginUser(username, password) {
     for (var i = 1; i < data.length; i++) {
       var row = data[i];
       if (row[2].toLowerCase() === username.toLowerCase() && row[3] === hashed) {
+        if (row[7] === 'disabled') return { success: false, error: 'This account has been disabled' };
         // Update lastLogin
         sheet.getRange(i + 1, 6).setValue(new Date().toISOString());
 
@@ -230,7 +253,7 @@ function registerUser(displayName, username, password) {
     var now = new Date().toISOString();
     var id = Utilities.getUuid();
     var hashed = hashPassword(password);
-    sheet.appendRow([id, displayName, username.toLowerCase(), hashed, now, now, 'user']);
+    sheet.appendRow([id, displayName, username.toLowerCase(), hashed, now, now, 'user', 'active', '']);
 
     // Create "Me" friend
     var friendsSheet = ss.getSheetByName('Friends');
@@ -288,16 +311,36 @@ function getHomeData(token) {
     var ss = getSpreadsheet();
     var evData = ss.getSheetByName('Events').getDataRange().getValues();
     var frData = ss.getSheetByName('Friends').getDataRange().getValues();
-    var events = [], friends = [];
+    var events = [], friends = [], friendMap = {};
     for (var i = 1; i < evData.length; i++) {
       if (evData[i][2] === user.id)
         events.push({ id: evData[i][0], name: evData[i][1], accountId: evData[i][2], createdAt: evData[i][3] });
     }
     events.sort(function(a,b){ return b.createdAt > a.createdAt ? 1 : -1 });
     for (var i = 1; i < frData.length; i++) {
-      if (frData[i][1] === user.id)
+      if (frData[i][1] === user.id) {
         friends.push({ id: frData[i][0], accountId: frData[i][1], name: frData[i][2] });
+        friendMap[frData[i][0]] = frData[i][2];
+      }
     }
+
+    // Settlement state per event, for the Home filter tabs — reuses the same
+    // settlement engine as getSummary instead of a separate status field.
+    var rowsByEvent = {};
+    events.forEach(function (ev) { rowsByEvent[ev.id] = [] });
+    var dtData = ss.getSheetByName('Details').getDataRange().getValues();
+    for (var i = 1; i < dtData.length; i++) {
+      if (rowsByEvent.hasOwnProperty(dtData[i][1]))
+        rowsByEvent[dtData[i][1]].push({ payId: dtData[i][3], friendId: dtData[i][4], amount: dtData[i][5] });
+    }
+    events.forEach(function (ev) {
+      var rows = rowsByEvent[ev.id];
+      if (!rows.length) { ev.settled = true; return }
+      var evFriendMap = {};
+      _getEventFriends(ss, ev.id, user.id, friendMap).forEach(function (f) { evFriendMap[f.id] = f.name });
+      ev.settled = _computeSettlementsWithPaid(rows, evFriendMap, ev.id).every(function (s) { return s.paid });
+    });
+
     return { success: true, events: events, friends: friends };
   } catch (e) { return { success: false, error: e.toString() } }
 }
@@ -924,6 +967,48 @@ function _computeSettlements(detailRows, friendMap) {
   return settlements;
 }
 
+// Payment confirmations are keyed on (from, to, amount) rather than stored on
+// the settlement row itself, since settlements are recomputed fresh every
+// time from Details — any change to the underlying debt (new/edited/deleted
+// expense) naturally invalidates a stale confirmation because the amount
+// no longer matches, with no separate cleanup step needed.
+function _settleKey(from, to, amount) {
+  return from + '|' + to + '|' + Math.round(parseFloat(amount) * 100);
+}
+
+function _getPaidSet(eventId) {
+  var data = getSettlementPaymentsSheet().getDataRange().getValues();
+  var set = {};
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][1] === eventId) set[_settleKey(data[i][2], data[i][3], data[i][4])] = true;
+  }
+  return set;
+}
+
+function _computeSettlementsWithPaid(detailRows, friendMap, eventId) {
+  var settlements = _computeSettlements(detailRows, friendMap);
+  var paidSet = _getPaidSet(eventId);
+  settlements.forEach(function (s) { s.paid = !!paidSet[_settleKey(s.from, s.to, s.amount)] });
+  return settlements;
+}
+
+function markSettlementPaid(token, eventId, fromId, toId, amount, paid) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
+    var sheet = getSettlementPaymentsSheet();
+    var data = sheet.getDataRange().getValues();
+    for (var i = data.length - 1; i >= 1; i--) {
+      if (data[i][1] === eventId && data[i][2] === fromId && data[i][3] === toId) sheet.deleteRow(i + 1);
+    }
+    if (paid) sheet.appendRow([Utilities.getUuid(), eventId, fromId, toId, amount, new Date().toISOString()]);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
 function getSummary(token, eventId) {
   try {
     var user = requireAuth(token);
@@ -943,7 +1028,7 @@ function getSummary(token, eventId) {
       }
     }
 
-    return { success: true, settlements: _computeSettlements(rows, friendMap) };
+    return { success: true, settlements: _computeSettlementsWithPaid(rows, friendMap, eventId) };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -968,10 +1053,31 @@ function getAllAccounts(token) {
         username: data[i][2],
         firstLogin: data[i][4],
         lastLogin: data[i][5],
-        role: data[i][6]
+        role: data[i][6],
+        status: data[i][7] || 'active'
       });
     }
     return { success: true, accounts: accounts };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function updateAccountStatus(token, accountId, status) {
+  try {
+    var user = requireAuth(token);
+    if (user.role !== 'admin') return { success: false, error: 'Forbidden' };
+    if (user.id === accountId) return { success: false, error: 'Cannot disable your own account' };
+    var ss = getSpreadsheet();
+    var sheet = ss.getSheetByName('Accounts');
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] === accountId) {
+        sheet.getRange(i + 1, 8).setValue(status);
+        return { success: true };
+      }
+    }
+    return { success: false, error: 'Account not found' };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

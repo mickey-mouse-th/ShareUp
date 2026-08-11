@@ -27,14 +27,20 @@ function renderAccounts(list) {
         '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>' +
         '</button>'
       : '';
+    var enabled = a.status !== 'disabled';
+    var tgl = '<label class="tgl' + (enabled ? ' on' : '') + '">' +
+      '<input type="checkbox" class="acc-tgl" data-id="' + esc(a.id) + '"' +
+      (enabled ? ' checked' : '') + (isMe ? ' disabled' : '') + '>' +
+      '<span class="tgl-track"></span></label>';
     return '<div class="acc-card"><div class="acc-row">' +
       '<div class="acc-av" style="background:' + avCol(a.displayName) + '">' + initials(a.displayName) + '</div>' +
       '<div class="acc-info">' +
-      '<div class="acc-name">' + esc(a.displayName) + youBadge + '</div>' +
+      '<div class="acc-name">' + esc(a.displayName) + youBadge + (enabled ? '' : ' <small style="font-size:11px;color:var(--r);background:var(--r-dim);border-radius:6px;padding:2px 8px;border:1px solid rgba(244,63,94,.25)">Disabled</small>') + '</div>' +
       '<div class="acc-user">@' + esc(a.username) + '</div>' +
       '<div class="acc-date">' + fmtDate(a.lastLogin) + '</div>' +
       '</div>' +
       '<select class="role-sel" data-id="' + esc(a.id) + '"' + (isMe ? ' disabled' : '') + '>' + roles + '</select>' +
+      tgl +
       delBtn +
       '</div></div>';
   }).join('');
@@ -54,6 +60,19 @@ $(function () {
 
   $('#accountsList').on('click', '.acc-del', function () {
     askDel('account', $(this).data('id'), $(this).data('name'));
+  });
+
+  $('#accountsList').on('change', '.acc-tgl', async function () {
+    var id = $(this).data('id');
+    var enable = $(this).is(':checked');
+    var status = enable ? 'active' : 'disabled';
+    try {
+      var r = await gsc('updateAccountStatus', TK, id, status);
+      if (r.success) {
+        toast(enable ? 'Account enabled' : 'Account disabled');
+        loadAccounts();
+      } else { toast(r.error, 'err'); loadAccounts(); }
+    } catch (e) { toast('' + e, 'err') }
   });
 });
 </script>

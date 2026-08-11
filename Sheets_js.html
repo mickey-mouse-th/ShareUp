@@ -96,6 +96,7 @@ async function submitEvent() {
   try {
     var r = await gsc('addEvent', TK, n);
     if (r.success) {
+      r.event.settled = true; // brand-new event has no transactions yet
       EVENTS.unshift(r.event);
       refreshEventsUI();
       openEventFriendsSheet(r.event.id, 'create', r.event);

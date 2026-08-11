@@ -1,4 +1,6 @@
 <script>
+var HOME_FILTER = 'all';
+
 async function loadHomeData() {
   $('#eventsList').html(skeletonHtml(3, 'ev'));
   try {
@@ -6,31 +8,38 @@ async function loadHomeData() {
     if (r.success) {
       EVENTS  = r.events  || [];
       FRIENDS = r.friends || [];
-      $('#stEvents').text(EVENTS.length);
       $('#stFriends').text(FRIENDS.length);
-      renderEvents();
+      refreshEventsUI();
     } else _handleDataError(r.error);
   } catch (e) { _handleDataError('' + e) }
 }
 
 function refreshEventsUI() {
   $('#stEvents').text(EVENTS.length);
+  $('#fcAll').text(EVENTS.length);
+  $('#fcPending').text(EVENTS.filter(function (e) { return !e.settled }).length);
+  $('#fcSettled').text(EVENTS.filter(function (e) { return e.settled }).length);
   renderEvents();
 }
 
 function renderEvents() {
   var $el = $('#eventsList');
-  if (!EVENTS.length) {
+  var list = EVENTS.filter(function (ev) {
+    if (HOME_FILTER === 'pending') return !ev.settled;
+    if (HOME_FILTER === 'settled') return ev.settled;
+    return true;
+  });
+  if (!list.length) {
     $el.html(
       '<div class="empty">' +
       '<div class="empty-icon"><svg viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5C3.89 3 3 3.9 3 5v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/></svg></div>' +
-      '<div class="empty-t">No events yet</div>' +
-      '<div class="empty-s">Tap + to create your first shared expense event</div>' +
+      '<div class="empty-t">' + (EVENTS.length ? 'No events here' : 'No events yet') + '</div>' +
+      '<div class="empty-s">' + (EVENTS.length ? 'Try a different filter' : 'Tap + to create your first shared expense event') + '</div>' +
       '</div>'
     );
     return;
   }
-  var html = EVENTS.map(function (ev) {
+  var html = list.map(function (ev) {
     return '<div class="ev-card" data-ev=\'' + esc(JSON.stringify(ev)) + '\'>' +
       '<div class="ev-icon" style="background:' + bannerGrad(ev.name) + '">' + evEmoji(ev.name) + '</div>' +
       '<div class="ev-info">' +
@@ -49,6 +58,13 @@ function renderEvents() {
 }
 
 $(function () {
+  $('#homeFilterBar').on('click', '.tab-btn', function () {
+    HOME_FILTER = $(this).data('filter');
+    $('#homeFilterBar .tab-btn').removeClass('on');
+    $(this).addClass('on');
+    renderEvents();
+  });
+
   $('#eventsList').on('click', '.ev-card', function (e) {
     if ($(e.target).closest('.btn-del').length) return;
     var ev = JSON.parse($(this).attr('data-ev'));
