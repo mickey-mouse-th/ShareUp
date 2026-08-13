@@ -172,3 +172,42 @@
     <button class="sh-btn" id="btnPfChangePw" style="background:var(--s2);box-shadow:none;color:var(--t1);border:1px solid var(--bd2)">Change Password</button>
   </div>
 </div>
+
+<!-- Sheet: Edit User (Admin) -->
+<div class="sheet" id="shUserEdit">
+  <div class="sh-pill"></div>
+  <div class="sh-hd"><span class="sh-title">Edit User</span><button class="sh-close" id="shUserEditClose">✕</button></div>
+  <div class="sh-body">
+    <div class="pf-avatar-wrap" style="margin-bottom:10px">
+      <div class="pf-avatar" id="ueAvatar"></div>
+    </div>
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:19px;font-weight:800;color:var(--t1)" id="ueName"></div>
+      <div style="font-size:14px;color:var(--t2)" id="ueUsername"></div>
+    </div>
+
+    <div class="inp-g">
+      <label class="inp-lbl">Role</label>
+      <select class="inp" id="ueRoleSel">
+        <option value="user">User</option>
+        <option value="staff">Staff</option>
+        <option value="admin">Admin</option>
+      </select>
+    </div>
+
+    <div class="ue-status-row">
+      <div>
+        <div class="inp-lbl" style="margin-bottom:6px">Account Status</div>
+        <div class="ue-status-hint" id="ueStatusHint"></div>
+      </div>
+      <label class="tgl" id="ueTglWrap"><input type="checkbox" id="ueStatusTgl"/><span class="tgl-track"></span></label>
+    </div>
+
+    <div class="ue-meta">
+      <div class="ue-meta-item"><span>Joined</span><b id="ueJoined"></b></div>
+      <div class="ue-meta-item"><span>Last active</span><b id="ueLastActive"></b></div>
+    </div>
+
+    <button class="sh-btn" id="btnUeDelete" style="background:var(--r);box-shadow:0 8px 24px rgba(244,63,94,.35)">Delete Account</button>
+  </div>
+</div>

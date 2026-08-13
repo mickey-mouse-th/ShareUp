@@ -407,7 +407,7 @@ $(function () {
   // Close buttons
   $('#shEventClose, #shEfClose, #shTxClose, #shShareClose').on('click', closeSheets);
   $('#cfCancel, #logoutCancel').on('click', closeSheets);
-  $('#shAccountClose, #shProfileClose').on('click', closeSheets);
+  $('#shAccountClose, #shProfileClose, #shUserEditClose').on('click', closeSheets);
 
   // Account menu
   $('#btnOpenProfile').on('click', openProfileSheet);
@@ -503,7 +503,7 @@ $(function () {
           renderDetails();
           SETTLEMENTS = null;
         } else if (t === 'account') {
-          $('.acc-del[data-id="' + id + '"]').closest('.acc-card').remove();
+          loadAccounts();
         }
       } else if (r) toast(r.error, 'err');
     } catch (e) { toast('' + e, 'err') }
