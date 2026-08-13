@@ -811,6 +811,7 @@ function _buildDetailRows(eventId, transactionId, payId, friendIds, total, descr
 function addDetail(token, eventId, payId, friendIds, totalAmount, description, customAmounts) {
   try {
     var user = requireAuth(token);
+    if (!friendIds || !friendIds.length) return { success: false, error: 'At least one person is required' };
     var ss = getSpreadsheet();
     var sheet = ss.getSheetByName('Details');
     var transactionId = Utilities.getUuid();
@@ -837,6 +838,7 @@ function updateDetail(token, transactionId, payId, friendIds, totalAmount, descr
     }
     if (!eventId) return { success: false, error: 'Transaction not found' };
     if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Transaction not found' };
+    if (!friendIds || !friendIds.length) return { success: false, error: 'At least one person is required' };
 
     _removeRowsWhere(sheet, 2, transactionId, data);
 
@@ -854,7 +856,16 @@ function deleteDetail(token, transactionId) {
   try {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
-    _removeRowsWhere(ss.getSheetByName('Details'), 2, transactionId);
+    var sheet = ss.getSheetByName('Details');
+    var data = sheet.getDataRange().getValues();
+    var eventId = null;
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][2] === transactionId) { eventId = data[i][1]; break; }
+    }
+    if (!eventId) return { success: false, error: 'Transaction not found' };
+    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Transaction not found' };
+
+    _removeRowsWhere(sheet, 2, transactionId, data);
     return { success: true };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -1045,6 +1056,7 @@ function updateAccountRole(token, accountId, role) {
   try {
     var user = requireAuth(token);
     if (user.role !== 'admin') return { success: false, error: 'Forbidden' };
+    if (user.id === accountId) return { success: false, error: 'Cannot change your own role' };
     var ss = getSpreadsheet();
     var sheet = ss.getSheetByName('Accounts');
     var data = sheet.getDataRange().getValues();
