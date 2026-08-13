@@ -145,6 +145,7 @@ function goTab(tab) {
   if (navMap[tab]) $('#' + navMap[tab]).addClass('on');
   if (tab === 'home')    { loadHomeData() }
   else if (tab === 'admin')   { loadAccounts() }
+  _saveView();
 }
 
 function openDetail(ev) {
@@ -164,6 +165,7 @@ function openDetail(ev) {
   $('#panelTx').show(); $('#panelSum').hide(); $('#panelFr').hide();
   $('#fab').removeClass('hide');
   loadDetailData(ev.id);
+  _saveView();
 }
 
 function goBack() {
@@ -177,6 +179,7 @@ function goBack() {
     $('#' + pgId).removeClass('behind').toggleClass('hidden', t !== CUR_TAB);
   });
   $('#fab').toggleClass('hide', CUR_TAB === 'admin');
+  _saveView();
 }
 
 function switchTab(t) {
@@ -194,6 +197,41 @@ function switchTab(t) {
     else loadSummary(CUR_EV.id);
   }
   if (t === 'friends') renderEventFriends();
+  _saveView();
+}
+
+// ── Reload/reopen persistence ─────────────────
+// Remembers which page (and, for an event, which sub-tab) the user was on so
+// a browser refresh — or just reopening the app later — lands back in the
+// same place. Apps Script serves this app inside a cross-origin sandboxed
+// iframe, so the visible address bar can't be updated per-navigation without
+// a full page reload on every click; localStorage gets the same end result
+// (refresh restores the same view) without that cost.
+function _saveView() {
+  var view = CUR_EV ? { tab: 'event', eventId: CUR_EV.id, dt: CUR_DT } : { tab: CUR_TAB };
+  localStorage.setItem('su_view', JSON.stringify(view));
+}
+
+function _restoreView() {
+  var saved = null;
+  try { saved = JSON.parse(localStorage.getItem('su_view') || 'null') } catch (e) {}
+
+  if (saved && saved.tab === 'admin' && ME.role === 'admin') {
+    goTab('admin');
+    return;
+  }
+  if (saved && saved.tab === 'event' && saved.eventId) {
+    loadHomeData().then(function () {
+      var ev = EVENTS.filter(function (e) { return e.id === saved.eventId })[0];
+      if (ev) {
+        openDetail(ev);
+        if (saved.dt && saved.dt !== 'tx') switchTab(saved.dt);
+      }
+      // Event no longer exists (deleted elsewhere) — stay on the already-rendered Home.
+    });
+    return;
+  }
+  goTab('home');
 }
 
 // ── App boot ─────────────────────────────────
@@ -204,7 +242,7 @@ function startApp() {
   $('#heroName').text(name);
   $('#hdrAv').text(initials(name)).css('background', avCol(name));
   if (ME.role === 'admin') $('#navAd').show(); else $('#navAd').hide();
-  goTab('home');
+  _restoreView();
 }
 
 function doLogout() {
@@ -213,6 +251,7 @@ function doLogout() {
   TK = null; ME = null;
   localStorage.removeItem('su_tk');
   localStorage.removeItem('su_me');
+  localStorage.removeItem('su_view');
   $('#appView').hide();
   $('#authView').css('display', 'flex');
   authPg('login');
