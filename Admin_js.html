@@ -33,7 +33,7 @@ function renderAccounts(list) {
       (enabled ? ' checked' : '') + (isMe ? ' disabled' : '') + '>' +
       '<span class="tgl-track"></span></label>';
     return '<div class="acc-card"><div class="acc-row">' +
-      '<div class="acc-av" style="background:' + avCol(a.displayName) + '">' + initials(a.displayName) + '</div>' +
+      avatarHtmlDirect('acc-av', a.displayName, a.photo) +
       '<div class="acc-info">' +
       '<div class="acc-name">' + esc(a.displayName) + youBadge + (enabled ? '' : ' <small style="font-size:11px;color:var(--r);background:var(--r-dim);border-radius:6px;padding:2px 8px;border:1px solid rgba(244,63,94,.25)">Disabled</small>') + '</div>' +
       '<div class="acc-user">@' + esc(a.username) + '</div>' +

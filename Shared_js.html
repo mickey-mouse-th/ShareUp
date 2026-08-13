@@ -10,6 +10,7 @@ var EVENTS  = [];
 var DETAILS = [];
 var SETTLEMENTS = null; // null = not loaded yet for the open event; [] is a valid "all settled" result
 var ME_PHOTO = ''; // currently-displayed header avatar photo (base64), '' = showing initials
+var SELF_FRIEND_ID = null; // the open event's friend row that maps back to this account (see getDetailData)
 
 // ── Color / Emoji Constants ───────────────────
 var BANNER_GRADS = [
@@ -49,6 +50,23 @@ function evEmoji(s)    { return EMOJIS[_hash(s, EMOJIS.length)] }
 function evBg(s)       { return EV_BG[_hash(s, EV_BG.length)] }
 function bannerGrad(s) { return BANNER_GRADS[_hash(s, BANNER_GRADS.length)] }
 function initials(s)   { return (s || '?')[0].toUpperCase() }
+
+// Renders this account's own profile photo (set via My Profile) in place of
+// the initials circle for whichever avatar is "you" — friendId is matched
+// against SELF_FRIEND_ID (set per open event by loadDetailData).
+function avatarHtml(cls, name, friendId) {
+  if (friendId && SELF_FRIEND_ID && friendId === SELF_FRIEND_ID && ME_PHOTO) {
+    return '<div class="' + cls + '" style="background:url(' + ME_PHOTO + ') center/cover no-repeat"></div>';
+  }
+  return '<div class="' + cls + '" style="background:' + avCol(name) + '">' + initials(name) + '</div>';
+}
+
+// Same idea for places that already have a specific account's own photo in
+// hand (e.g. the Admin account list), rather than needing SELF_FRIEND_ID.
+function avatarHtmlDirect(cls, name, photo) {
+  if (photo) return '<div class="' + cls + '" style="background:url(' + photo + ') center/cover no-repeat"></div>';
+  return '<div class="' + cls + '" style="background:' + avCol(name) + '">' + initials(name) + '</div>';
+}
 
 // ── Utilities ─────────────────────────────────
 function esc(s) {

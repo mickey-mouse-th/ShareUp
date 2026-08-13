@@ -450,13 +450,23 @@ function getDetailData(token, eventId) {
         rows.push({ payId: dtData[i][3], friendId: dtData[i][4], amount: dtData[i][5] });
       }
     }
-    var friends = _getEventFriends(ss, eventId, user.id);
+    var frRawData = ss.getSheetByName('Friends').getDataRange().getValues();
+    var ownedFriendMap = {};
+    for (var i = 1; i < frRawData.length; i++) {
+      if (frRawData[i][1] === user.id) ownedFriendMap[frRawData[i][0]] = frRawData[i][2];
+    }
+    var selfRow = _findSelfFriendRow(frRawData, user.id);
+    var selfFriendId = selfRow !== -1 ? frRawData[selfRow][0] : null;
+
+    var friends = _getEventFriends(ss, eventId, user.id, ownedFriendMap, undefined, dtData);
     var friendMap = {};
     friends.forEach(function (f) { friendMap[f.id] = f.name });
     // Bundled here so opening the Summary tab or exporting a PDF right after
     // doesn't force a second round-trip that re-reads the same Details rows.
     var settlements = _computeSettlementsWithPaid(rows, friendMap, eventId);
-    return { success: true, details: details, friends: friends, settlements: settlements };
+    // selfFriendId lets the client show the account's own profile photo (set
+    // via My Profile) for its own avatar instead of the initials circle.
+    return { success: true, details: details, friends: friends, settlements: settlements, selfFriendId: selfFriendId };
   } catch (e) { return { success: false, error: e.toString() } }
 }
 
@@ -1142,7 +1152,8 @@ function getAllAccounts(token) {
         firstLogin: data[i][4],
         lastLogin: data[i][5],
         role: data[i][6],
-        status: data[i][7] || 'active'
+        status: data[i][7] || 'active',
+        photo: data[i][9] || ''
       });
     }
     return { success: true, accounts: accounts };
