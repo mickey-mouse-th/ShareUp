@@ -104,6 +104,16 @@ function avCol(s) { return AV_COLORS[_hash(s, AV_COLORS.length)] }
 function evEmoji(s) { return EMOJIS[_hash(s, EMOJIS.length)] }
 function bannerGrad(s) { return BANNER_GRADS[_hash(s, BANNER_GRADS.length)] }
 
+// Shows the event owner's own profile photo (set via My Profile) for their
+// own avatar; everyone else still gets the initials/color circle since only
+// accounts — not plain friend names — have a photo.
+function _avatarHtml(cls, name, friendId) {
+  if (friendId && SHARE_DATA && friendId === SHARE_DATA.selfFriendId && SHARE_DATA.ownerPhoto) {
+    return '<div class="' + cls + '" style="background:url(' + SHARE_DATA.ownerPhoto + ') center/cover no-repeat"></div>';
+  }
+  return '<div class="' + cls + '" style="background:' + avCol(name) + '">' + initials(name) + '</div>';
+}
+
 function renderTx(details) {
   var $el = $('#shTxList');
   if (!details.length) {
@@ -125,7 +135,7 @@ function renderTx(details) {
     }).join('');
     return '<div class="tx-card">' +
       '<div class="tx-head">' +
-      '<div class="tx-av" style="background:' + avCol(f.payerName) + '">' + initials(f.payerName) + '</div>' +
+      _avatarHtml('tx-av', f.payerName, f.payId) +
       '<div class="tx-meta">' +
       '<div class="tx-desc">' + esc(desc) + '</div>' +
       '<div class="tx-by">Paid by ' + esc(f.payerName) + (isCustom ? ' · ระบุเอง' : '') + '</div>' +
@@ -156,7 +166,7 @@ function renderSummary(ss) {
   var html = ss.map(function (x) {
     return '<div class="settle-card">' +
       '<div class="se-person">' +
-      '<div class="se-av" style="background:' + avCol(x.fromName) + '">' + initials(x.fromName) + '</div>' +
+      _avatarHtml('se-av', x.fromName, x.from) +
       '<div class="se-name">' + esc(x.fromName) + '</div>' +
       '</div>' +
       '<div class="se-mid">' +
@@ -164,7 +174,7 @@ function renderSummary(ss) {
       '<div class="se-amt">' + fmtAmt(x.amount) + '</div>' +
       '</div>' +
       '<div class="se-person">' +
-      '<div class="se-av" style="background:' + avCol(x.toName) + '">' + initials(x.toName) + '</div>' +
+      _avatarHtml('se-av', x.toName, x.to) +
       '<div class="se-name">' + esc(x.toName) + '</div>' +
       '</div>' +
       '</div>';

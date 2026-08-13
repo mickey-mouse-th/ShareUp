@@ -866,13 +866,30 @@ function getSharedEventView(shareToken) {
       }
     }
 
-    var friends = _getEventFriends(ss, eventId, accountId);
+    // Read Friends once, both for the name map and to find the event owner's
+    // self-friend (so their own photo — set via My Profile — can be shown
+    // for their avatar on this public page instead of initials).
+    var frRawData = ss.getSheetByName('Friends').getDataRange().getValues();
     var friendMap = {};
-    friends.forEach(function (f) { friendMap[f.id] = f.name });
+    for (var i = 1; i < frRawData.length; i++) {
+      if (frRawData[i][1] === accountId) friendMap[frRawData[i][0]] = frRawData[i][2];
+    }
+    var selfRow = _findSelfFriendRow(frRawData, accountId);
+    var selfFriendId = selfRow !== -1 ? frRawData[selfRow][0] : null;
+
+    var ownerPhoto = '';
+    if (selfFriendId) {
+      var acData = ss.getSheetByName('Accounts').getDataRange().getValues();
+      for (var i = 1; i < acData.length; i++) {
+        if (acData[i][0] === accountId) { ownerPhoto = acData[i][9] || ''; break; }
+      }
+    }
 
     var details = rawDetails.map(function (d) {
       return {
         transactionId: d.transactionId,
+        payId: d.payId,
+        friendId: d.friendId,
         payerName: friendMap[d.payId] || d.payId,
         friendName: friendMap[d.friendId] || d.friendId,
         amount: d.amount,
@@ -886,7 +903,9 @@ function getSharedEventView(shareToken) {
       success: true,
       event: { name: eventRow[1], createdAt: eventRow[3] },
       details: details,
-      settlements: _computeSettlements(rawDetails, friendMap)
+      settlements: _computeSettlements(rawDetails, friendMap),
+      selfFriendId: selfFriendId,
+      ownerPhoto: ownerPhoto
     };
   } catch (e) {
     return { success: false, error: e.toString() };
