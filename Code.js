@@ -385,6 +385,23 @@ function _eventOwnedBy(ss, eventId, accountId) {
   return false;
 }
 
+// Removes every row whose column `col` (0-indexed) equals `val` in a single
+// read + single write, instead of one deleteRow() API call per matching row
+// — matters most for sheets that can accumulate many rows per event
+// (Details, EventFriends). Pass dataOpt when the caller already read this
+// sheet this request.
+function _removeRowsWhere(sheet, col, val, dataOpt) {
+  var data = dataOpt || sheet.getDataRange().getValues();
+  if (data.length <= 1) return;
+  var kept = [data[0]];
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][col] !== val) kept.push(data[i]);
+  }
+  if (kept.length === data.length) return; // nothing matched
+  sheet.clearContents();
+  sheet.getRange(1, 1, kept.length, kept[0].length).setValues(kept);
+}
+
 // Friends currently linked to an event. Self-healing migration: the first time
 // an event with existing transactions but no EventFriends rows yet is read,
 // membership is derived from who already appears in its Details and persisted.
@@ -424,9 +441,8 @@ function _getEventFriends(ss, eventId, accountId, friendMapOpt, efDataOpt, dtDat
     var derivedIds = Object.keys(derived);
     if (derivedIds.length) {
       var now = new Date().toISOString();
-      derivedIds.forEach(function (fid) {
-        efSheet.appendRow([Utilities.getUuid(), eventId, fid, now]);
-      });
+      var newRows = derivedIds.map(function (fid) { return [Utilities.getUuid(), eventId, fid, now]; });
+      efSheet.getRange(efSheet.getLastRow() + 1, 1, newRows.length, 4).setValues(newRows);
       linkedIds = derivedIds;
     }
   }
@@ -548,26 +564,32 @@ function setEventFriends(token, eventId, friendIds) {
       return true;
     });
 
-    // Delete first, using the single efData read above (row positions still valid).
-    if (toRemove.length) {
-      for (var i = efData.length - 1; i >= 1; i--) {
-        if (efData[i][1] === eventId && toRemove.indexOf(efData[i][2]) !== -1) {
-          efSheet.deleteRow(i + 1);
-        }
-      }
-      toRemove.forEach(function (fid) { delete currentIdSet[fid]; });
-    }
+    toRemove.forEach(function (fid) { delete currentIdSet[fid]; });
 
     var now = new Date().toISOString();
+    var newRows = [];
     if (!hasAnyLink) {
       Object.keys(derivedFromDetails).forEach(function (fid) {
-        if (toRemove.indexOf(fid) === -1) efSheet.appendRow([Utilities.getUuid(), eventId, fid, now]);
+        if (toRemove.indexOf(fid) === -1) newRows.push([Utilities.getUuid(), eventId, fid, now]);
       });
     }
     toAdd.forEach(function (fid) {
-      efSheet.appendRow([Utilities.getUuid(), eventId, fid, now]);
+      newRows.push([Utilities.getUuid(), eventId, fid, now]);
       currentIdSet[fid] = true;
     });
+
+    // Single read (efData, above) + single write for the whole mutation,
+    // instead of one deleteRow()/appendRow() call per changed row. Rows for
+    // this event that aren't being removed are carried over byte-for-byte
+    // (same id/createdAt) — only genuinely new rows get fresh ones.
+    if (toRemove.length || newRows.length) {
+      var keepRows = efData.filter(function (row, i) {
+        return i > 0 && !(row[1] === eventId && toRemove.indexOf(row[2]) !== -1);
+      });
+      efSheet.clearContents();
+      var allRows = [efData[0]].concat(keepRows).concat(newRows);
+      efSheet.getRange(1, 1, allRows.length, 4).setValues(allRows);
+    }
 
     var finalFriends = Object.keys(currentIdSet).map(function (fid) {
       return { id: fid, name: ownedFriendMap[fid] };
@@ -630,35 +652,16 @@ function deleteEvent(token, eventId) {
   try {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
+    // Ownership check moved before any deletion (it used to run only against
+    // the final Events-row lookup below, after other users' rows in
+    // Details/EventFriends/EventShares had already been wiped for a
+    // not-yours eventId).
+    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
 
-    // Delete all details for this event
-    var detailsSheet = ss.getSheetByName('Details');
-    var detailsData = detailsSheet.getDataRange().getValues();
-    for (var i = detailsData.length - 1; i >= 1; i--) {
-      if (detailsData[i][1] === eventId) {
-        detailsSheet.deleteRow(i + 1);
-      }
-    }
+    _removeRowsWhere(ss.getSheetByName('Details'), 1, eventId);
+    _removeRowsWhere(getEventFriendsSheet(), 1, eventId);
+    _removeRowsWhere(getEventSharesSheet(), 0, eventId);
 
-    // Delete event-friend links
-    var efSheet = getEventFriendsSheet();
-    var efData = efSheet.getDataRange().getValues();
-    for (var i = efData.length - 1; i >= 1; i--) {
-      if (efData[i][1] === eventId) {
-        efSheet.deleteRow(i + 1);
-      }
-    }
-
-    // Delete any share link
-    var shSheet = getEventSharesSheet();
-    var shData = shSheet.getDataRange().getValues();
-    for (var i = shData.length - 1; i >= 1; i--) {
-      if (shData[i][0] === eventId) {
-        shSheet.deleteRow(i + 1);
-      }
-    }
-
-    // Delete event
     var eventsSheet = ss.getSheetByName('Events');
     var eventsData = eventsSheet.getDataRange().getValues();
     for (var j = 1; j < eventsData.length; j++) {
@@ -794,24 +797,26 @@ function getSharedEventView(shareToken) {
 // Details (Transactions)
 // ----------------------------------------------------------------
 
+// friendIds -> one Details row each, sharing totalAmount/description/createdAt.
+function _buildDetailRows(eventId, transactionId, payId, friendIds, total, description, customAmounts, createdAt) {
+  var perPerson = total / friendIds.length;
+  return friendIds.map(function (fid) {
+    var amount = (customAmounts && customAmounts[fid] !== undefined)
+      ? parseFloat(customAmounts[fid])
+      : perPerson;
+    return [Utilities.getUuid(), eventId, transactionId, payId, fid, amount, total, description, createdAt];
+  });
+}
+
 function addDetail(token, eventId, payId, friendIds, totalAmount, description, customAmounts) {
   try {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
     var sheet = ss.getSheetByName('Details');
     var transactionId = Utilities.getUuid();
-    var now = new Date().toISOString();
     var total = parseFloat(totalAmount);
-    var perPerson = total / friendIds.length;
-
-    for (var i = 0; i < friendIds.length; i++) {
-      var fid = friendIds[i];
-      var amount = (customAmounts && customAmounts[fid] !== undefined)
-        ? parseFloat(customAmounts[fid])
-        : perPerson;
-      var id = Utilities.getUuid();
-      sheet.appendRow([id, eventId, transactionId, payId, fid, amount, total, description, now]);
-    }
+    var rows = _buildDetailRows(eventId, transactionId, payId, friendIds, total, description, customAmounts, new Date().toISOString());
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
 
     return { success: true, transactionId: transactionId };
   } catch (e) {
@@ -833,19 +838,11 @@ function updateDetail(token, transactionId, payId, friendIds, totalAmount, descr
     if (!eventId) return { success: false, error: 'Transaction not found' };
     if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Transaction not found' };
 
-    for (var i = data.length - 1; i >= 1; i--) {
-      if (data[i][2] === transactionId) sheet.deleteRow(i + 1);
-    }
+    _removeRowsWhere(sheet, 2, transactionId, data);
 
     var total = parseFloat(totalAmount);
-    var perPerson = total / friendIds.length;
-    for (var i = 0; i < friendIds.length; i++) {
-      var fid = friendIds[i];
-      var amount = (customAmounts && customAmounts[fid] !== undefined)
-        ? parseFloat(customAmounts[fid])
-        : perPerson;
-      sheet.appendRow([Utilities.getUuid(), eventId, transactionId, payId, fid, amount, total, description, createdAt]);
-    }
+    var rows = _buildDetailRows(eventId, transactionId, payId, friendIds, total, description, customAmounts, createdAt);
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
 
     return { success: true, transactionId: transactionId };
   } catch (e) {
@@ -857,13 +854,7 @@ function deleteDetail(token, transactionId) {
   try {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
-    var sheet = ss.getSheetByName('Details');
-    var data = sheet.getDataRange().getValues();
-    for (var i = data.length - 1; i >= 1; i--) {
-      if (data[i][2] === transactionId) {
-        sheet.deleteRow(i + 1);
-      }
-    }
+    _removeRowsWhere(ss.getSheetByName('Details'), 2, transactionId);
     return { success: true };
   } catch (e) {
     return { success: false, error: e.toString() };
