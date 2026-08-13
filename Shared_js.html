@@ -8,6 +8,7 @@ var CUR_DT  = 'tx';
 var FRIENDS = [];
 var EVENTS  = [];
 var DETAILS = [];
+var SETTLEMENTS = null; // null = not loaded yet for the open event; [] is a valid "all settled" result
 
 // ── Color / Emoji Constants ───────────────────
 var BANNER_GRADS = [
@@ -147,7 +148,7 @@ function goTab(tab) {
 }
 
 function openDetail(ev) {
-  CUR_EV = ev; CUR_DT = 'tx';
+  CUR_EV = ev; CUR_DT = 'tx'; SETTLEMENTS = null;
   $('#hdrTitle').text(ev.name);
   $('#appHdr').addClass('show-back');
   $('#detailBanner').css('background', bannerGrad(ev.name));
@@ -186,7 +187,12 @@ function switchTab(t) {
   $('#panelTx').toggle(t === 'tx');
   $('#panelSum').toggle(t === 'sum');
   $('#panelFr').toggle(t === 'friends');
-  if (t === 'sum' && CUR_EV) loadSummary(CUR_EV.id);
+  if (t === 'sum' && CUR_EV) {
+    // SETTLEMENTS is already bundled into the initial detail load — only hit
+    // the server again if it was invalidated (e.g. a transaction changed).
+    if (SETTLEMENTS) renderSummary(SETTLEMENTS);
+    else loadSummary(CUR_EV.id);
+  }
   if (t === 'friends') renderEventFriends();
 }
 

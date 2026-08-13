@@ -326,6 +326,8 @@ function getHomeData(token) {
 
     // Settlement state per event, for the Home filter tabs — reuses the same
     // settlement engine as getSummary instead of a separate status field.
+    // Every sheet this needs is read ONCE here (not per event) and shared
+    // across the loop below via the *Opt params on the helpers.
     var rowsByEvent = {};
     events.forEach(function (ev) { rowsByEvent[ev.id] = [] });
     var dtData = ss.getSheetByName('Details').getDataRange().getValues();
@@ -333,12 +335,14 @@ function getHomeData(token) {
       if (rowsByEvent.hasOwnProperty(dtData[i][1]))
         rowsByEvent[dtData[i][1]].push({ payId: dtData[i][3], friendId: dtData[i][4], amount: dtData[i][5] });
     }
+    var efData = getEventFriendsSheet().getDataRange().getValues();
+    var spData = getSettlementPaymentsSheet().getDataRange().getValues();
     events.forEach(function (ev) {
       var rows = rowsByEvent[ev.id];
       if (!rows.length) { ev.settled = true; return }
       var evFriendMap = {};
-      _getEventFriends(ss, ev.id, user.id, friendMap).forEach(function (f) { evFriendMap[f.id] = f.name });
-      ev.settled = _computeSettlementsWithPaid(rows, evFriendMap, ev.id).every(function (s) { return s.paid });
+      _getEventFriends(ss, ev.id, user.id, friendMap, efData, dtData).forEach(function (f) { evFriendMap[f.id] = f.name });
+      ev.settled = _computeSettlementsWithPaid(rows, evFriendMap, ev.id, spData).every(function (s) { return s.paid });
     });
 
     return { success: true, events: events, friends: friends };
@@ -350,15 +354,22 @@ function getDetailData(token, eventId) {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
     var dtData = ss.getSheetByName('Details').getDataRange().getValues();
-    var details = [];
+    var details = [], rows = [];
     for (var i = 1; i < dtData.length; i++) {
-      if (dtData[i][1] === eventId)
+      if (dtData[i][1] === eventId) {
         details.push({ id: dtData[i][0], eventId: dtData[i][1], transactionId: dtData[i][2],
           payId: dtData[i][3], friendId: dtData[i][4], amount: dtData[i][5],
           totalAmount: dtData[i][6], description: dtData[i][7], createdAt: dtData[i][8] });
+        rows.push({ payId: dtData[i][3], friendId: dtData[i][4], amount: dtData[i][5] });
+      }
     }
     var friends = _getEventFriends(ss, eventId, user.id);
-    return { success: true, details: details, friends: friends };
+    var friendMap = {};
+    friends.forEach(function (f) { friendMap[f.id] = f.name });
+    // Bundled here so opening the Summary tab or exporting a PDF right after
+    // doesn't force a second round-trip that re-reads the same Details rows.
+    var settlements = _computeSettlementsWithPaid(rows, friendMap, eventId);
+    return { success: true, details: details, friends: friends, settlements: settlements };
   } catch (e) { return { success: false, error: e.toString() } }
 }
 
@@ -378,7 +389,9 @@ function _eventOwnedBy(ss, eventId, accountId) {
 // an event with existing transactions but no EventFriends rows yet is read,
 // membership is derived from who already appears in its Details and persisted.
 // Pass friendMapOpt when the caller already read the Friends sheet this request.
-function _getEventFriends(ss, eventId, accountId, friendMapOpt) {
+// Pass efDataOpt/dtDataOpt when the caller already read those sheets this
+// request (e.g. a per-event loop) to avoid re-reading them for every event.
+function _getEventFriends(ss, eventId, accountId, friendMapOpt, efDataOpt, dtDataOpt) {
   var friendMap = friendMapOpt;
   if (!friendMap) {
     friendMap = {};
@@ -389,7 +402,7 @@ function _getEventFriends(ss, eventId, accountId, friendMapOpt) {
   }
 
   var efSheet = getEventFriendsSheet();
-  var efData = efSheet.getDataRange().getValues();
+  var efData = efDataOpt || efSheet.getDataRange().getValues();
   var hasAnyLink = false;
   var linkedIds = [];
   for (var i = 1; i < efData.length; i++) {
@@ -400,7 +413,7 @@ function _getEventFriends(ss, eventId, accountId, friendMapOpt) {
   }
 
   if (!hasAnyLink) {
-    var dtData = ss.getSheetByName('Details').getDataRange().getValues();
+    var dtData = dtDataOpt || ss.getSheetByName('Details').getDataRange().getValues();
     var derived = {};
     for (var i = 1; i < dtData.length; i++) {
       if (dtData[i][1] === eventId) {
@@ -568,26 +581,6 @@ function setEventFriends(token, eventId, friendIds) {
 // ----------------------------------------------------------------
 // Events
 // ----------------------------------------------------------------
-
-function getEvents(token) {
-  try {
-    var user = requireAuth(token);
-    var ss = getSpreadsheet();
-    var sheet = ss.getSheetByName('Events');
-    var data = sheet.getDataRange().getValues();
-    var events = [];
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][2] === user.id) {
-        events.push({ id: data[i][0], name: data[i][1], accountId: data[i][2], createdAt: data[i][3] });
-      }
-    }
-    // Newest first
-    events.sort(function(a, b) { return b.createdAt > a.createdAt ? 1 : -1; });
-    return { success: true, events: events };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  }
-}
 
 function addEvent(token, name) {
   try {
@@ -801,34 +794,6 @@ function getSharedEventView(shareToken) {
 // Details (Transactions)
 // ----------------------------------------------------------------
 
-function getDetails(token, eventId) {
-  try {
-    var user = requireAuth(token);
-    var ss = getSpreadsheet();
-    var sheet = ss.getSheetByName('Details');
-    var data = sheet.getDataRange().getValues();
-    var details = [];
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][1] === eventId) {
-        details.push({
-          id: data[i][0],
-          eventId: data[i][1],
-          transactionId: data[i][2],
-          payId: data[i][3],
-          friendId: data[i][4],
-          amount: data[i][5],
-          totalAmount: data[i][6],
-          description: data[i][7],
-          createdAt: data[i][8]
-        });
-      }
-    }
-    return { success: true, details: details };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  }
-}
-
 function addDetail(token, eventId, payId, friendIds, totalAmount, description, customAmounts) {
   try {
     var user = requireAuth(token);
@@ -976,8 +941,10 @@ function _settleKey(from, to, amount) {
   return from + '|' + to + '|' + Math.round(parseFloat(amount) * 100);
 }
 
-function _getPaidSet(eventId) {
-  var data = getSettlementPaymentsSheet().getDataRange().getValues();
+// Pass spDataOpt when the caller already read the SettlementPayments sheet
+// this request (e.g. a per-event loop) to avoid re-reading it for every event.
+function _getPaidSet(eventId, spDataOpt) {
+  var data = spDataOpt || getSettlementPaymentsSheet().getDataRange().getValues();
   var set = {};
   for (var i = 1; i < data.length; i++) {
     if (data[i][1] === eventId) set[_settleKey(data[i][2], data[i][3], data[i][4])] = true;
@@ -985,9 +952,9 @@ function _getPaidSet(eventId) {
   return set;
 }
 
-function _computeSettlementsWithPaid(detailRows, friendMap, eventId) {
+function _computeSettlementsWithPaid(detailRows, friendMap, eventId, spDataOpt) {
   var settlements = _computeSettlements(detailRows, friendMap);
-  var paidSet = _getPaidSet(eventId);
+  var paidSet = _getPaidSet(eventId, spDataOpt);
   settlements.forEach(function (s) { s.paid = !!paidSet[_settleKey(s.from, s.to, s.amount)] });
   return settlements;
 }

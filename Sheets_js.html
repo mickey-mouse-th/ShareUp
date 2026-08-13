@@ -294,6 +294,7 @@ async function submitTx() {
         DETAILS = DETAILS.filter(function (d) { return d.transactionId !== editId })
           .concat(_buildLocalDetailRows(editId, pay, friendIds, totalAmount, desc, customAmounts, createdAt));
         renderDetails();
+        SETTLEMENTS = null; // stale — the Summary tab/export will refetch next time they're needed
       } else toast(r.error, 'err');
     } else {
       var r = await gsc('addDetail', TK, CUR_EV.id, pay, friendIds, totalAmount, desc, customAmounts);
@@ -301,6 +302,7 @@ async function submitTx() {
         toast('Transaction added! 💸');
         DETAILS = DETAILS.concat(_buildLocalDetailRows(r.transactionId, pay, friendIds, totalAmount, desc, customAmounts, new Date().toISOString()));
         renderDetails();
+        SETTLEMENTS = null;
       } else toast(r.error, 'err');
     }
   } catch (e) { toast('' + e, 'err') }
@@ -394,6 +396,7 @@ $(function () {
         } else if (t === 'tx' && CUR_EV) {
           DETAILS = DETAILS.filter(function (d) { return d.transactionId !== id });
           renderDetails();
+          SETTLEMENTS = null;
         } else if (t === 'account') {
           $('.acc-del[data-id="' + id + '"]').closest('.acc-card').remove();
         }

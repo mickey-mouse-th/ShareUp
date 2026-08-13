@@ -1,4 +1,15 @@
 <script>
+// Keeps Home's filter tabs/list in sync with settlement data fetched here,
+// without a full Home reload — mirrors this app's existing optimistic-UI style.
+function _syncEventSettled(id, settlements) {
+  var settled = settlements.every(function (s) { return s.paid });
+  var idx = EVENTS.findIndex(function (e) { return e.id === id });
+  if (idx !== -1 && EVENTS[idx].settled !== settled) {
+    EVENTS[idx].settled = settled;
+    if (typeof refreshEventsUI === 'function') refreshEventsUI();
+  }
+}
+
 async function loadDetailData(id) {
   $('#txList').html(skeletonHtml(3, 'tx'));
   try {
@@ -6,7 +17,9 @@ async function loadDetailData(id) {
     if (r.success) {
       DETAILS = r.details || [];
       FRIENDS = r.friends || [];
+      SETTLEMENTS = r.settlements || [];
       renderDetails();
+      _syncEventSettled(id, SETTLEMENTS);
     } else _handleDataError(r.error);
   } catch (e) { _handleDataError('' + e) }
 }
@@ -136,11 +149,15 @@ async function exportExpensesPdf() {
       '</tr>';
   }).join('');
 
-  var settlements = null;
-  try {
-    var r = await gsc('getSummary', TK, CUR_EV.id);
-    if (r.success) settlements = r.settlements || [];
-  } catch (e) {}
+  // Reuse the settlements already loaded for this event; only hit the server
+  // if they were invalidated (e.g. a transaction changed since).
+  var settlements = SETTLEMENTS;
+  if (settlements === null) {
+    try {
+      var r = await gsc('getSummary', TK, CUR_EV.id);
+      if (r.success) settlements = r.settlements || [];
+    } catch (e) {}
+  }
 
   var settleHtml;
   if (settlements === null) {
@@ -247,21 +264,16 @@ async function exportExpensesPdf() {
   }
 }
 
+// Fallback path: only hit when SETTLEMENTS wasn't already bundled/cached
+// (e.g. invalidated after a transaction changed). See switchTab().
 async function loadSummary(id) {
   $('#sumList').html(skeletonHtml(2, 'sum'));
   try {
     var r = await gsc('getSummary', TK, id);
     if (r.success) {
-      var settlements = r.settlements || [];
-      renderSummary(settlements);
-      // Keep Home's filter tabs/list in sync without a full reload — mirrors
-      // this app's existing optimistic-UI pattern for create/edit/delete.
-      var settled = settlements.every(function (s) { return s.paid });
-      var idx = EVENTS.findIndex(function (e) { return e.id === id });
-      if (idx !== -1 && EVENTS[idx].settled !== settled) {
-        EVENTS[idx].settled = settled;
-        if (typeof refreshEventsUI === 'function') refreshEventsUI();
-      }
+      SETTLEMENTS = r.settlements || [];
+      renderSummary(SETTLEMENTS);
+      _syncEventSettled(id, SETTLEMENTS);
     } else _handleDataError(r.error);
   } catch (e) { _handleDataError('' + e) }
 }
