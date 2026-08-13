@@ -9,6 +9,7 @@ var FRIENDS = [];
 var EVENTS  = [];
 var DETAILS = [];
 var SETTLEMENTS = null; // null = not loaded yet for the open event; [] is a valid "all settled" result
+var ME_PHOTO = ''; // currently-displayed header avatar photo (base64), '' = showing initials
 
 // ── Color / Emoji Constants ───────────────────
 var BANNER_GRADS = [
@@ -234,15 +235,25 @@ function _restoreView() {
   goTab('home');
 }
 
+function _renderHdrAvatar(name, photo) {
+  ME_PHOTO = photo || '';
+  var $el = $('#hdrAv');
+  if (ME_PHOTO) $el.css('background', 'url(' + ME_PHOTO + ') center/cover no-repeat').text('');
+  else $el.css('background', avCol(name)).text(initials(name));
+}
+
 // ── App boot ─────────────────────────────────
 function startApp() {
   $('#authView').hide();
   $('#appView').css('display', 'flex');
   var name = (ME.displayName || ME.username || '');
   $('#heroName').text(name);
-  $('#hdrAv').text(initials(name)).css('background', avCol(name));
+  _renderHdrAvatar(name, null);
   if (ME.role === 'admin') $('#navAd').show(); else $('#navAd').hide();
   _restoreView();
+  gsc('getMyProfile', TK).then(function (r) {
+    if (r.success) _renderHdrAvatar(ME.displayName || ME.username, r.photo);
+  }).catch(function () {});
 }
 
 function doLogout() {
@@ -269,7 +280,7 @@ $(function () {
   $('#navEv').on('click',  function () { goTab('home') });
   $('#navAd').on('click',  function () { goTab('admin') });
   $('#fab').on('click',    handleFab);
-  $('#hdrAv').on('click',  function () { openSheet('shLogout') });
+  $('#hdrAv').on('click',  function () { openSheet('shAccount') });
   $('#overlay').on('click', closeSheets);
 
   // Boot — optimistic: show app immediately with cached data,

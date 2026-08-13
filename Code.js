@@ -33,11 +33,11 @@ function getSpreadsheet() {
     var adminId = Utilities.getUuid();
     var now = new Date().toISOString();
     var accountsSheet = ss.getSheetByName('Accounts');
-    accountsSheet.appendRow([adminId, 'Admin', 'admin', adminPassword, now, now, 'admin', 'active', '']);
+    accountsSheet.appendRow([adminId, 'Admin', 'admin', adminPassword, now, now, 'admin', 'active', '', '']);
 
     // Create "Me" friend for admin
     var friendsSheet = ss.getSheetByName('Friends');
-    friendsSheet.appendRow([Utilities.getUuid(), adminId, 'Me']);
+    friendsSheet.appendRow([Utilities.getUuid(), adminId, 'Me', 'true']);
   }
 
   return ss;
@@ -48,10 +48,10 @@ function initSheets(ss) {
   var defaultSheet = ss.getSheetByName('Sheet1');
 
   var accountsSheet = ss.insertSheet('Accounts');
-  accountsSheet.appendRow(['id', 'displayName', 'username', 'password', 'firstLogin', 'lastLogin', 'role', 'status', 'email']);
+  accountsSheet.appendRow(['id', 'displayName', 'username', 'password', 'firstLogin', 'lastLogin', 'role', 'status', 'email', 'photo']);
 
   var friendsSheet = ss.insertSheet('Friends');
-  friendsSheet.appendRow(['id', 'accountId', 'name']);
+  friendsSheet.appendRow(['id', 'accountId', 'name', 'isSelf']);
 
   var eventsSheet = ss.insertSheet('Events');
   eventsSheet.appendRow(['id', 'name', 'accountId', 'createdAt']);
@@ -253,11 +253,11 @@ function registerUser(displayName, username, password) {
     var now = new Date().toISOString();
     var id = Utilities.getUuid();
     var hashed = hashPassword(password);
-    sheet.appendRow([id, displayName, username.toLowerCase(), hashed, now, now, 'user', 'active', '']);
+    sheet.appendRow([id, displayName, username.toLowerCase(), hashed, now, now, 'user', 'active', '', '']);
 
     // Create "Me" friend
     var friendsSheet = ss.getSheetByName('Friends');
-    friendsSheet.appendRow([Utilities.getUuid(), id, 'Me']);
+    friendsSheet.appendRow([Utilities.getUuid(), id, 'Me', 'true']);
 
     return { success: true };
   } catch (e) {
@@ -299,6 +299,93 @@ function requireAuth(token) {
   if (!found) throw new Error('Unauthorized');
   getCache().put('token_' + token, JSON.stringify(found.userInfo), CACHE_EXPIRY);
   return found.userInfo;
+}
+
+// Refreshes the cached userInfo for the CURRENT session/device only (the one
+// that made this request) so a profile edit shows up immediately without
+// re-login. Other devices logged into the same account keep their own
+// cached copy until it naturally expires or they log in again — same
+// limitation that already exists for admin-driven role changes.
+function _updateSessionUserInfo(token, userInfo) {
+  getCache().put('token_' + token, JSON.stringify(userInfo), CACHE_EXPIRY);
+  var sheet = getSessionsSheet();
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0] === token) { sheet.getRange(i + 1, 3).setValue(JSON.stringify(userInfo)); break; }
+  }
+}
+
+// ----------------------------------------------------------------
+// Profile (self-service account settings)
+// ----------------------------------------------------------------
+
+function getMyProfile(token) {
+  try {
+    var user = requireAuth(token);
+    var data = getSpreadsheet().getSheetByName('Accounts').getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] === user.id) {
+        return { success: true, displayName: data[i][1], username: data[i][2], photo: data[i][9] || '' };
+      }
+    }
+    return { success: false, error: 'Account not found' };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+// photo: pass a string to set it ('' clears it); omit/null to leave unchanged.
+function updateProfile(token, displayName, photo) {
+  try {
+    var user = requireAuth(token);
+    if (!displayName || !displayName.trim()) return { success: false, error: 'Name is required' };
+    var trimmed = displayName.trim();
+    var ss = getSpreadsheet();
+
+    var acSheet = ss.getSheetByName('Accounts');
+    var acData = acSheet.getDataRange().getValues();
+    var acRow = -1;
+    for (var i = 1; i < acData.length; i++) {
+      if (acData[i][0] === user.id) { acRow = i; break; }
+    }
+    if (acRow === -1) return { success: false, error: 'Account not found' };
+    acSheet.getRange(acRow + 1, 2).setValue(trimmed);
+    if (typeof photo === 'string') acSheet.getRange(acRow + 1, 10).setValue(photo);
+
+    // Keep the self-friend (shown as payer/participant in every event) in sync.
+    var frSheet = ss.getSheetByName('Friends');
+    var frData = frSheet.getDataRange().getValues();
+    var selfRow = _findSelfFriendRow(frData, user.id);
+    if (selfRow !== -1) {
+      frSheet.getRange(selfRow + 1, 3).setValue(trimmed);
+      if (frData[selfRow][3] !== 'true') frSheet.getRange(selfRow + 1, 4).setValue('true'); // backfill pre-migration rows
+    }
+
+    var userInfo = { id: user.id, displayName: trimmed, username: user.username, role: user.role };
+    _updateSessionUserInfo(token, userInfo);
+    return { success: true, user: userInfo };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function changePassword(token, currentPassword, newPassword) {
+  try {
+    var user = requireAuth(token);
+    if (!newPassword || !newPassword.length) return { success: false, error: 'New password is required' };
+    var sheet = getSpreadsheet().getSheetByName('Accounts');
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] === user.id) {
+        if (data[i][3] !== hashPassword(currentPassword || '')) return { success: false, error: 'Current password is incorrect' };
+        sheet.getRange(i + 1, 4).setValue(hashPassword(newPassword));
+        return { success: true };
+      }
+    }
+    return { success: false, error: 'Account not found' };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
 }
 
 // ----------------------------------------------------------------
@@ -383,6 +470,21 @@ function _eventOwnedBy(ss, eventId, accountId) {
     if (data[i][0] === eventId && data[i][2] === accountId) return true;
   }
   return false;
+}
+
+// Finds the row index (in an already-read Friends data array) of the
+// account's own self-friend — the one auto-created at registration and
+// auto-linked into every new event. Prefers the isSelf marker; falls back
+// to the pre-migration convention (named literally "Me") for rows created
+// before that column existed. Returns -1 if none found.
+function _findSelfFriendRow(frData, accountId) {
+  for (var i = 1; i < frData.length; i++) {
+    if (frData[i][1] === accountId && frData[i][3] === 'true') return i;
+  }
+  for (var i = 1; i < frData.length; i++) {
+    if (frData[i][1] === accountId && frData[i][2] === 'Me') return i;
+  }
+  return -1;
 }
 
 // Removes every row whose column `col` (0-indexed) equals `val` in a single
@@ -614,13 +716,11 @@ function addEvent(token, name) {
     var now = new Date().toISOString();
     sheet.appendRow([id, name.trim(), user.id, now]);
 
-    // Auto-link the account's "Me" friend so every event starts with yourself in it
+    // Auto-link the account's own self-friend so every event starts with yourself in it
     var frData = ss.getSheetByName('Friends').getDataRange().getValues();
-    for (var i = 1; i < frData.length; i++) {
-      if (frData[i][1] === user.id && frData[i][2] === 'Me') {
-        getEventFriendsSheet().appendRow([Utilities.getUuid(), id, frData[i][0], now]);
-        break;
-      }
+    var selfRow = _findSelfFriendRow(frData, user.id);
+    if (selfRow !== -1) {
+      getEventFriendsSheet().appendRow([Utilities.getUuid(), id, frData[selfRow][0], now]);
     }
 
     return { success: true, event: { id: id, name: name.trim(), accountId: user.id, createdAt: now } };
