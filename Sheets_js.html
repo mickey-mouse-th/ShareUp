@@ -363,6 +363,7 @@ async function openProfileSheet() {
   openSheet('shProfile');
   _pfPhotoPending = undefined;
   $('#inpPfCurPw, #inpPfNewPw').val('');
+  gsc('getPasswordPolicy').then(function (p) { $('#pfPwHint').text(pwPolicyText(p)) }).catch(function () {});
   try {
     var r = await gsc('getMyProfile', TK);
     if (r.success) {
@@ -407,7 +408,7 @@ $(function () {
   // Close buttons
   $('#shEventClose, #shEfClose, #shTxClose, #shShareClose').on('click', closeSheets);
   $('#cfCancel, #logoutCancel').on('click', closeSheets);
-  $('#shAccountClose, #shProfileClose, #shUserEditClose').on('click', closeSheets);
+  $('#shAccountClose, #shProfileClose, #shUserEditClose, #shAdminSettingsClose').on('click', closeSheets);
 
   // Account menu
   $('#btnOpenProfile').on('click', openProfileSheet);

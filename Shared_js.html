@@ -81,6 +81,17 @@ function fmtDate(iso) {
   catch (e) { return iso }
 }
 
+// Renders the admin-configured password policy as a human-readable hint,
+// shared by the register form and the change-password form.
+function pwPolicyText(p) {
+  var parts = ['At least ' + p.pwMinLength + ' characters'];
+  if (p.pwRequireUpper) parts.push('an uppercase letter');
+  if (p.pwRequireLower) parts.push('a lowercase letter');
+  if (p.pwRequireNumber) parts.push('a number');
+  if (p.pwRequireSpecial) parts.push('a special character');
+  return parts.join(', ');
+}
+
 // ── Skeleton ─────────────────────────────────
 function skeletonHtml(count, type) {
   var card;

@@ -3,8 +3,15 @@
 // ============================================================
 
 var SPREADSHEET_NAME = 'ShareUp_Database';
-var CACHE_EXPIRY = 21600; // 6 hours
-var SESSION_DAYS = 30;   // persistent session lifetime
+var CACHE_EXPIRY = 21600; // 6 hours - hard max allowed by CacheService
+var DEFAULT_SETTINGS = {
+  sessionMinutes: 30 * 24 * 60, // 30 days, matches the old fixed SESSION_DAYS
+  pwMinLength: 6,
+  pwRequireUpper: false,
+  pwRequireLower: false,
+  pwRequireNumber: false,
+  pwRequireSpecial: false
+};
 
 // ----------------------------------------------------------------
 // Database Setup
@@ -141,13 +148,20 @@ function _lookupSession(token) {
       if (now < new Date(data[i][4])) {
         var userInfo = JSON.parse(data[i][2]);
         if (_isAccountDisabled(userInfo.id)) { sheet.deleteRow(i + 1); return null }
-        return { row: i + 1, userInfo: userInfo };
+        return { row: i + 1, userInfo: userInfo, expiresAt: data[i][4] };
       }
       sheet.deleteRow(i + 1);
       return null;
     }
   }
   return null;
+}
+
+// Caps the cache entry so it never outlives the session's real expiry - matters
+// when an admin configures a short sessionMinutes value (e.g. for testing).
+function _cacheTtlFor(expiresAtIso) {
+  var remainingSec = Math.floor((new Date(expiresAtIso).getTime() - Date.now()) / 1000);
+  return Math.max(1, Math.min(CACHE_EXPIRY, remainingSec));
 }
 
 // Only consulted on session-cache misses (~every CACHE_EXPIRY), so a disabled
@@ -199,6 +213,78 @@ function include(filename) {
 }
 
 // ----------------------------------------------------------------
+// App Settings (session length, password policy) - singleton config
+// stored in Script Properties, not a sheet, since it's a single object
+// with no per-row semantics.
+// ----------------------------------------------------------------
+
+function getAppSettings() {
+  var raw = PropertiesService.getScriptProperties().getProperty('APP_SETTINGS');
+  var saved = raw ? JSON.parse(raw) : {};
+  var merged = {};
+  for (var k in DEFAULT_SETTINGS) {
+    merged[k] = (saved[k] !== undefined) ? saved[k] : DEFAULT_SETTINGS[k];
+  }
+  return merged;
+}
+
+// No auth required: the register form (pre-login) and change-password form
+// both need to show the current rules before the user has a session token.
+function getPasswordPolicy() {
+  var s = getAppSettings();
+  return {
+    pwMinLength: s.pwMinLength,
+    pwRequireUpper: s.pwRequireUpper,
+    pwRequireLower: s.pwRequireLower,
+    pwRequireNumber: s.pwRequireNumber,
+    pwRequireSpecial: s.pwRequireSpecial
+  };
+}
+
+function _validatePassword(pw, settingsOpt) {
+  var s = settingsOpt || getAppSettings();
+  if (!pw || pw.length < s.pwMinLength) return 'Password must be at least ' + s.pwMinLength + ' characters';
+  if (s.pwRequireUpper && !/[A-Z]/.test(pw)) return 'Password must include an uppercase letter';
+  if (s.pwRequireLower && !/[a-z]/.test(pw)) return 'Password must include a lowercase letter';
+  if (s.pwRequireNumber && !/[0-9]/.test(pw)) return 'Password must include a number';
+  if (s.pwRequireSpecial && !/[^A-Za-z0-9]/.test(pw)) return 'Password must include a special character';
+  return null;
+}
+
+function getSettings(token) {
+  try {
+    var user = requireAuth(token);
+    if (user.role !== 'admin') return { success: false, error: 'Forbidden' };
+    return { success: true, settings: getAppSettings() };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function updateSettings(token, settings) {
+  try {
+    var user = requireAuth(token);
+    if (user.role !== 'admin') return { success: false, error: 'Forbidden' };
+    var minutes = parseInt(settings.sessionMinutes, 10);
+    if (!minutes || minutes < 1) return { success: false, error: 'Session length must be at least 1 minute' };
+    var minLen = parseInt(settings.pwMinLength, 10);
+    if (!minLen || minLen < 1) minLen = 1;
+    var merged = {
+      sessionMinutes: minutes,
+      pwMinLength: minLen,
+      pwRequireUpper: !!settings.pwRequireUpper,
+      pwRequireLower: !!settings.pwRequireLower,
+      pwRequireNumber: !!settings.pwRequireNumber,
+      pwRequireSpecial: !!settings.pwRequireSpecial
+    };
+    PropertiesService.getScriptProperties().setProperty('APP_SETTINGS', JSON.stringify(merged));
+    return { success: true, settings: merged };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+// ----------------------------------------------------------------
 // Auth
 // ----------------------------------------------------------------
 
@@ -224,8 +310,10 @@ function loginUser(username, password) {
           role: row[6]
         };
         var now = new Date();
-        var expires = new Date(now.getTime() + SESSION_DAYS * 86400000);
-        getCache().put('token_' + token, JSON.stringify(userInfo), CACHE_EXPIRY);
+        var sessionMinutes = getAppSettings().sessionMinutes;
+        var expires = new Date(now.getTime() + sessionMinutes * 60000);
+        var cacheTtl = Math.max(1, Math.min(CACHE_EXPIRY, sessionMinutes * 60));
+        getCache().put('token_' + token, JSON.stringify(userInfo), cacheTtl);
         getSessionsSheet().appendRow([token, row[0], JSON.stringify(userInfo), now.toISOString(), expires.toISOString()]);
         _cleanExpiredSessions();
         return { success: true, token: token, user: userInfo };
@@ -249,6 +337,9 @@ function registerUser(displayName, username, password) {
         return { success: false, error: 'Username already taken' };
       }
     }
+
+    var pwErr = _validatePassword(password);
+    if (pwErr) return { success: false, error: pwErr };
 
     var now = new Date().toISOString();
     var id = Utilities.getUuid();
@@ -285,7 +376,7 @@ function getSessionUser(token) {
     if (cached) return { success: true, user: JSON.parse(cached) };
     var found = _lookupSession(token);
     if (!found) return { success: false, error: 'Session expired' };
-    getCache().put('token_' + token, JSON.stringify(found.userInfo), CACHE_EXPIRY);
+    getCache().put('token_' + token, JSON.stringify(found.userInfo), _cacheTtlFor(found.expiresAt));
     return { success: true, user: found.userInfo };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -297,7 +388,7 @@ function requireAuth(token) {
   if (cached) return JSON.parse(cached);
   var found = _lookupSession(token);
   if (!found) throw new Error('Unauthorized');
-  getCache().put('token_' + token, JSON.stringify(found.userInfo), CACHE_EXPIRY);
+  getCache().put('token_' + token, JSON.stringify(found.userInfo), _cacheTtlFor(found.expiresAt));
   return found.userInfo;
 }
 
@@ -307,12 +398,17 @@ function requireAuth(token) {
 // cached copy until it naturally expires or they log in again — same
 // limitation that already exists for admin-driven role changes.
 function _updateSessionUserInfo(token, userInfo) {
-  getCache().put('token_' + token, JSON.stringify(userInfo), CACHE_EXPIRY);
   var sheet = getSessionsSheet();
   var data = sheet.getDataRange().getValues();
+  var ttl = CACHE_EXPIRY;
   for (var i = 1; i < data.length; i++) {
-    if (data[i][0] === token) { sheet.getRange(i + 1, 3).setValue(JSON.stringify(userInfo)); break; }
+    if (data[i][0] === token) {
+      sheet.getRange(i + 1, 3).setValue(JSON.stringify(userInfo));
+      ttl = _cacheTtlFor(data[i][4]);
+      break;
+    }
   }
+  getCache().put('token_' + token, JSON.stringify(userInfo), ttl);
 }
 
 // ----------------------------------------------------------------
@@ -372,7 +468,8 @@ function updateProfile(token, displayName, photo) {
 function changePassword(token, currentPassword, newPassword) {
   try {
     var user = requireAuth(token);
-    if (!newPassword || !newPassword.length) return { success: false, error: 'New password is required' };
+    var pwErr = _validatePassword(newPassword);
+    if (pwErr) return { success: false, error: pwErr };
     var sheet = getSpreadsheet().getSheetByName('Accounts');
     var data = sheet.getDataRange().getValues();
     for (var i = 1; i < data.length; i++) {

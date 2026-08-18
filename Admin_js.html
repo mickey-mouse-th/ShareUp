@@ -63,9 +63,57 @@ function openUserEditSheet(id) {
   openSheet('shUserEdit');
 }
 
+function _tglSet(wrapId, chkId, on) {
+  $('#' + wrapId).toggleClass('on', on);
+  $('#' + chkId).prop('checked', on);
+}
+
+async function openAdminSettingsSheet() {
+  openSheet('shAdminSettings');
+  try {
+    var r = await gsc('getSettings', TK);
+    if (!r.success) { toast(r.error, 'err'); closeSheets(); return }
+    var s = r.settings;
+    $('#asSessionMin').val(s.sessionMinutes);
+    $('#asSessionHint').text('≈ ' + (s.sessionMinutes / 1440).toFixed(1) + ' days');
+    $('#asPwMinLen').val(s.pwMinLength);
+    _tglSet('asPwUpperWrap', 'asPwUpper', s.pwRequireUpper);
+    _tglSet('asPwLowerWrap', 'asPwLower', s.pwRequireLower);
+    _tglSet('asPwNumberWrap', 'asPwNumber', s.pwRequireNumber);
+    _tglSet('asPwSpecialWrap', 'asPwSpecial', s.pwRequireSpecial);
+  } catch (e) { toast('' + e, 'err') }
+}
+
 $(function () {
   $('#accountsList').on('click', '.acc-tap', function () {
     openUserEditSheet($(this).data('id'));
+  });
+
+  $('#btnOpenAdminSettings').on('click', openAdminSettingsSheet);
+
+  $('#asSessionMin').on('input', function () {
+    var v = parseFloat($(this).val()) || 0;
+    $('#asSessionHint').text('≈ ' + (v / 1440).toFixed(1) + ' days');
+  });
+
+  $('.tgl input', '#shAdminSettings').on('change', function () {
+    $(this).closest('.tgl').toggleClass('on', $(this).is(':checked'));
+  });
+
+  $('#btnAsSave').on('click', async function () {
+    var settings = {
+      sessionMinutes: $('#asSessionMin').val(),
+      pwMinLength: $('#asPwMinLen').val(),
+      pwRequireUpper: $('#asPwUpper').is(':checked'),
+      pwRequireLower: $('#asPwLower').is(':checked'),
+      pwRequireNumber: $('#asPwNumber').is(':checked'),
+      pwRequireSpecial: $('#asPwSpecial').is(':checked')
+    };
+    try {
+      var r = await gsc('updateSettings', TK, settings);
+      if (r.success) { toast('Settings saved'); closeSheets() }
+      else toast(r.error, 'err');
+    } catch (e) { toast('' + e, 'err') }
   });
 
   $('#ueRoleSel').on('change', async function () {

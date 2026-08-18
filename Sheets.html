@@ -168,7 +168,11 @@
     <div class="pf-divider"></div>
 
     <div class="inp-g"><label class="inp-lbl">Current Password</label><input class="inp" id="inpPfCurPw" type="password" autocomplete="current-password"/></div>
-    <div class="inp-g"><label class="inp-lbl">New Password</label><input class="inp" id="inpPfNewPw" type="password" autocomplete="new-password"/></div>
+    <div class="inp-g">
+      <label class="inp-lbl">New Password</label>
+      <input class="inp" id="inpPfNewPw" type="password" autocomplete="new-password"/>
+      <div class="pf-hint" id="pfPwHint"></div>
+    </div>
     <button class="sh-btn" id="btnPfChangePw" style="background:var(--s2);box-shadow:none;color:var(--t1);border:1px solid var(--bd2)">Change Password</button>
   </div>
 </div>
@@ -209,5 +213,43 @@
     </div>
 
     <button class="sh-btn" id="btnUeDelete" style="background:var(--r);box-shadow:0 8px 24px rgba(244,63,94,.35)">Delete Account</button>
+  </div>
+</div>
+
+<!-- Sheet: App Settings (Admin) -->
+<div class="sheet" id="shAdminSettings">
+  <div class="sh-pill"></div>
+  <div class="sh-hd"><span class="sh-title">App Settings</span><button class="sh-close" id="shAdminSettingsClose">✕</button></div>
+  <div class="sh-body">
+    <div class="inp-g">
+      <label class="inp-lbl">Session Length (minutes)</label>
+      <input class="inp" id="asSessionMin" type="number" min="1" step="1" placeholder="e.g. 43200"/>
+      <div class="pf-hint" id="asSessionHint"></div>
+    </div>
+
+    <div class="pf-divider"></div>
+
+    <label class="inp-lbl">Password Requirements</label>
+    <div class="inp-g">
+      <input class="inp" id="asPwMinLen" type="number" min="1" step="1" placeholder="Minimum length"/>
+    </div>
+    <div class="ue-status-row" style="margin-top:0">
+      <div class="ue-status-hint">Require uppercase letter (A-Z)</div>
+      <label class="tgl" id="asPwUpperWrap"><input type="checkbox" id="asPwUpper"/><span class="tgl-track"></span></label>
+    </div>
+    <div class="ue-status-row">
+      <div class="ue-status-hint">Require lowercase letter (a-z)</div>
+      <label class="tgl" id="asPwLowerWrap"><input type="checkbox" id="asPwLower"/><span class="tgl-track"></span></label>
+    </div>
+    <div class="ue-status-row">
+      <div class="ue-status-hint">Require number (0-9)</div>
+      <label class="tgl" id="asPwNumberWrap"><input type="checkbox" id="asPwNumber"/><span class="tgl-track"></span></label>
+    </div>
+    <div class="ue-status-row">
+      <div class="ue-status-hint">Require special character</div>
+      <label class="tgl" id="asPwSpecialWrap"><input type="checkbox" id="asPwSpecial"/><span class="tgl-track"></span></label>
+    </div>
+
+    <button class="sh-btn" id="btnAsSave" style="margin-top:8px">Save Settings</button>
   </div>
 </div>

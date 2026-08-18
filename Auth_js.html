@@ -10,6 +10,8 @@ function authPg(p) {
 }
 
 $(function () {
+  gsc('getPasswordPolicy').then(function (p) { $('#regPwHint').text(pwPolicyText(p)) }).catch(function () {});
+
   $('#goRegister').on('click', function (e) { e.preventDefault(); authPg('reg') });
   $('#goLogin').on('click', function (e) { e.preventDefault(); authPg('login') });
 
