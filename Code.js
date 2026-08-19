@@ -266,16 +266,18 @@ function updateSettings(token, settings) {
     var user = requireAuth(token);
     if (user.role !== 'admin') return { success: false, error: 'Forbidden' };
     var minutes = parseInt(settings.sessionMinutes, 10);
-    if (!minutes || minutes < 1) return { success: false, error: 'Session length must be at least 1 minute' };
+    // Floor at 5 minutes - anything shorter makes it easy to accidentally lock
+    // yourself (or every user) out via a mistyped value (e.g. minutes vs hours).
+    if (!minutes || minutes < 5) return { success: false, error: 'Session length must be at least 5 minutes' };
     var minLen = parseInt(settings.pwMinLength, 10);
     if (!minLen || minLen < 1) minLen = 1;
     var merged = {
       sessionMinutes: minutes,
       pwMinLength: minLen,
-      pwRequireUpper: !!settings.pwRequireUpper,
-      pwRequireLower: !!settings.pwRequireLower,
-      pwRequireNumber: !!settings.pwRequireNumber,
-      pwRequireSpecial: !!settings.pwRequireSpecial
+      pwRequireUpper: settings.pwRequireUpper === true,
+      pwRequireLower: settings.pwRequireLower === true,
+      pwRequireNumber: settings.pwRequireNumber === true,
+      pwRequireSpecial: settings.pwRequireSpecial === true
     };
     PropertiesService.getScriptProperties().setProperty('APP_SETTINGS', JSON.stringify(merged));
     return { success: true, settings: merged };

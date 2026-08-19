@@ -68,6 +68,15 @@ function _tglSet(wrapId, chkId, on) {
   $('#' + chkId).prop('checked', on);
 }
 
+// Picks whichever unit reads most naturally for the given minute count, so
+// someone thinking "3 hours" isn't stuck reading "0.1 days".
+function _sessionHintText(minutes) {
+  if (!minutes || minutes < 1) return '';
+  if (minutes < 120) return '≈ ' + minutes + ' minutes';
+  if (minutes < 1440 * 2) return '≈ ' + (minutes / 60).toFixed(1) + ' hours';
+  return '≈ ' + (minutes / 1440).toFixed(1) + ' days';
+}
+
 async function openAdminSettingsSheet() {
   openSheet('shAdminSettings');
   try {
@@ -75,7 +84,7 @@ async function openAdminSettingsSheet() {
     if (!r.success) { toast(r.error, 'err'); closeSheets(); return }
     var s = r.settings;
     $('#asSessionMin').val(s.sessionMinutes);
-    $('#asSessionHint').text('≈ ' + (s.sessionMinutes / 1440).toFixed(1) + ' days');
+    $('#asSessionHint').text(_sessionHintText(s.sessionMinutes));
     $('#asPwMinLen').val(s.pwMinLength);
     _tglSet('asPwUpperWrap', 'asPwUpper', s.pwRequireUpper);
     _tglSet('asPwLowerWrap', 'asPwLower', s.pwRequireLower);
@@ -92,8 +101,7 @@ $(function () {
   $('#btnOpenAdminSettings').on('click', openAdminSettingsSheet);
 
   $('#asSessionMin').on('input', function () {
-    var v = parseFloat($(this).val()) || 0;
-    $('#asSessionHint').text('≈ ' + (v / 1440).toFixed(1) + ' days');
+    $('#asSessionHint').text(_sessionHintText(parseFloat($(this).val())));
   });
 
   $('.tgl input', '#shAdminSettings').on('change', function () {
