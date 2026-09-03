@@ -19,6 +19,7 @@ async function loadDetailData(id) {
       FRIENDS = r.friends || [];
       SETTLEMENTS = r.settlements || [];
       SELF_FRIEND_ID = r.selfFriendId || null;
+      SLIPS = r.slips || {};
       renderDetails();
       _syncEventSettled(id, SETTLEMENTS);
     } else _handleDataError(r.error);
@@ -70,6 +71,10 @@ function renderDetails() {
       '<div class="tx-foot">' +
       '<span class="tx-date">' + fmtDate(f.createdAt) + '</span>' +
       '<div class="tx-actions">' +
+      (SLIPS[tid] ?
+        '<button class="btn-slip tx-view-slip" data-tid="' + esc(tid) + '">' +
+        '<svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>' +
+        '</button>' : '') +
       '<button class="btn-edit tx-edit" data-tid="' + esc(tid) + '">' +
       '<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>' +
       '</button>' +
@@ -417,6 +422,13 @@ $(function () {
   $('#txList').on('click', '.tx-edit', function (e) {
     e.stopPropagation();
     openEditTxSheet($(this).data('tid'));
+  });
+  $('#txList').on('click', '.tx-view-slip', function (e) {
+    e.stopPropagation();
+    var slip = SLIPS[$(this).data('tid')];
+    if (!slip) return;
+    $('#slipViewImg').attr('src', slip);
+    openSheet('shSlipView');
   });
   $('#detailFriendsList').on('click', '.ef-remove', function (e) {
     e.stopPropagation();

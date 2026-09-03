@@ -139,6 +139,19 @@ function getSettlementPaymentsSheet() {
   return sheet;
 }
 
+// One row per transaction (only created once a slip is uploaded) rather than
+// a column on Details, since a transaction fans out into one Details row per
+// participant - a column there would duplicate the same image N times.
+function getTransactionSlipsSheet() {
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName('TransactionSlips');
+  if (!sheet) {
+    sheet = ss.insertSheet('TransactionSlips');
+    sheet.appendRow(['transactionId', 'slip', 'updatedAt']);
+  }
+  return sheet;
+}
+
 function _lookupSession(token) {
   var sheet = getSessionsSheet();
   var data = sheet.getDataRange().getValues();
@@ -563,9 +576,16 @@ function getDetailData(token, eventId) {
     // Bundled here so opening the Summary tab or exporting a PDF right after
     // doesn't force a second round-trip that re-reads the same Details rows.
     var settlements = _computeSettlementsWithPaid(rows, friendMap, eventId);
+
+    var slipData = getTransactionSlipsSheet().getDataRange().getValues();
+    var slips = {};
+    for (var i = 1; i < slipData.length; i++) {
+      if (slipData[i][1]) slips[slipData[i][0]] = slipData[i][1];
+    }
+
     // selfFriendId lets the client show the account's own profile photo (set
     // via My Profile) for its own avatar instead of the initials circle.
-    return { success: true, details: details, friends: friends, settlements: settlements, selfFriendId: selfFriendId };
+    return { success: true, details: details, friends: friends, settlements: settlements, selfFriendId: selfFriendId, slips: slips };
   } catch (e) { return { success: false, error: e.toString() } }
 }
 
@@ -609,6 +629,21 @@ function _removeRowsWhere(sheet, col, val, dataOpt) {
     if (data[i][col] !== val) kept.push(data[i]);
   }
   if (kept.length === data.length) return; // nothing matched
+  sheet.clearContents();
+  sheet.getRange(1, 1, kept.length, kept[0].length).setValues(kept);
+}
+
+// Like _removeRowsWhere but matches against a set of ids (object used as a
+// hash set) - for deleteEvent, which needs to drop TransactionSlips rows for
+// every transactionId under the event, not a single value.
+function _removeRowsBySet(sheet, col, idSet) {
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return;
+  var kept = [data[0]];
+  for (var i = 1; i < data.length; i++) {
+    if (!idSet[data[i][col]]) kept.push(data[i]);
+  }
+  if (kept.length === data.length) return;
   sheet.clearContents();
   sheet.getRange(1, 1, kept.length, kept[0].length).setValues(kept);
 }
@@ -867,9 +902,17 @@ function deleteEvent(token, eventId) {
     // not-yours eventId).
     if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
 
-    _removeRowsWhere(ss.getSheetByName('Details'), 1, eventId);
+    var detailsSheet = ss.getSheetByName('Details');
+    var dtData = detailsSheet.getDataRange().getValues();
+    var txIds = {};
+    for (var i = 1; i < dtData.length; i++) {
+      if (dtData[i][1] === eventId) txIds[dtData[i][2]] = true;
+    }
+
+    _removeRowsWhere(detailsSheet, 1, eventId, dtData);
     _removeRowsWhere(getEventFriendsSheet(), 1, eventId);
     _removeRowsWhere(getEventSharesSheet(), 0, eventId);
+    _removeRowsBySet(getTransactionSlipsSheet(), 0, txIds);
 
     var eventsSheet = ss.getSheetByName('Events');
     var eventsData = eventsSheet.getDataRange().getValues();
@@ -1094,6 +1137,38 @@ function deleteDetail(token, transactionId) {
     if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Transaction not found' };
 
     _removeRowsWhere(sheet, 2, transactionId, data);
+    _removeRowsWhere(getTransactionSlipsSheet(), 0, transactionId);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+// slip: pass a data-URI string to set it, or '' to remove it.
+function uploadTransactionSlip(token, transactionId, slip) {
+  try {
+    var user = requireAuth(token);
+    if (slip && slip.length > 45000) return { success: false, error: 'Photo is too large - please try a smaller one' };
+    var ss = getSpreadsheet();
+    var dtData = ss.getSheetByName('Details').getDataRange().getValues();
+    var eventId = null;
+    for (var i = 1; i < dtData.length; i++) {
+      if (dtData[i][2] === transactionId) { eventId = dtData[i][1]; break; }
+    }
+    if (!eventId) return { success: false, error: 'Transaction not found' };
+    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Transaction not found' };
+
+    var sheet = getTransactionSlipsSheet();
+    var data = sheet.getDataRange().getValues();
+    var now = new Date().toISOString();
+    for (var j = 1; j < data.length; j++) {
+      if (data[j][0] === transactionId) {
+        if (!slip) sheet.deleteRow(j + 1);
+        else sheet.getRange(j + 1, 2, 1, 2).setValues([[slip, now]]);
+        return { success: true };
+      }
+    }
+    if (slip) sheet.appendRow([transactionId, slip, now]);
     return { success: true };
   } catch (e) {
     return { success: false, error: e.toString() };

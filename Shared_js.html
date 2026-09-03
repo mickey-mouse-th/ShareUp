@@ -11,6 +11,7 @@ var DETAILS = [];
 var SETTLEMENTS = null; // null = not loaded yet for the open event; [] is a valid "all settled" result
 var ME_PHOTO = ''; // currently-displayed header avatar photo (base64), '' = showing initials
 var SELF_FRIEND_ID = null; // the open event's friend row that maps back to this account (see getDetailData)
+var SLIPS = {}; // transactionId -> receipt/slip data URI, for the currently open event
 
 // ── Color / Emoji Constants ───────────────────
 var BANNER_GRADS = [
