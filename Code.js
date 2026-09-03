@@ -1051,13 +1051,20 @@ function getSharedEventView(shareToken) {
       };
     });
 
+    var slipData = getTransactionSlipsSheet().getDataRange().getValues();
+    var slips = {};
+    for (var i = 1; i < slipData.length; i++) {
+      if (slipData[i][1]) slips[slipData[i][0]] = slipData[i][1];
+    }
+
     return {
       success: true,
       event: { name: eventRow[1], createdAt: eventRow[3] },
       details: details,
       settlements: _computeSettlements(rawDetails, friendMap),
       selfFriendId: selfFriendId,
-      ownerPhoto: ownerPhoto
+      ownerPhoto: ownerPhoto,
+      slips: slips
     };
   } catch (e) {
     return { success: false, error: e.toString() };
