@@ -264,6 +264,15 @@
   <div class="sh-pill"></div>
   <div class="sh-hd"><span class="sh-title">Receipt / Slip</span><button class="sh-close" id="shSlipViewClose">✕</button></div>
   <div class="sh-body">
-    <div id="slipViewGallery" class="slip-view-gallery"></div>
+    <div class="slip-carousel" id="slipCarousel">
+      <button class="slip-nav slip-nav-prev" id="slipPrev">
+        <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      </button>
+      <img id="slipCarouselImg" src="" alt="Receipt"/>
+      <button class="slip-nav slip-nav-next" id="slipNext">
+        <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+      </button>
+    </div>
+    <div class="slip-counter" id="slipCounter"></div>
   </div>
 </div>

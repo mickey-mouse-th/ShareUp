@@ -22,16 +22,24 @@
   .shared-state{text-align:center;padding:60px 0;color:var(--t2)}
   .slip-lightbox{
     position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:900;
-    display:none;padding:24px;overflow-y:auto;
+    display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px;
   }
-  .slip-lightbox.on{display:block}
-  .slip-lightbox-scroll{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
-  .slip-lightbox-scroll img{width:100%;border-radius:16px;display:block}
+  .slip-lightbox.on{display:flex}
   .slip-lightbox-close{
     position:fixed;top:calc(var(--si) + 16px);right:16px;width:40px;height:40px;border-radius:50%;
     background:rgba(255,255,255,.12);border:none;display:flex;align-items:center;justify-content:center;
   }
   .slip-lightbox-close svg{width:20px;height:20px;fill:#fff}
+  .slip-carousel{position:relative;display:flex;align-items:center;justify-content:center;max-width:520px;margin:0 auto}
+  .slip-carousel img{width:100%;max-height:80vh;object-fit:contain;border-radius:16px;display:block}
+  .slip-nav{
+    position:absolute;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:50%;
+    background:rgba(0,0,0,.55);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;
+  }
+  .slip-nav svg{width:20px;height:20px;fill:#fff}
+  .slip-nav-prev{left:8px}
+  .slip-nav-next{right:8px}
+  .slip-counter{text-align:center;font-size:13px;color:#fff;opacity:.75;margin-top:10px}
 </style>
 </head>
 <body>
@@ -81,7 +89,16 @@
   <button class="slip-lightbox-close" id="slipLightboxClose">
     <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
   </button>
-  <div class="slip-lightbox-scroll" id="slipLightboxScroll"></div>
+  <div class="slip-carousel" id="slipCarousel">
+    <button class="slip-nav slip-nav-prev" id="slipPrev">
+      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+    </button>
+    <img id="slipCarouselImg" src="" alt="Receipt"/>
+    <button class="slip-nav slip-nav-next" id="slipNext">
+      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+  </div>
+  <div class="slip-counter" id="slipCounter"></div>
 </div>
 
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
@@ -212,6 +229,14 @@ function onFail(err) {
 }
 
 var SHARE_DATA = null;
+var _slipCarouselList = [];
+var _slipCarouselIdx = 0;
+
+function _renderSlipCarousel() {
+  $('#slipCarouselImg').attr('src', _slipCarouselList[_slipCarouselIdx] || '');
+  $('#slipCounter').text(_slipCarouselList.length > 1 ? (_slipCarouselIdx + 1) + ' / ' + _slipCarouselList.length : '');
+  $('#slipPrev, #slipNext').toggle(_slipCarouselList.length > 1);
+}
 
 function onData(r) {
   $('#shLoading').hide();
@@ -397,8 +422,18 @@ $(function () {
   $('#shTxList').on('click', '.tx-view-slip', function () {
     var slips = SHARE_DATA.slips && SHARE_DATA.slips[$(this).data('tid')];
     if (!slips || !slips.length) return;
-    $('#slipLightboxScroll').html(slips.map(function (s) { return '<img src="' + s.slip + '" alt="Receipt"/>' }).join(''));
+    _slipCarouselList = slips.map(function (s) { return s.slip });
+    _slipCarouselIdx = 0;
+    _renderSlipCarousel();
     $('#slipLightbox').addClass('on');
+  });
+  $('#slipPrev').on('click', function () {
+    _slipCarouselIdx = (_slipCarouselIdx - 1 + _slipCarouselList.length) % _slipCarouselList.length;
+    _renderSlipCarousel();
+  });
+  $('#slipNext').on('click', function () {
+    _slipCarouselIdx = (_slipCarouselIdx + 1) % _slipCarouselList.length;
+    _renderSlipCarousel();
   });
   $('#slipLightboxClose').on('click', function () { $('#slipLightbox').removeClass('on') });
   $('#slipLightbox').on('click', function (e) { if (e.target === this) $(this).removeClass('on') });

@@ -129,8 +129,16 @@ select.inp option{background:#1a1935;color:#fff}
   display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;
 }
 .tx-slip-add svg{width:24px;height:24px;fill:var(--t3)}
-.slip-view-gallery{display:flex;flex-direction:column;gap:16px}
-.slip-view-gallery img{width:100%;border-radius:16px;display:block}
+.slip-carousel{position:relative;display:flex;align-items:center;justify-content:center}
+.slip-carousel img{width:100%;border-radius:16px;display:block}
+.slip-nav{
+  position:absolute;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:50%;
+  background:rgba(0,0,0,.55);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;
+}
+.slip-nav svg{width:20px;height:20px;fill:#fff}
+.slip-nav-prev{left:8px}
+.slip-nav-next{right:8px}
+.slip-counter{text-align:center;font-size:13px;color:var(--t2);margin-top:10px}
 .ca-total-box{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;background:var(--p-dim);border:1px solid rgba(147,51,234,.22);border-radius:16px;margin-top:6px;margin-bottom:2px}
 .ca-total-lbl{font-size:15px;font-weight:600;color:var(--t2)}
 .ca-total-val{font-size:22px;font-weight:800;color:var(--p-lt);letter-spacing:-.3px}
