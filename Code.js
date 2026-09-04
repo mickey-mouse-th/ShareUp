@@ -139,17 +139,32 @@ function getSettlementPaymentsSheet() {
   return sheet;
 }
 
-// One row per transaction (only created once a slip is uploaded) rather than
-// a column on Details, since a transaction fans out into one Details row per
-// participant - a column there would duplicate the same image N times.
+// One row per PHOTO (a transaction can have several), not a column on
+// Details, since a transaction fans out into one Details row per
+// participant - a column there would duplicate every image N times.
 function getTransactionSlipsSheet() {
   var ss = getSpreadsheet();
   var sheet = ss.getSheetByName('TransactionSlips');
   if (!sheet) {
     sheet = ss.insertSheet('TransactionSlips');
-    sheet.appendRow(['transactionId', 'slip', 'updatedAt']);
+    sheet.appendRow(['transactionId', 'slip', 'updatedAt', 'id']);
   }
   return sheet;
+}
+
+// 'id' was added after this sheet already shipped (single-slip-per-transaction
+// model) - rows written before that have a blank id. Backfill it lazily,
+// same self-healing style as _findSelfFriendRow, so old photos stay
+// individually deletable once multi-photo support lands.
+function _backfillSlipIds(sheet, data) {
+  var changed = false;
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][3]) { data[i][3] = Utilities.getUuid(); changed = true; }
+  }
+  if (changed) {
+    sheet.getRange(2, 4, data.length - 1, 1).setValues(data.slice(1).map(function (r) { return [r[3]] }));
+  }
+  return data;
 }
 
 function _lookupSession(token) {
@@ -577,10 +592,15 @@ function getDetailData(token, eventId) {
     // doesn't force a second round-trip that re-reads the same Details rows.
     var settlements = _computeSettlementsWithPaid(rows, friendMap, eventId);
 
-    var slipData = getTransactionSlipsSheet().getDataRange().getValues();
+    var slipSheet = getTransactionSlipsSheet();
+    var slipData = _backfillSlipIds(slipSheet, slipSheet.getDataRange().getValues());
     var slips = {};
     for (var i = 1; i < slipData.length; i++) {
-      if (slipData[i][1]) slips[slipData[i][0]] = slipData[i][1];
+      if (slipData[i][1]) {
+        var stid = slipData[i][0];
+        if (!slips[stid]) slips[stid] = [];
+        slips[stid].push({ id: slipData[i][3], slip: slipData[i][1] });
+      }
     }
 
     // selfFriendId lets the client show the account's own profile photo (set
@@ -1051,10 +1071,15 @@ function getSharedEventView(shareToken) {
       };
     });
 
-    var slipData = getTransactionSlipsSheet().getDataRange().getValues();
+    var slipSheet = getTransactionSlipsSheet();
+    var slipData = _backfillSlipIds(slipSheet, slipSheet.getDataRange().getValues());
     var slips = {};
     for (var i = 1; i < slipData.length; i++) {
-      if (slipData[i][1]) slips[slipData[i][0]] = slipData[i][1];
+      if (slipData[i][1]) {
+        var stid = slipData[i][0];
+        if (!slips[stid]) slips[stid] = [];
+        slips[stid].push({ id: slipData[i][3], slip: slipData[i][1] });
+      }
     }
 
     return {
@@ -1152,31 +1177,52 @@ function deleteDetail(token, transactionId) {
 }
 
 // slip: pass a data-URI string to set it, or '' to remove it.
+function _transactionEventId(dtData, transactionId) {
+  for (var i = 1; i < dtData.length; i++) {
+    if (dtData[i][2] === transactionId) return dtData[i][1];
+  }
+  return null;
+}
+
+// Always adds a new photo (a transaction can have several) - returns its id
+// so the client can target it with deleteTransactionSlip later.
 function uploadTransactionSlip(token, transactionId, slip) {
   try {
     var user = requireAuth(token);
-    if (slip && slip.length > 45000) return { success: false, error: 'Photo is too large - please try a smaller one' };
+    if (!slip) return { success: false, error: 'No photo provided' };
+    if (slip.length > 45000) return { success: false, error: 'Photo is too large - please try a smaller one' };
     var ss = getSpreadsheet();
     var dtData = ss.getSheetByName('Details').getDataRange().getValues();
-    var eventId = null;
-    for (var i = 1; i < dtData.length; i++) {
-      if (dtData[i][2] === transactionId) { eventId = dtData[i][1]; break; }
-    }
+    var eventId = _transactionEventId(dtData, transactionId);
+    if (!eventId) return { success: false, error: 'Transaction not found' };
+    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Transaction not found' };
+
+    var id = Utilities.getUuid();
+    getTransactionSlipsSheet().appendRow([transactionId, slip, new Date().toISOString(), id]);
+    return { success: true, id: id };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function deleteTransactionSlip(token, transactionId, slipId) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    var dtData = ss.getSheetByName('Details').getDataRange().getValues();
+    var eventId = _transactionEventId(dtData, transactionId);
     if (!eventId) return { success: false, error: 'Transaction not found' };
     if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Transaction not found' };
 
     var sheet = getTransactionSlipsSheet();
-    var data = sheet.getDataRange().getValues();
-    var now = new Date().toISOString();
+    var data = _backfillSlipIds(sheet, sheet.getDataRange().getValues());
     for (var j = 1; j < data.length; j++) {
-      if (data[j][0] === transactionId) {
-        if (!slip) sheet.deleteRow(j + 1);
-        else sheet.getRange(j + 1, 2, 1, 2).setValues([[slip, now]]);
+      if (data[j][0] === transactionId && data[j][3] === slipId) {
+        sheet.deleteRow(j + 1);
         return { success: true };
       }
     }
-    if (slip) sheet.appendRow([transactionId, slip, now]);
-    return { success: true };
+    return { success: false, error: 'Photo not found' };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

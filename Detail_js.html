@@ -71,7 +71,7 @@ function renderDetails() {
       '<div class="tx-foot">' +
       '<span class="tx-date">' + fmtDate(f.createdAt) + '</span>' +
       '<div class="tx-actions">' +
-      (SLIPS[tid] ?
+      (SLIPS[tid] && SLIPS[tid].length ?
         '<button class="btn-slip tx-view-slip" data-tid="' + esc(tid) + '">' +
         '<svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>' +
         '</button>' : '') +
@@ -425,9 +425,9 @@ $(function () {
   });
   $('#txList').on('click', '.tx-view-slip', function (e) {
     e.stopPropagation();
-    var slip = SLIPS[$(this).data('tid')];
-    if (!slip) return;
-    $('#slipViewImg').attr('src', slip);
+    var slips = SLIPS[$(this).data('tid')];
+    if (!slips || !slips.length) return;
+    $('#slipViewGallery').html(slips.map(function (s) { return '<img src="' + s.slip + '" alt="Receipt"/>' }).join(''));
     openSheet('shSlipView');
   });
   $('#detailFriendsList').on('click', '.ef-remove', function (e) {
