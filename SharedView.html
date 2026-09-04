@@ -237,6 +237,31 @@ function _renderSlipCarousel() {
   $('#slipCounter').text(_slipCarouselList.length > 1 ? (_slipCarouselIdx + 1) + ' / ' + _slipCarouselList.length : '');
   $('#slipPrev, #slipNext').toggle(_slipCarouselList.length > 1);
 }
+function _slipGoPrev() {
+  _slipCarouselIdx = (_slipCarouselIdx - 1 + _slipCarouselList.length) % _slipCarouselList.length;
+  _renderSlipCarousel();
+}
+function _slipGoNext() {
+  _slipCarouselIdx = (_slipCarouselIdx + 1) % _slipCarouselList.length;
+  _renderSlipCarousel();
+}
+// Swipe left/right on the photo itself, in addition to the < > buttons.
+function _bindSlipSwipe(selector) {
+  var startX = null, startY = null;
+  $(document).on('touchstart', selector, function (e) {
+    var t = e.originalEvent.touches[0];
+    startX = t.clientX; startY = t.clientY;
+  });
+  $(document).on('touchend', selector, function (e) {
+    if (startX === null || _slipCarouselList.length < 2) return;
+    var t = e.originalEvent.changedTouches[0];
+    var dx = t.clientX - startX, dy = t.clientY - startY;
+    startX = null;
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+      if (dx < 0) _slipGoNext(); else _slipGoPrev();
+    }
+  });
+}
 
 function onData(r) {
   $('#shLoading').hide();
@@ -427,14 +452,9 @@ $(function () {
     _renderSlipCarousel();
     $('#slipLightbox').addClass('on');
   });
-  $('#slipPrev').on('click', function () {
-    _slipCarouselIdx = (_slipCarouselIdx - 1 + _slipCarouselList.length) % _slipCarouselList.length;
-    _renderSlipCarousel();
-  });
-  $('#slipNext').on('click', function () {
-    _slipCarouselIdx = (_slipCarouselIdx + 1) % _slipCarouselList.length;
-    _renderSlipCarousel();
-  });
+  $('#slipPrev').on('click', _slipGoPrev);
+  $('#slipNext').on('click', _slipGoNext);
+  _bindSlipSwipe('#slipCarousel');
   $('#slipLightboxClose').on('click', function () { $('#slipLightbox').removeClass('on') });
   $('#slipLightbox').on('click', function (e) { if (e.target === this) $(this).removeClass('on') });
 });
