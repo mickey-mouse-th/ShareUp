@@ -356,15 +356,46 @@ function renderSummary(ss) {
 }
 
 // ── Share Event ────────────────────────────────
+var _sharePermission = 'view';
+
 async function openShareSheet() {
   if (!CUR_EV) return;
+  _sharePermission = 'view';
+  _renderSharePerm();
   $('#shareOff').show();
   $('#shareOn').hide();
   openSheet('shShare');
   try {
     var r = await gsc('getShareLink', TK, CUR_EV.id);
-    if (r.success && r.shareToken) showShareLink(r.shareUrl);
+    if (r.success && r.shareToken) {
+      _sharePermission = r.permission || 'view';
+      _renderSharePerm();
+      showShareLink(r.shareUrl);
+    }
   } catch (e) {}
+}
+
+function _renderSharePerm() {
+  var editMode = _sharePermission === 'edit';
+  $('#shPermView').toggleClass('on', !editMode);
+  $('#shPermEdit').toggleClass('on', editMode);
+  $('#shareOffHint').text(editMode
+    ? "Anyone with the link can view AND add, edit, or delete this event's expenses — no login required."
+    : "Anyone with the link can view this event's expenses and summary — they won't be able to add, edit, or delete anything.");
+  $('#shareOnHint').text(editMode
+    ? 'Anyone with this link can view and edit expenses for this event. Turn it off anytime to revoke access.'
+    : 'Anyone with this link can view — but not edit — this event. Turn it off anytime to revoke access.');
+}
+
+async function _setSharePermission(perm) {
+  if (_sharePermission === perm) return;
+  _sharePermission = perm;
+  _renderSharePerm();
+  if (!$('#shareOn').is(':visible')) return; // no link yet - just changes what "Create" will use
+  try {
+    var r = await gsc('enableEventShare', TK, CUR_EV.id, perm);
+    if (!r.success) toast(r.error, 'err');
+  } catch (e) { toast('' + e, 'err') }
 }
 
 function showShareLink(url) {
@@ -375,7 +406,7 @@ function showShareLink(url) {
 
 async function enableShare() {
   try {
-    var r = await gsc('enableEventShare', TK, CUR_EV.id);
+    var r = await gsc('enableEventShare', TK, CUR_EV.id, _sharePermission);
     if (r.success) showShareLink(r.shareUrl);
     else toast(r.error, 'err');
   } catch (e) { toast('' + e, 'err') }
@@ -490,6 +521,8 @@ $(function () {
   $('#btnEnableShare').on('click', enableShare);
   $('#btnCopyShare').on('click', copyShareLink);
   $('#btnDisableShare').on('click', disableShare);
+  $('#shPermView').on('click', function () { _setSharePermission('view') });
+  $('#shPermEdit').on('click', function () { _setSharePermission('edit') });
   $('#btnExportTx').on('click', exportExpensesPdf);
 });
 </script>

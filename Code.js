@@ -70,7 +70,7 @@ function initSheets(ss) {
   eventFriendsSheet.appendRow(['id', 'eventId', 'friendId', 'createdAt']);
 
   var eventSharesSheet = ss.insertSheet('EventShares');
-  eventSharesSheet.appendRow(['eventId', 'token', 'createdAt']);
+  eventSharesSheet.appendRow(['eventId', 'token', 'createdAt', 'permission']);
 
   var sessionsSheet = ss.insertSheet('Sessions');
   sessionsSheet.appendRow(['token', 'accountId', 'userInfo', 'createdAt', 'expiresAt']);
@@ -114,9 +114,15 @@ function getEventSharesSheet() {
   var sheet = ss.getSheetByName('EventShares');
   if (!sheet) {
     sheet = ss.insertSheet('EventShares');
-    sheet.appendRow(['eventId', 'token', 'createdAt']);
+    sheet.appendRow(['eventId', 'token', 'createdAt', 'permission']);
   }
   return sheet;
+}
+
+// Rows written before 'permission' existed have a blank 4th cell - treat
+// that the same as 'view' (the original, only behavior), no migration needed.
+function _sharePermission(row) {
+  return row[3] === 'edit' ? 'edit' : 'view';
 }
 
 function getSessionsSheet() {
@@ -960,7 +966,10 @@ function getShareLink(token, eventId) {
     var data = getEventSharesSheet().getDataRange().getValues();
     for (var i = 1; i < data.length; i++) {
       if (data[i][0] === eventId) {
-        return { success: true, shareToken: data[i][1], shareUrl: ScriptApp.getService().getUrl() + '?share=' + data[i][1] };
+        return {
+          success: true, shareToken: data[i][1], permission: _sharePermission(data[i]),
+          shareUrl: ScriptApp.getService().getUrl() + '?share=' + data[i][1]
+        };
       }
     }
     return { success: true, shareToken: null };
@@ -969,23 +978,30 @@ function getShareLink(token, eventId) {
   }
 }
 
-function enableEventShare(token, eventId) {
+// Creates the link on first call; on later calls with an existing link, just
+// updates its permission in place so the same URL keeps working.
+function enableEventShare(token, eventId, permission) {
   try {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
     if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
+    var perm = permission === 'edit' ? 'edit' : 'view';
 
     var sheet = getEventSharesSheet();
     var data = sheet.getDataRange().getValues();
     var shareToken = null;
     for (var i = 1; i < data.length; i++) {
-      if (data[i][0] === eventId) { shareToken = data[i][1]; break; }
+      if (data[i][0] === eventId) {
+        shareToken = data[i][1];
+        sheet.getRange(i + 1, 4).setValue(perm);
+        break;
+      }
     }
     if (!shareToken) {
       shareToken = Utilities.getUuid();
-      sheet.appendRow([eventId, shareToken, new Date().toISOString()]);
+      sheet.appendRow([eventId, shareToken, new Date().toISOString(), perm]);
     }
-    return { success: true, shareToken: shareToken, shareUrl: ScriptApp.getService().getUrl() + '?share=' + shareToken };
+    return { success: true, shareToken: shareToken, permission: perm, shareUrl: ScriptApp.getService().getUrl() + '?share=' + shareToken };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -1015,9 +1031,9 @@ function getSharedEventView(shareToken) {
     var ss = getSpreadsheet();
 
     var shData = getEventSharesSheet().getDataRange().getValues();
-    var eventId = null;
+    var eventId = null, permission = 'view';
     for (var i = 1; i < shData.length; i++) {
-      if (shData[i][1] === shareToken) { eventId = shData[i][0]; break; }
+      if (shData[i][1] === shareToken) { eventId = shData[i][0]; permission = _sharePermission(shData[i]); break; }
     }
     if (!eventId) return { success: false, error: 'This share link is no longer active' };
 
@@ -1082,14 +1098,22 @@ function getSharedEventView(shareToken) {
       }
     }
 
+    // Only needed so an 'edit' link can render payer/split pickers - scoped to
+    // this event's actual members (not the owner's whole friend list, which
+    // would leak names from their other events and let an anonymous editor
+    // split against people not part of this one).
+    var friends = _getEventFriends(ss, eventId, accountId, friendMap);
+
     return {
       success: true,
       event: { name: eventRow[1], createdAt: eventRow[3] },
       details: details,
+      friends: friends,
       settlements: _computeSettlements(rawDetails, friendMap),
       selfFriendId: selfFriendId,
       ownerPhoto: ownerPhoto,
-      slips: slips
+      slips: slips,
+      permission: permission
     };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -1167,6 +1191,87 @@ function deleteDetail(token, transactionId) {
     }
     if (!eventId) return { success: false, error: 'Transaction not found' };
     if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Transaction not found' };
+
+    _removeRowsWhere(sheet, 2, transactionId, data);
+    _removeRowsWhere(getTransactionSlipsSheet(), 0, transactionId);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+// ----------------------------------------------------------------
+// Details (Transactions) via an 'edit' share link - no account, so these
+// check the share token's permission instead of requireAuth. Deliberately
+// scoped to transaction CRUD only (no friends/event management), per the
+// share-permission design.
+// ----------------------------------------------------------------
+
+function _shareEventId(shareToken, requireEdit) {
+  if (!shareToken) return null;
+  var data = getEventSharesSheet().getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][1] === shareToken) {
+      if (requireEdit && _sharePermission(data[i]) !== 'edit') return null;
+      return data[i][0];
+    }
+  }
+  return null;
+}
+
+function addDetailViaShare(shareToken, payId, friendIds, totalAmount, description, customAmounts) {
+  try {
+    var eventId = _shareEventId(shareToken, true);
+    if (!eventId) return { success: false, error: 'This share link cannot make changes' };
+    if (!friendIds || !friendIds.length) return { success: false, error: 'At least one person is required' };
+
+    var sheet = getSpreadsheet().getSheetByName('Details');
+    var transactionId = Utilities.getUuid();
+    var total = parseFloat(totalAmount);
+    var rows = _buildDetailRows(eventId, transactionId, payId, friendIds, total, description, customAmounts, new Date().toISOString());
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+    return { success: true, transactionId: transactionId };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function updateDetailViaShare(shareToken, transactionId, payId, friendIds, totalAmount, description, customAmounts) {
+  try {
+    var eventId = _shareEventId(shareToken, true);
+    if (!eventId) return { success: false, error: 'This share link cannot make changes' };
+    if (!friendIds || !friendIds.length) return { success: false, error: 'At least one person is required' };
+
+    var sheet = getSpreadsheet().getSheetByName('Details');
+    var data = sheet.getDataRange().getValues();
+    var createdAt = null, txEventId = null;
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][2] === transactionId) { txEventId = data[i][1]; createdAt = data[i][8]; break; }
+    }
+    if (txEventId !== eventId) return { success: false, error: 'Transaction not found' };
+
+    _removeRowsWhere(sheet, 2, transactionId, data);
+    var total = parseFloat(totalAmount);
+    var rows = _buildDetailRows(eventId, transactionId, payId, friendIds, total, description, customAmounts, createdAt);
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+    return { success: true, transactionId: transactionId };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function deleteDetailViaShare(shareToken, transactionId) {
+  try {
+    var eventId = _shareEventId(shareToken, true);
+    if (!eventId) return { success: false, error: 'This share link cannot make changes' };
+
+    var sheet = getSpreadsheet().getSheetByName('Details');
+    var data = sheet.getDataRange().getValues();
+    var txEventId = null;
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][2] === transactionId) { txEventId = data[i][1]; break; }
+    }
+    if (txEventId !== eventId) return { success: false, error: 'Transaction not found' };
 
     _removeRowsWhere(sheet, 2, transactionId, data);
     _removeRowsWhere(getTransactionSlipsSheet(), 0, transactionId);

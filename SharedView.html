@@ -7,6 +7,7 @@
 <title>ShareUp - Shared Event</title>
 <?!= include('Shared_css') ?>
 <?!= include('Detail_css') ?>
+<?!= include('Sheets_css') ?>
 <style>
   .shared-wrap{max-width:520px;margin:0 auto;padding:calc(var(--si)+20px) 16px calc(24px + var(--sb))}
   .shared-hdr{display:flex;align-items:center;gap:10px;margin-bottom:18px}
@@ -43,6 +44,7 @@
 </style>
 </head>
 <body>
+<div id="toastWrap"></div>
 <div class="shared-wrap">
   <div class="shared-hdr">
     <div class="hdr-brand"><svg viewBox="0 0 24 24"><path d="M12 12L12.7 4.03A8 8 0 0 1 19.25 15.38Z M12 12L18.55 16.59A8 8 0 0 1 5.45 16.59Z M12 12L4.75 15.38A8 8 0 0 1 11.3 4.03Z"/></svg></div>
@@ -85,6 +87,74 @@
   </div>
 </div>
 
+<button class="fab hide" id="fab">
+  <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+</button>
+
+<div class="overlay" id="overlay"></div>
+
+<!-- Sheet: Add/Edit Transaction (only reachable on an 'edit' share link) -->
+<div class="sheet" id="shTx">
+  <div class="sh-pill"></div>
+  <div class="sh-hd"><span class="sh-title" id="txTitle">Add Transaction</span><button class="sh-close" id="shTxClose">✕</button></div>
+  <div class="sh-body">
+    <div class="inp-g">
+      <label class="inp-lbl">Description</label>
+      <input class="inp" id="inpDesc" type="text" placeholder="e.g. Dinner at restaurant" autocomplete="off"/>
+    </div>
+    <div class="inp-g">
+      <label class="inp-lbl">Split Type</label>
+      <div class="split-toggle">
+        <button type="button" class="smode-btn on" id="modeEq">⚖️ หารเท่า</button>
+        <button type="button" class="smode-btn" id="modeCus">✏️ ระบุเอง</button>
+      </div>
+    </div>
+    <div class="inp-g" id="eqAmtG">
+      <label class="inp-lbl">Total Amount (฿)</label>
+      <input class="inp" id="inpAmt" type="number" placeholder="0.00" min="0" step="0.01"/>
+    </div>
+    <div class="inp-g">
+      <label class="inp-lbl">Who Paid?</label>
+      <select class="inp" id="inpPayer"></select>
+    </div>
+    <div class="inp-g" id="eqSplitG">
+      <label class="inp-lbl">Split Between</label>
+      <div class="ck-btns">
+        <button type="button" class="ck-btn hi" id="btnCkAll">Select All</button>
+        <button type="button" class="ck-btn" id="btnCkNone">Clear</button>
+      </div>
+      <div class="ck-list" id="inpShared"></div>
+    </div>
+    <div class="pp-box" id="ppBox" style="display:none">
+      <div class="pp-label">Each person pays</div>
+      <div class="pp-amt" id="ppAmt">฿0.00</div>
+    </div>
+    <div id="cusG" style="display:none">
+      <label class="inp-lbl" style="margin-bottom:10px">จำนวนเงินของแต่ละคน</label>
+      <div id="cusRows"></div>
+      <div class="ca-total-box">
+        <span class="ca-total-lbl">รวมทั้งหมด</span>
+        <span class="ca-total-val" id="cusTotalVal">฿0.00</span>
+      </div>
+    </div>
+    <button class="sh-btn" id="btnSubmitTx">Add Transaction</button>
+  </div>
+</div>
+
+<!-- Sheet: Confirm Delete -->
+<div class="sheet" id="shConfirm">
+  <div class="sh-pill"></div>
+  <div class="sh-body" style="padding-top:28px">
+    <div class="cf-icon"><svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></div>
+    <div class="cf-title">Delete Transaction?</div>
+    <div class="cf-msg">This cannot be undone.</div>
+    <div class="cf-btns">
+      <button class="btn-cancel" id="cfCancel">Cancel</button>
+      <button class="btn-confirm" id="cfOk">Delete</button>
+    </div>
+  </div>
+</div>
+
 <div class="slip-lightbox" id="slipLightbox">
   <button class="slip-lightbox-close" id="slipLightboxClose">
     <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
@@ -117,6 +187,14 @@ function fmtDate(iso) {
   catch (e) { return iso }
 }
 function initials(s) { return (s || '?')[0].toUpperCase() }
+function toast(msg, type) {
+  type = type || 'ok';
+  var $el = $('<div>').addClass('toast ' + type)
+    .append($('<div>').addClass('toast-dot'))
+    .append($('<span>').text(msg));
+  $('#toastWrap').append($el);
+  setTimeout(function () { $el.remove() }, 3200);
+}
 
 var BANNER_GRADS = [
   'linear-gradient(135deg,#3730A3,#A5B4FC)', 'linear-gradient(135deg,#065F46,#5EEAD4)',
@@ -180,11 +258,19 @@ function renderTx(details) {
       '</div>' +
       '<div class="tx-people">' + chips + '</div>' +
       '<div class="tx-foot"><span class="tx-date">' + fmtDate(f.createdAt) + '</span>' +
+      '<div class="tx-actions">' +
       (SHARE_DATA.slips && SHARE_DATA.slips[tid] && SHARE_DATA.slips[tid].length ?
         '<button class="btn-slip tx-view-slip" data-tid="' + esc(tid) + '">' +
         '<svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>' +
         '</button>' : '') +
-      '</div></div>';
+      (SHARE_DATA.permission === 'edit' ?
+        '<button class="btn-edit tx-edit" data-tid="' + esc(tid) + '">' +
+        '<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>' +
+        '</button>' +
+        '<button class="btn-del tx-del" data-tid="' + esc(tid) + '">' +
+        '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>' +
+        '</button>' : '') +
+      '</div></div></div>';
   }).join('');
   $el.html(html);
 }
@@ -277,7 +363,183 @@ function onData(r) {
   $('#shBanner').css('background', bannerGrad(r.event.name));
   renderSummary(r.settlements || []);
   renderTx(r.details);
+  $('#fab').toggleClass('hide', r.permission !== 'edit');
   $('#shContent').show();
+}
+
+function reloadShare() {
+  google.script.run.withSuccessHandler(onData).withFailureHandler(onFail).getSharedEventView(SHARE_TOKEN);
+}
+
+function gscRun(fnName) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  return new Promise(function (res) {
+    var r = google.script.run.withSuccessHandler(res).withFailureHandler(function (e) { res({ success: false, error: '' + e }) });
+    r[fnName].apply(r, args);
+  });
+}
+
+// ── Add/Edit/Delete Transaction (edit-permission links only) ────
+function openSheet(id) {
+  $('#overlay').addClass('on');
+  $('#' + id).addClass('on');
+}
+function closeSheets() {
+  $('#overlay').removeClass('on');
+  $('.sheet.on').removeClass('on');
+}
+
+var splitMode = 'equal';
+var _editTxId = null;
+var _delTxId = null;
+
+function setSplitMode(m, prefill) {
+  splitMode = m;
+  $('#modeEq').toggleClass('on', m === 'equal');
+  $('#modeCus').toggleClass('on', m === 'custom');
+  $('#eqAmtG').toggle(m === 'equal');
+  $('#eqSplitG').toggle(m === 'equal');
+  $('#ppBox').hide();
+  $('#cusG').toggle(m === 'custom');
+  if (m === 'custom') renderCustomRows(prefill);
+}
+
+function renderCustomRows(prefill) {
+  var html = $.map(SHARE_DATA.friends, function (f) {
+    var val = (prefill && prefill[f.id] !== undefined) ? parseFloat(prefill[f.id]).toFixed(2) : '';
+    return '<div class="ca-row">' +
+      '<div class="ca-av" style="background:' + avCol(f.name) + '">' + initials(f.name) + '</div>' +
+      '<span class="ca-name">' + esc(f.name) + '</span>' +
+      '<div class="ca-inp-wrap">' +
+      '<span class="ca-inp-sym">฿</span>' +
+      '<input class="ca-inp" type="number" data-id="' + esc(f.id) + '" placeholder="0" min="0" step="0.01" value="' + val + '"/>' +
+      '</div>' +
+      '</div>';
+  }).join('');
+  $('#cusRows').html(html);
+  calcCustomTotal();
+}
+
+function calcCustomTotal() {
+  var t = 0;
+  $('#cusRows .ca-inp').each(function () { t += parseFloat($(this).val()) || 0 });
+  $('#cusTotalVal').text('฿' + t.toFixed(2));
+}
+
+function calcPP() {
+  var a = parseFloat($('#inpAmt').val()) || 0;
+  var c = $('#inpShared input:checked').length;
+  if (a > 0 && c > 0) {
+    $('#ppAmt').text('฿' + (a / c).toFixed(2));
+    $('#ppBox').show();
+  } else {
+    $('#ppBox').hide();
+  }
+}
+
+function buildTxFriendPickers(checkedIds) {
+  var payerHtml = $.map(SHARE_DATA.friends, function (f) {
+    return '<option value="' + esc(f.id) + '">' + esc(f.name) + '</option>';
+  }).join('');
+  $('#inpPayer').html(payerHtml);
+  var ckHtml = $.map(SHARE_DATA.friends, function (f) {
+    var checked = checkedIds.indexOf(f.id) !== -1;
+    return '<div class="ck-row' + (checked ? ' checked' : '') + '" data-id="' + esc(f.id) + '">' +
+      '<input type="checkbox" value="' + esc(f.id) + '"' + (checked ? ' checked' : '') + '/>' +
+      '<label>' + esc(f.name) + '</label>' +
+      '</div>';
+  }).join('');
+  $('#inpShared').html(ckHtml);
+}
+
+function openAddTxSheet() {
+  if (!SHARE_DATA.friends.length) { toast('This event has no one to split expenses between yet', 'warn'); return }
+  _editTxId = null;
+  $('#txTitle').text('Add Transaction');
+  $('#btnSubmitTx').text('Add Transaction');
+  $('#inpDesc').val('');
+  $('#inpAmt').val('');
+  $('#ppBox').hide();
+  setSplitMode('equal');
+  buildTxFriendPickers(SHARE_DATA.friends.map(function (f) { return f.id }));
+  openSheet('shTx');
+}
+
+function openEditTxSheet(tid) {
+  var rows = SHARE_DATA.details.filter(function (d) { return d.transactionId === tid });
+  if (!rows.length) return;
+  var f = rows[0];
+  var friendIds = rows.map(function (r) { return r.friendId });
+  var isCustom = rows.some(function (r) { return Math.abs(parseFloat(r.amount) - parseFloat(rows[0].amount)) > 0.01 });
+
+  _editTxId = tid;
+  $('#txTitle').text('Edit Transaction');
+  $('#btnSubmitTx').text('Save Changes');
+  $('#inpDesc').val(f.description || '');
+  buildTxFriendPickers(friendIds);
+  $('#inpPayer').val(f.payId);
+
+  if (isCustom) {
+    var prefill = {};
+    rows.forEach(function (r) { prefill[r.friendId] = r.amount });
+    setSplitMode('custom', prefill);
+  } else {
+    setSplitMode('equal');
+    $('#inpAmt').val(parseFloat(f.totalAmount));
+    calcPP();
+  }
+  openSheet('shTx');
+}
+
+async function submitTx() {
+  var desc = $('#inpDesc').val().trim();
+  var pay = $('#inpPayer').val();
+  if (!desc) { toast('Please enter a description', 'warn'); return }
+  var friendIds, totalAmount, customAmounts = null;
+  if (splitMode === 'equal') {
+    var amt = parseFloat($('#inpAmt').val());
+    var sh = $('#inpShared input:checked').map(function () { return $(this).val() }).get();
+    if (!amt || amt <= 0) { toast('Please enter a valid amount', 'warn'); return }
+    if (!sh.length) { toast('Select at least one person', 'warn'); return }
+    friendIds = sh; totalAmount = amt;
+  } else {
+    friendIds = []; customAmounts = {}; totalAmount = 0;
+    $('#cusRows .ca-inp').each(function () {
+      var a = parseFloat($(this).val()) || 0;
+      if (a > 0) {
+        var id = $(this).data('id');
+        friendIds.push(id); customAmounts[id] = a; totalAmount += a;
+      }
+    });
+    if (!friendIds.length) { toast('ระบุจำนวนเงินอย่างน้อย 1 คน', 'warn'); return }
+  }
+  var editId = _editTxId;
+  closeSheets();
+  try {
+    var r = editId
+      ? await gscRun('updateDetailViaShare', SHARE_TOKEN, editId, pay, friendIds, totalAmount, desc, customAmounts)
+      : await gscRun('addDetailViaShare', SHARE_TOKEN, pay, friendIds, totalAmount, desc, customAmounts);
+    if (r.success) { toast(editId ? 'Transaction updated' : 'Transaction added! 💸'); reloadShare() }
+    else toast(r.error || 'Something went wrong', 'err');
+  } catch (e) { toast('' + e, 'err') }
+  _editTxId = null;
+}
+
+function askDeleteTx(tid) {
+  _delTxId = tid;
+  openSheet('shConfirm');
+}
+
+async function confirmDeleteTx() {
+  var tid = _delTxId;
+  closeSheets();
+  if (!tid) return;
+  try {
+    var r = await gscRun('deleteDetailViaShare', SHARE_TOKEN, tid);
+    if (r.success) { toast('Transaction deleted'); reloadShare() }
+    else toast(r.error || 'Something went wrong', 'err');
+  } catch (e) { toast('' + e, 'err') }
+  _delTxId = null;
 }
 
 // ── Export PDF ──────────────────────────────────
@@ -457,12 +719,40 @@ $(function () {
   _bindSlipSwipe('#slipCarousel');
   $('#slipLightboxClose').on('click', function () { $('#slipLightbox').removeClass('on') });
   $('#slipLightbox').on('click', function (e) { if (e.target === this) $(this).removeClass('on') });
+
+  // Add/Edit/Delete transaction (edit-permission links only)
+  $('#fab').on('click', openAddTxSheet);
+  $('#shTxClose').on('click', closeSheets);
+  $('#shTxList').on('click', '.tx-edit', function (e) { e.stopPropagation(); openEditTxSheet($(this).data('tid')) });
+  $('#shTxList').on('click', '.tx-del', function (e) { e.stopPropagation(); askDeleteTx($(this).data('tid')) });
+  $('#cfCancel').on('click', closeSheets);
+  $('#cfOk').on('click', confirmDeleteTx);
+  $('#btnSubmitTx').on('click', submitTx);
+  $('#modeEq').on('click', function () { setSplitMode('equal') });
+  $('#modeCus').on('click', function () { setSplitMode('custom') });
+  $('#inpShared').on('click', '.ck-row', function () {
+    var inp = $(this).find('input');
+    inp.prop('checked', !inp.prop('checked'));
+    $(this).toggleClass('checked', inp.prop('checked'));
+    calcPP();
+  });
+  $('#inpAmt').on('input', calcPP);
+  $('#inpPayer').on('change', calcPP);
+  $('#cusRows').on('input', '.ca-inp', calcCustomTotal);
+  $('#btnCkAll').on('click', function () {
+    $('#inpShared .ck-row').each(function () { $(this).find('input').prop('checked', true); $(this).addClass('checked') });
+    calcPP();
+  });
+  $('#btnCkNone').on('click', function () {
+    $('#inpShared .ck-row').each(function () { $(this).find('input').prop('checked', false); $(this).removeClass('checked') });
+    calcPP();
+  });
 });
 
 if (!SHARE_TOKEN) {
   onFail('Invalid link');
 } else {
-  google.script.run.withSuccessHandler(onData).withFailureHandler(onFail).getSharedEventView(SHARE_TOKEN);
+  reloadShare();
 }
 </script>
 </body>
