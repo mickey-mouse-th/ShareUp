@@ -21,26 +21,6 @@
   }
   .shared-badge svg{width:14px;height:14px;fill:currentColor}
   .shared-state{text-align:center;padding:60px 0;color:var(--t2)}
-  .slip-lightbox{
-    position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:900;
-    display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px;
-  }
-  .slip-lightbox.on{display:flex}
-  .slip-lightbox-close{
-    position:fixed;top:calc(var(--si) + 16px);right:16px;width:40px;height:40px;border-radius:50%;
-    background:rgba(255,255,255,.12);border:none;display:flex;align-items:center;justify-content:center;
-  }
-  .slip-lightbox-close svg{width:20px;height:20px;fill:#fff}
-  .slip-carousel{position:relative;display:flex;align-items:center;justify-content:center;max-width:520px;margin:0 auto}
-  .slip-carousel img{width:100%;max-height:80vh;object-fit:contain;border-radius:16px;display:block}
-  .slip-nav{
-    position:absolute;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:50%;
-    background:rgba(0,0,0,.55);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;
-  }
-  .slip-nav svg{width:20px;height:20px;fill:#fff}
-  .slip-nav-prev{left:8px}
-  .slip-nav-next{right:8px}
-  .slip-counter{text-align:center;font-size:13px;color:#fff;opacity:.75;margin-top:10px}
 </style>
 </head>
 <body>
@@ -155,20 +135,22 @@
   </div>
 </div>
 
-<div class="slip-lightbox" id="slipLightbox">
-  <button class="slip-lightbox-close" id="slipLightboxClose">
-    <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-  </button>
-  <div class="slip-carousel" id="slipCarousel">
-    <button class="slip-nav slip-nav-prev" id="slipPrev">
-      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
-    </button>
-    <img id="slipCarouselImg" src="" alt="Receipt"/>
-    <button class="slip-nav slip-nav-next" id="slipNext">
-      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
-    </button>
+<!-- Sheet: View Slip -->
+<div class="sheet" id="shSlipView">
+  <div class="sh-pill"></div>
+  <div class="sh-hd"><span class="sh-title">Receipt / Slip</span><button class="sh-close" id="shSlipViewClose">✕</button></div>
+  <div class="sh-body">
+    <div class="slip-carousel" id="slipCarousel">
+      <button class="slip-nav slip-nav-prev" id="slipPrev">
+        <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      </button>
+      <img id="slipCarouselImg" src="" alt="Receipt"/>
+      <button class="slip-nav slip-nav-next" id="slipNext">
+        <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+      </button>
+    </div>
+    <div class="slip-counter" id="slipCounter"></div>
   </div>
-  <div class="slip-counter" id="slipCounter"></div>
 </div>
 
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
@@ -380,13 +362,19 @@ function gscRun(fnName) {
 }
 
 // ── Add/Edit/Delete Transaction (edit-permission links only) ────
+// Unlike the main app (a fixed-height shell where only an inner pane
+// scrolls), this page is a plain document, so an open sheet must explicitly
+// lock body scroll - otherwise the page behind it still scrolls on touch.
 function openSheet(id) {
+  closeSheets();
   $('#overlay').addClass('on');
   $('#' + id).addClass('on');
+  $('body').css('overflow', 'hidden');
 }
 function closeSheets() {
   $('#overlay').removeClass('on');
   $('.sheet.on').removeClass('on');
+  $('body').css('overflow', '');
 }
 
 var splitMode = 'equal';
@@ -712,13 +700,12 @@ $(function () {
     _slipCarouselList = slips.map(function (s) { return s.slip });
     _slipCarouselIdx = 0;
     _renderSlipCarousel();
-    $('#slipLightbox').addClass('on');
+    openSheet('shSlipView');
   });
   $('#slipPrev').on('click', _slipGoPrev);
   $('#slipNext').on('click', _slipGoNext);
   _bindSlipSwipe('#slipCarousel');
-  $('#slipLightboxClose').on('click', function () { $('#slipLightbox').removeClass('on') });
-  $('#slipLightbox').on('click', function (e) { if (e.target === this) $(this).removeClass('on') });
+  $('#shSlipViewClose').on('click', closeSheets);
 
   // Add/Edit/Delete transaction (edit-permission links only)
   $('#fab').on('click', openAddTxSheet);
