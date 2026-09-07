@@ -32,7 +32,7 @@
 
 .tab-bar{
   display:flex;background:var(--s1);border:1px solid var(--bd);
-  border-radius:20px;padding:5px;margin-bottom:16px;gap:4px;
+  border-radius:var(--rad);padding:5px;margin-bottom:16px;gap:4px;
 }
 .tab-btn{
   flex:1;padding:13px;font-size:15px;font-weight:600;border:none;
@@ -50,7 +50,7 @@
 .btn-export svg{width:16px;height:16px;fill:currentColor}
 
 .tx-card{
-  background:var(--s1);border:1px solid var(--bd);border-radius:22px;
+  background:var(--s1);border:1px solid var(--bd);border-radius:var(--rad);
   margin-bottom:12px;overflow:hidden;padding:18px 20px;box-shadow:var(--shadow);
 }
 .tx-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:14px}
@@ -66,7 +66,7 @@
 .tx-people{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
 .tx-chip{
   font-size:13px;font-weight:600;color:var(--p-lt);
-  background:var(--p-dim);border-radius:20px;padding:5px 14px;border:1px solid var(--bd);
+  background:var(--p-dim);border-radius:var(--rad);padding:5px 14px;border:1px solid var(--bd);
 }
 .tx-foot{display:flex;align-items:center;justify-content:space-between}
 .tx-date{font-size:13px;color:var(--t3)}
@@ -80,7 +80,7 @@
 .btn-edit svg{width:17px;height:17px;fill:var(--p-lt)}
 
 .settle-card{
-  background:var(--s1);border:1px solid var(--bd);border-radius:22px;
+  background:var(--s1);border:1px solid var(--bd);border-radius:var(--rad);
   margin-bottom:12px;padding:20px;display:flex;align-items:center;gap:12px;box-shadow:var(--shadow);
 }
 .se-person{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:72px}
@@ -111,7 +111,7 @@
 .se-check input:checked ~ .se-check-box svg{opacity:1}
 
 /* ── Event Friends list (moved from Friends_css.html) ── */
-.fr-card{background:var(--s1);border:1px solid var(--bd);border-radius:22px;overflow:hidden;box-shadow:var(--shadow)}
+.fr-card{background:var(--s1);border:1px solid var(--bd);border-radius:var(--rad);overflow:hidden;box-shadow:var(--shadow)}
 .fr-row{display:flex;align-items:center;padding:16px 18px;gap:16px;transition:background .15s}
 .fr-av{
   width:54px;height:54px;border-radius:50%;

@@ -24,21 +24,60 @@
 .stat-num{font-size:32px;font-weight:800;color:var(--t1);letter-spacing:-.6px;line-height:1}
 .stat-lbl{font-size:14px;color:var(--t2);margin-top:4px;font-weight:500}
 
+.events-grid{display:flex;flex-direction:column;gap:14px}
+
 .ev-card{
-  background:var(--s1);border:1px solid var(--bd);border-radius:22px;
-  margin-bottom:12px;overflow:hidden;cursor:pointer;
-  display:flex;align-items:center;padding:16px 14px 16px 16px;gap:14px;
-  transition:background .15s;
+  background:var(--s1);border-radius:var(--rad);box-shadow:var(--shadow);
+  cursor:pointer;
+  display:flex;flex-direction:column;
+  transition:box-shadow .25s ease,transform .25s ease;
 }
-.ev-card:active{background:var(--s2)}
-.ev-icon{
-  width:58px;height:58px;border-radius:18px;
-  display:flex;align-items:center;justify-content:center;
-  font-size:28px;flex-shrink:0;border:1px solid var(--bd);
+.ev-card:active{transform:scale(.99)}
+
+.ev-card-banner{
+  height:60px;display:flex;align-items:center;justify-content:center;
+  position:relative;overflow:hidden;font-size:28px;
+  border-radius:var(--rad) var(--rad) 0 0;
+  filter:drop-shadow(0 2px 6px rgba(0,0,0,.25));
 }
-.ev-info{flex:1;min-width:0}
-.ev-name{font-size:18px;font-weight:700;color:var(--t1);letter-spacing:-.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ev-date{font-size:14px;color:var(--t2);margin-top:4px;font-weight:500}
-.ev-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
-.ev-chev svg{width:20px;height:20px;fill:var(--t3)}
+.ev-card-banner::after{
+  content:'';position:absolute;inset:0;
+  background-image:radial-gradient(circle,rgba(255,255,255,.1) 1.5px,transparent 1.5px);
+  background-size:20px 20px;
+}
+.ev-card-body{flex:1;padding:14px 16px 10px;min-width:0}
+.ev-name{font-size:16px;font-weight:700;color:var(--t1);letter-spacing:-.3px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev-date{font-size:13px;color:var(--t2);margin-top:5px;font-weight:500}
+
+.ev-card-actions{display:flex;border-top:1px solid var(--bd);position:relative}
+.ev-action-btn{
+  flex:1;display:flex;align-items:center;justify-content:center;gap:5px;
+  padding:12px 6px;background:none;border:none;cursor:pointer;
+  color:var(--t2);font-size:12px;font-weight:500;
+  transition:background var(--ease),color var(--ease);
+}
+.ev-action-btn+.ev-action-btn{border-left:1px solid var(--bd)}
+.ev-action-btn:hover{background:var(--s2);color:var(--t1)}
+.ev-action-btn.del:hover{background:var(--r-dim);color:var(--r)}
+.ev-action-btn svg{width:16px;height:16px;fill:currentColor}
+
+.ev-more-wrap{flex:1;position:relative;display:flex}
+.ev-more-wrap .ev-action-btn{flex:1}
+.ev-more-menu{
+  position:absolute;bottom:calc(100% + 6px);right:0;z-index:30;min-width:150px;
+  background:var(--s1);border:1px solid var(--bd);border-radius:var(--rad-sm);
+  box-shadow:var(--shadow-lg);overflow:hidden;
+}
+.ev-more-menu.hidden{display:none}
+.ev-more-item{
+  width:100%;display:flex;align-items:center;gap:9px;padding:11px 14px;
+  background:none;border:none;cursor:pointer;text-align:left;
+  font-size:13px;font-weight:500;color:var(--t1);
+  transition:background var(--ease);
+}
+.ev-more-item+.ev-more-item{border-top:1px solid var(--bd)}
+.ev-more-item:hover{background:var(--s2)}
+.ev-more-item.del{color:var(--r)}
+.ev-more-item.del:hover{background:var(--r-dim)}
+.ev-more-item svg{width:16px;height:16px;fill:currentColor;flex-shrink:0}
 </style>

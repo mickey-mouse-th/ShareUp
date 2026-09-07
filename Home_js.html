@@ -41,16 +41,25 @@ function renderEvents() {
   }
   var html = list.map(function (ev) {
     return '<div class="ev-card" data-ev=\'' + esc(JSON.stringify(ev)) + '\'>' +
-      '<div class="ev-icon" style="background:' + bannerGrad(ev.name) + '">' + evEmoji(ev.name) + '</div>' +
-      '<div class="ev-info">' +
+      '<div class="ev-card-banner" style="background:' + bannerGrad(ev.name) + '">' + evEmoji(ev.name) + '</div>' +
+      '<div class="ev-card-body">' +
       '<div class="ev-name">' + esc(ev.name) + '</div>' +
       '<div class="ev-date">' + fmtDate(ev.createdAt) + '</div>' +
       '</div>' +
-      '<div class="ev-right">' +
-      '<div class="ev-chev"><svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></div>' +
-      '<button class="btn-del ev-del" data-id="' + esc(ev.id) + '" data-name="' + esc(ev.name) + '">' +
-      '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>' +
-      '</button>' +
+      '<div class="ev-card-actions">' +
+      '<button class="ev-action-btn view">' +
+      '<svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>View</button>' +
+      '<button class="ev-action-btn edit ev-edit">' +
+      '<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75z"/></svg>Edit</button>' +
+      '<div class="ev-more-wrap">' +
+      '<button class="ev-action-btn more ev-more-toggle">' +
+      '<svg viewBox="0 0 24 24"><path d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm0 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg></button>' +
+      '<div class="ev-more-menu hidden">' +
+      '<button class="ev-more-item ev-share"><svg viewBox="0 0 24 24"><path d="M18 16.08a2.9 2.9 0 0 0-1.94.75l-7.05-4.11c.05-.23.09-.47.09-.72s-.04-.49-.09-.72l6.97-4.06c.56.53 1.31.86 2.14.86 1.75 0 3.16-1.42 3.16-3.16A3.16 3.16 0 1 0 15.02 8c0 .25.04.49.09.72L8.14 12.8a3.14 3.14 0 1 0 0 4.38l7.04 4.13c-.05.21-.08.44-.08.67 0 1.71 1.39 3.1 3.1 3.1 1.71 0 3.1-1.39 3.1-3.1 0-1.71-1.39-3.1-3.1-3.1z"/></svg>Share</button>' +
+      '<button class="ev-more-item del ev-del" data-id="' + esc(ev.id) + '" data-name="' + esc(ev.name) + '">' +
+      '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>Delete</button>' +
+      '</div>' +
+      '</div>' +
       '</div>' +
       '</div>';
   }).join('');
@@ -66,13 +75,36 @@ $(function () {
   });
 
   $('#eventsList').on('click', '.ev-card', function (e) {
-    if ($(e.target).closest('.btn-del').length) return;
+    if ($(e.target).closest('.ev-edit, .ev-more-wrap').length) return;
     var ev = JSON.parse($(this).attr('data-ev'));
     openDetail(ev);
   });
+  $('#eventsList').on('click', '.ev-edit', function (e) {
+    e.stopPropagation();
+    var ev = JSON.parse($(this).closest('.ev-card').attr('data-ev'));
+    openRenameEventSheet(ev);
+  });
+  $('#eventsList').on('click', '.ev-more-toggle', function (e) {
+    e.stopPropagation();
+    var $menu = $(this).siblings('.ev-more-menu');
+    var isOpen = !$menu.hasClass('hidden');
+    $('.ev-more-menu').addClass('hidden');
+    if (!isOpen) $menu.removeClass('hidden');
+  });
+  $('#eventsList').on('click', '.ev-share', function (e) {
+    e.stopPropagation();
+    $('.ev-more-menu').addClass('hidden');
+    var ev = JSON.parse($(this).closest('.ev-card').attr('data-ev'));
+    CUR_EV = ev;
+    openShareSheet();
+  });
   $('#eventsList').on('click', '.ev-del', function (e) {
     e.stopPropagation();
+    $('.ev-more-menu').addClass('hidden');
     askDel('event', $(this).data('id'), $(this).data('name'));
+  });
+  $(document).on('click', function () {
+    $('.ev-more-menu').addClass('hidden');
   });
 });
 </script>
