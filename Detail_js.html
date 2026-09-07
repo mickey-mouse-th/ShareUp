@@ -504,11 +504,17 @@ $(function () {
     _slipCarouselList = slips;
     _slipCarouselIdx = 0;
     _renderSlipCarousel();
+    $('#slipDlMenu').removeClass('on');
     openSheet('shSlipView');
   });
   $('#slipPrev').on('click', _slipGoPrev);
   $('#slipNext').on('click', _slipGoNext);
   _bindSlipSwipe('#slipCarousel');
+  $('#slipDlBtn').on('click', function (e) {
+    e.stopPropagation();
+    $('#slipDlMenu').toggleClass('on');
+  });
+  $(document).on('click', function () { $('#slipDlMenu').removeClass('on') });
   $('#slipDlPreview').on('click', function () {
     var cur = _slipCarouselList[_slipCarouselIdx];
     if (cur) _downloadDataUri(cur.slip, 'receipt-preview.jpg');

@@ -269,7 +269,21 @@
 <!-- Sheet: View Slip -->
 <div class="sheet" id="shSlipView">
   <div class="sh-pill"></div>
-  <div class="sh-hd"><span class="sh-title">Receipt / Slip</span><button class="sh-close" id="shSlipViewClose">✕</button></div>
+  <div class="sh-hd">
+    <span class="sh-title">Receipt / Slip</span>
+    <div style="display:flex;gap:8px;align-items:center">
+      <div class="slip-dl-wrap">
+        <button class="sh-close" id="slipDlBtn" title="Download">
+          <svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/></svg>
+        </button>
+        <div class="slip-dl-menu" id="slipDlMenu">
+          <button type="button" id="slipDlPreview">Preview quality</button>
+          <button type="button" id="slipDlOrig">Original quality</button>
+        </div>
+      </div>
+      <button class="sh-close" id="shSlipViewClose">✕</button>
+    </div>
+  </div>
   <div class="sh-body">
     <div class="slip-carousel" id="slipCarousel">
       <button class="slip-nav slip-nav-prev" id="slipPrev">
@@ -281,9 +295,5 @@
       </button>
     </div>
     <div class="slip-counter" id="slipCounter"></div>
-    <div class="slip-dl-row">
-      <button type="button" class="ck-btn" id="slipDlPreview">Download Preview</button>
-      <button type="button" class="ck-btn hi" id="slipDlOrig">Download Original</button>
-    </div>
   </div>
 </div>
