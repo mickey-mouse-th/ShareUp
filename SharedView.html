@@ -21,6 +21,12 @@
   }
   .shared-badge svg{width:14px;height:14px;fill:currentColor}
   .shared-state{text-align:center;padding:60px 0;color:var(--t2)}
+  .spinner{
+    width:40px;height:40px;margin:0 auto 16px;
+    border:4px solid var(--bd2);border-top-color:var(--p-lt);
+    border-radius:50%;animation:spin .8s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
@@ -35,7 +41,10 @@
     View only
   </div>
 
-  <div id="shLoading" class="shared-state">Loading…</div>
+  <div id="shLoading" class="shared-state">
+    <div class="spinner"></div>
+    <div>Loading…</div>
+  </div>
 
   <div id="shError" class="empty" style="display:none">
     <div class="empty-t">Link not available</div>
