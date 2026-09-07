@@ -598,11 +598,16 @@ function getDetailData(token, eventId) {
     // doesn't force a second round-trip that re-reads the same Details rows.
     var settlements = _computeSettlementsWithPaid(rows, friendMap, eventId);
 
+    // Only this event's transactionIds - TransactionSlips isn't keyed by
+    // eventId, so without this filter every event's photos would be shipped
+    // down on every load (slow, and a lot of wasted bandwidth as photos add up).
+    var eventTxIds = {};
+    details.forEach(function (d) { eventTxIds[d.transactionId] = true });
     var slipSheet = getTransactionSlipsSheet();
     var slipData = _backfillSlipIds(slipSheet, slipSheet.getDataRange().getValues());
     var slips = {};
     for (var i = 1; i < slipData.length; i++) {
-      if (slipData[i][1]) {
+      if (slipData[i][1] && eventTxIds[slipData[i][0]]) {
         var stid = slipData[i][0];
         if (!slips[stid]) slips[stid] = [];
         slips[stid].push({ id: slipData[i][3], slip: slipData[i][1] });
@@ -1087,11 +1092,17 @@ function getSharedEventView(shareToken) {
       };
     });
 
+    // Only this event's transactionIds - TransactionSlips isn't keyed by
+    // eventId, so without this filter a public share link would receive every
+    // photo from every one of the owner's events, not just this one (slow,
+    // wasteful, and a real privacy leak on a link meant to scope to one event).
+    var eventTxIds = {};
+    rawDetails.forEach(function (d) { eventTxIds[d.transactionId] = true });
     var slipSheet = getTransactionSlipsSheet();
     var slipData = _backfillSlipIds(slipSheet, slipSheet.getDataRange().getValues());
     var slips = {};
     for (var i = 1; i < slipData.length; i++) {
-      if (slipData[i][1]) {
+      if (slipData[i][1] && eventTxIds[slipData[i][0]]) {
         var stid = slipData[i][0];
         if (!slips[stid]) slips[stid] = [];
         slips[stid].push({ id: slipData[i][3], slip: slipData[i][1] });
@@ -1101,8 +1112,10 @@ function getSharedEventView(shareToken) {
     // Only needed so an 'edit' link can render payer/split pickers - scoped to
     // this event's actual members (not the owner's whole friend list, which
     // would leak names from their other events and let an anonymous editor
-    // split against people not part of this one).
-    var friends = _getEventFriends(ss, eventId, accountId, friendMap);
+    // split against people not part of this one). Passes the already-read
+    // Details data so the self-heal path (when EventFriends has no rows yet)
+    // doesn't re-read the whole sheet.
+    var friends = _getEventFriends(ss, eventId, accountId, friendMap, undefined, dtData);
 
     return {
       success: true,
