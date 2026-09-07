@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
-<meta name="theme-color" content="#100F22"/>
+<meta name="theme-color" content="#f1f5f9"/>
 <title>ShareUp - Shared Event</title>
 <?!= include('Shared_css') ?>
 <?!= include('Detail_css') ?>
@@ -16,7 +16,7 @@
   .shared-hdr-name{font-size:17px;font-weight:700}
   .shared-badge{
     font-size:12px;font-weight:700;color:var(--p-lt);background:var(--p-dim);
-    border:1px solid rgba(147,51,234,.28);border-radius:20px;padding:6px 14px;
+    border:1px solid rgba(79,70,229,.28);border-radius:20px;padding:6px 14px;
     display:inline-flex;align-items:center;gap:6px;margin-bottom:18px;
   }
   .shared-badge svg{width:14px;height:14px;fill:currentColor}
@@ -159,6 +159,10 @@
       </button>
     </div>
     <div class="slip-counter" id="slipCounter"></div>
+    <div class="slip-dl-row">
+      <button type="button" class="ck-btn" id="slipDlPreview">Download Preview</button>
+      <button type="button" class="ck-btn hi" id="slipDlOrig">Download Original</button>
+    </div>
   </div>
 </div>
 
@@ -310,9 +314,18 @@ var _slipCarouselList = [];
 var _slipCarouselIdx = 0;
 
 function _renderSlipCarousel() {
-  $('#slipCarouselImg').attr('src', _slipCarouselList[_slipCarouselIdx] || '');
+  var cur = _slipCarouselList[_slipCarouselIdx];
+  $('#slipCarouselImg').attr('src', (cur && cur.slip) || '');
   $('#slipCounter').text(_slipCarouselList.length > 1 ? (_slipCarouselIdx + 1) + ' / ' + _slipCarouselList.length : '');
   $('#slipPrev, #slipNext').toggle(_slipCarouselList.length > 1);
+}
+function _downloadDataUri(dataUri, filename) {
+  var a = document.createElement('a');
+  a.href = dataUri;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 function _slipGoPrev() {
   _slipCarouselIdx = (_slipCarouselIdx - 1 + _slipCarouselList.length) % _slipCarouselList.length;
@@ -706,7 +719,7 @@ $(function () {
   $('#shTxList').on('click', '.tx-view-slip', function () {
     var slips = SHARE_DATA.slips && SHARE_DATA.slips[$(this).data('tid')];
     if (!slips || !slips.length) return;
-    _slipCarouselList = slips.map(function (s) { return s.slip });
+    _slipCarouselList = slips;
     _slipCarouselIdx = 0;
     _renderSlipCarousel();
     openSheet('shSlipView');
@@ -715,6 +728,14 @@ $(function () {
   $('#slipNext').on('click', _slipGoNext);
   _bindSlipSwipe('#slipCarousel');
   $('#shSlipViewClose').on('click', closeSheets);
+  $('#slipDlPreview').on('click', function () {
+    var cur = _slipCarouselList[_slipCarouselIdx];
+    if (cur) _downloadDataUri(cur.slip, 'receipt-preview.jpg');
+  });
+  $('#slipDlOrig').on('click', function () {
+    var cur = _slipCarouselList[_slipCarouselIdx];
+    if (cur) _downloadDataUri(cur.slipHi || cur.slip, 'receipt.jpg');
+  });
 
   // Add/Edit/Delete transaction (edit-permission links only)
   $('#fab').on('click', openAddTxSheet);

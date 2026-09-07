@@ -7,9 +7,9 @@ var _efEventId = null;    // 'create' | 'manage'
 var _efMode = 'manage';
 var _pendingNewEvent = null;
 var _editTxId = null;     // set while editing an existing transaction, else null
-var _txSlipsExisting = []; // [{id, slip}] already saved on the server (only when editing)
+var _txSlipsExisting = []; // [{id, slip, slipHi}] already saved on the server (only when editing)
 var _txSlipsRemoved  = []; // ids of existing photos marked for deletion on save
-var _txSlipsNew       = []; // data-URI strings picked but not yet uploaded
+var _txSlipsNew       = []; // [{slip, slipHi}] picked but not yet uploaded
 
 var _SLIP_ADD_ICON = '<div class="tx-slip-add" id="btnTxSlipAdd"><svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></div>';
 var _SLIP_REMOVE_ICON = '<svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
@@ -19,7 +19,7 @@ function _renderTxSlipGallery() {
     return '<div class="tx-slip-item"><img src="' + s.slip + '"/>' +
       '<button type="button" class="tx-slip-remove" data-kind="existing" data-idx="' + idx + '">' + _SLIP_REMOVE_ICON + '</button></div>';
   }).join('') + _txSlipsNew.map(function (s, idx) {
-    return '<div class="tx-slip-item"><img src="' + s + '"/>' +
+    return '<div class="tx-slip-item"><img src="' + s.slip + '"/>' +
       '<button type="button" class="tx-slip-remove" data-kind="new" data-idx="' + idx + '">' + _SLIP_REMOVE_ICON + '</button></div>';
   }).join('') + _SLIP_ADD_ICON;
   $('#txSlipGallery').html(html);
@@ -41,12 +41,30 @@ function _compressSlip(file) {
   return tryNext();
 }
 
+// Same idea as _compressSlip but starts larger/higher-quality, for the
+// "Download Original" button - not a true original (still bounded by the
+// cell limit), just meaningfully less compressed than the preview copy.
+function _compressSlipHi(file) {
+  var attempts = [[1600, 0.85], [1400, 0.75], [1200, 0.65], [1000, 0.55]];
+  var i = 0;
+  function tryNext() {
+    return _resizeImageFile(file, attempts[i][0], attempts[i][1]).then(function (dataUrl) {
+      if (dataUrl.length < 48000 || i === attempts.length - 1) return dataUrl;
+      i++;
+      return tryNext();
+    });
+  }
+  return tryNext();
+}
+
 async function _saveTxSlipsIfNeeded(transactionId, removedIds, newSlips) {
   if (!removedIds.length && !newSlips.length) return;
   try {
     await Promise.all(removedIds.map(function (id) { return gsc('deleteTransactionSlip', TK, transactionId, id) }));
-    var results = await Promise.all(newSlips.map(function (s) { return gsc('uploadTransactionSlip', TK, transactionId, s) }));
-    var added = results.map(function (r, idx) { return r.success ? { id: r.id, slip: newSlips[idx] } : null }).filter(Boolean);
+    var results = await Promise.all(newSlips.map(function (s) { return gsc('uploadTransactionSlip', TK, transactionId, s.slip, s.slipHi) }));
+    var added = results.map(function (r, idx) {
+      return r.success ? { id: r.id, slip: newSlips[idx].slip, slipHi: newSlips[idx].slipHi } : null;
+    }).filter(Boolean);
     var current = (SLIPS[transactionId] || [])
       .filter(function (s) { return removedIds.indexOf(s.id) === -1 })
       .concat(added);
@@ -486,8 +504,9 @@ $(function () {
     if (!file) return;
     if (file.type.indexOf('image/') !== 0) { toast('Please choose an image file', 'warn'); return }
     try {
-      var dataUrl = await _compressSlip(file);
-      _txSlipsNew.push(dataUrl);
+      var slip = await _compressSlip(file);
+      var slipHi = await _compressSlipHi(file);
+      _txSlipsNew.push({ slip: slip, slipHi: slipHi });
       _renderTxSlipGallery();
     } catch (e) { toast('Could not process that image', 'err') }
   });

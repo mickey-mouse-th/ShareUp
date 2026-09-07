@@ -153,7 +153,7 @@ function getTransactionSlipsSheet() {
   var sheet = ss.getSheetByName('TransactionSlips');
   if (!sheet) {
     sheet = ss.insertSheet('TransactionSlips');
-    sheet.appendRow(['transactionId', 'slip', 'updatedAt', 'id']);
+    sheet.appendRow(['transactionId', 'slip', 'updatedAt', 'id', 'slipHi']);
   }
   return sheet;
 }
@@ -610,7 +610,7 @@ function getDetailData(token, eventId) {
       if (slipData[i][1] && eventTxIds[slipData[i][0]]) {
         var stid = slipData[i][0];
         if (!slips[stid]) slips[stid] = [];
-        slips[stid].push({ id: slipData[i][3], slip: slipData[i][1] });
+        slips[stid].push({ id: slipData[i][3], slip: slipData[i][1], slipHi: slipData[i][4] || '' });
       }
     }
 
@@ -1105,7 +1105,7 @@ function getSharedEventView(shareToken) {
       if (slipData[i][1] && eventTxIds[slipData[i][0]]) {
         var stid = slipData[i][0];
         if (!slips[stid]) slips[stid] = [];
-        slips[stid].push({ id: slipData[i][3], slip: slipData[i][1] });
+        slips[stid].push({ id: slipData[i][3], slip: slipData[i][1], slipHi: slipData[i][4] || '' });
       }
     }
 
@@ -1304,11 +1304,16 @@ function _transactionEventId(dtData, transactionId) {
 
 // Always adds a new photo (a transaction can have several) - returns its id
 // so the client can target it with deleteTransactionSlip later.
-function uploadTransactionSlip(token, transactionId, slip) {
+// slip: a compressed "preview" copy (used for thumbnails/inline viewing).
+// slipHi: an optional larger/higher-quality copy for the "Download Original"
+// button - still bounded by the Sheets cell limit, so not a true original,
+// just less aggressively compressed. Falls back to slip if omitted.
+function uploadTransactionSlip(token, transactionId, slip, slipHi) {
   try {
     var user = requireAuth(token);
     if (!slip) return { success: false, error: 'No photo provided' };
     if (slip.length > 45000) return { success: false, error: 'Photo is too large - please try a smaller one' };
+    if (slipHi && slipHi.length > 48000) return { success: false, error: 'Photo is too large - please try a smaller one' };
     var ss = getSpreadsheet();
     var dtData = ss.getSheetByName('Details').getDataRange().getValues();
     var eventId = _transactionEventId(dtData, transactionId);
@@ -1316,7 +1321,7 @@ function uploadTransactionSlip(token, transactionId, slip) {
     if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Transaction not found' };
 
     var id = Utilities.getUuid();
-    getTransactionSlipsSheet().appendRow([transactionId, slip, new Date().toISOString(), id]);
+    getTransactionSlipsSheet().appendRow([transactionId, slip, new Date().toISOString(), id, slipHi || '']);
     return { success: true, id: id };
   } catch (e) {
     return { success: false, error: e.toString() };

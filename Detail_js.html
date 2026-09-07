@@ -3,9 +3,18 @@ var _slipCarouselList = [];
 var _slipCarouselIdx = 0;
 
 function _renderSlipCarousel() {
-  $('#slipCarouselImg').attr('src', _slipCarouselList[_slipCarouselIdx] || '');
+  var cur = _slipCarouselList[_slipCarouselIdx];
+  $('#slipCarouselImg').attr('src', (cur && cur.slip) || '');
   $('#slipCounter').text(_slipCarouselList.length > 1 ? (_slipCarouselIdx + 1) + ' / ' + _slipCarouselList.length : '');
   $('#slipPrev, #slipNext').toggle(_slipCarouselList.length > 1);
+}
+function _downloadDataUri(dataUri, filename) {
+  var a = document.createElement('a');
+  a.href = dataUri;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 function _slipGoPrev() {
   _slipCarouselIdx = (_slipCarouselIdx - 1 + _slipCarouselList.length) % _slipCarouselList.length;
@@ -492,7 +501,7 @@ $(function () {
     e.stopPropagation();
     var slips = SLIPS[$(this).data('tid')];
     if (!slips || !slips.length) return;
-    _slipCarouselList = slips.map(function (s) { return s.slip });
+    _slipCarouselList = slips;
     _slipCarouselIdx = 0;
     _renderSlipCarousel();
     openSheet('shSlipView');
@@ -500,6 +509,14 @@ $(function () {
   $('#slipPrev').on('click', _slipGoPrev);
   $('#slipNext').on('click', _slipGoNext);
   _bindSlipSwipe('#slipCarousel');
+  $('#slipDlPreview').on('click', function () {
+    var cur = _slipCarouselList[_slipCarouselIdx];
+    if (cur) _downloadDataUri(cur.slip, 'receipt-preview.jpg');
+  });
+  $('#slipDlOrig').on('click', function () {
+    var cur = _slipCarouselList[_slipCarouselIdx];
+    if (cur) _downloadDataUri(cur.slipHi || cur.slip, 'receipt.jpg');
+  });
   $('#detailFriendsList').on('click', '.ef-remove', function (e) {
     e.stopPropagation();
     removeEventFriend($(this).data('id'));
