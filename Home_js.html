@@ -43,11 +43,8 @@ function renderEvents() {
     return;
   }
   var html = list.map(function (ev) {
-    var isActive = ev.active !== false;
-    return '<div class="ev-card' + (isActive ? '' : ' disabled') + '" data-ev=\'' + esc(JSON.stringify(ev)) + '\'>' +
-      '<div class="ev-card-banner" style="background:' + bannerGrad(ev.name) + '">' + evEmoji(ev.name) +
-      (isActive ? '' : '<span class="ev-disabled-badge">Disabled</span>') +
-      '</div>' +
+    return '<div class="ev-card" data-ev=\'' + esc(JSON.stringify(ev)) + '\'>' +
+      '<div class="ev-card-banner" style="background:' + bannerGrad(ev.name) + '">' + evEmoji(ev.name) + '</div>' +
       '<div class="ev-card-body">' +
       '<div class="ev-name">' + highlightText(ev.name, q) + '</div>' +
       '<div class="ev-date">' + fmtDate(ev.createdAt) + '</div>' +
@@ -55,11 +52,10 @@ function renderEvents() {
       '<div class="ev-card-actions">' +
       '<button class="ev-action-btn edit ev-edit">' +
       '<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75z"/></svg>Edit</button>' +
-      '<button class="ev-action-btn toggle ev-toggle-active" title="' + (isActive ? 'Disable event' : 'Enable event') + '">' +
-      (isActive
-        ? '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12z"/></svg>Disable'
-        : '<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>Enable') +
-      '</button>' +
+      '<button class="ev-action-btn view ev-view">' +
+      '<svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>Transaction</button>' +
+      '<button class="ev-action-btn del ev-del" data-id="' + esc(ev.id) + '" data-name="' + esc(ev.name) + '">' +
+      '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>Delete</button>' +
       '</div>' +
       '</div>';
   }).join('');
@@ -100,7 +96,7 @@ $(function () {
   });
 
   $('#eventsList').on('click', '.ev-card', function (e) {
-    if ($(e.target).closest('.ev-edit, .ev-toggle-active').length) return;
+    if ($(e.target).closest('.ev-edit, .ev-del').length) return;
     var ev = JSON.parse($(this).attr('data-ev'));
     openDetail(ev);
   });
@@ -109,19 +105,14 @@ $(function () {
     var ev = JSON.parse($(this).closest('.ev-card').attr('data-ev'));
     openRenameEventSheet(ev);
   });
-  $('#eventsList').on('click', '.ev-toggle-active', async function (e) {
+  $('#eventsList').on('click', '.ev-view', function (e) {
     e.stopPropagation();
     var ev = JSON.parse($(this).closest('.ev-card').attr('data-ev'));
-    try {
-      var r = await gsc('setEventActive', TK, ev.id, ev.active === false);
-      if (r.success) {
-        var idx = -1;
-        for (var i = 0; i < EVENTS.length; i++) { if (EVENTS[i].id === ev.id) { idx = i; break } }
-        if (idx !== -1) EVENTS[idx].active = r.active;
-        toast(r.active ? 'Event enabled' : 'Event disabled');
-        renderEvents();
-      } else toast(r.error, 'err');
-    } catch (e2) { toast('' + e2, 'err') }
+    openDetail(ev);
+  });
+  $('#eventsList').on('click', '.ev-del', function (e) {
+    e.stopPropagation();
+    askDel('event', $(this).data('id'), $(this).data('name'));
   });
 });
 </script>
