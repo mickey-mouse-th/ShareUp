@@ -208,7 +208,7 @@ function goTab(tab) {
   var navMap = { home: 'navEv', admin: 'navAd' };
   if (navMap[tab]) $('#' + navMap[tab]).addClass('on');
   if (tab === 'home')    { loadHomeData() }
-  else if (tab === 'admin')   { loadAccounts() }
+  else if (tab === 'admin')   { switchAdminTab('menu'); loadAccounts() }
   _saveView();
 }
 

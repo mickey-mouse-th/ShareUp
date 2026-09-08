@@ -98,13 +98,14 @@ async function loadSettingsPanel() {
 }
 
 // ── Admin sub-nav (User / Theme / Settings) ────
-var ADMIN_TAB = 'user';
+// Landing on the Admin tab always shows the 3-item menu first - picking one
+// navigates into that panel; there's no default panel shown up front.
+var ADMIN_TAB = 'menu';
 var _themeLoaded = false, _settingsLoaded = false;
 
 function switchAdminTab(t) {
   ADMIN_TAB = t;
-  $('#pgAdmin .tab-bar .tab-btn').removeClass('on');
-  $('#tabAdmin' + t[0].toUpperCase() + t.slice(1)).addClass('on');
+  $('#panelAdminMenu').toggle(t === 'menu');
   $('#panelAdminUser').toggle(t === 'user');
   $('#panelAdminTheme').toggle(t === 'theme');
   $('#panelAdminSettings').toggle(t === 'settings');
@@ -234,9 +235,10 @@ $(function () {
     width: '130px'
   });
 
-  $('#tabAdminUser').on('click', function () { switchAdminTab('user') });
-  $('#tabAdminTheme').on('click', function () { switchAdminTab('theme') });
-  $('#tabAdminSettings').on('click', function () { switchAdminTab('settings') });
+  $('#menuAdminUser').on('click', function () { switchAdminTab('user') });
+  $('#menuAdminTheme').on('click', function () { switchAdminTab('theme') });
+  $('#menuAdminSettings').on('click', function () { switchAdminTab('settings') });
+  $('#btnAdminUserBack, #btnAdminThemeBack, #btnAdminSettingsBack').on('click', function () { switchAdminTab('menu') });
 
   $('#userSearchInp').on('input', function () {
     USER_SEARCH = $(this).val();
