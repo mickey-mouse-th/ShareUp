@@ -1,5 +1,6 @@
 <script>
 var HOME_FILTER = 'pending';
+var HOME_SEARCH = '';
 
 async function loadHomeData() {
   $('#eventsList').html(skeletonHtml(3, 'ev'));
@@ -24,9 +25,11 @@ function refreshEventsUI() {
 
 function renderEvents() {
   var $el = $('#eventsList');
+  var q = HOME_SEARCH.trim().toLowerCase();
   var list = EVENTS.filter(function (ev) {
-    if (HOME_FILTER === 'pending') return !ev.settled;
-    if (HOME_FILTER === 'settled') return ev.settled;
+    if (HOME_FILTER === 'pending' && ev.settled) return false;
+    if (HOME_FILTER === 'settled' && !ev.settled) return false;
+    if (q && ev.name.toLowerCase().indexOf(q) === -1) return false;
     return true;
   });
   if (!list.length) {
@@ -34,7 +37,7 @@ function renderEvents() {
       '<div class="empty">' +
       '<div class="empty-icon"><svg viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5C3.89 3 3 3.9 3 5v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/></svg></div>' +
       '<div class="empty-t">' + (EVENTS.length ? 'No events here' : 'No events yet') + '</div>' +
-      '<div class="empty-s">' + (EVENTS.length ? 'Try a different filter' : 'Tap + to create your first shared expense event') + '</div>' +
+      '<div class="empty-s">' + (EVENTS.length ? 'Try a different filter or search' : 'Tap + to create your first shared expense event') + '</div>' +
       '</div>'
     );
     return;
@@ -67,10 +70,22 @@ function renderEvents() {
 }
 
 $(function () {
-  $('#homeFilterBar').on('click', '.tab-btn', function () {
+  $('#homeFilterBar').on('click', '.stat-pill', function () {
     HOME_FILTER = $(this).data('filter');
-    $('#homeFilterBar .tab-btn').removeClass('on');
+    $('#homeFilterBar .stat-pill').removeClass('on');
     $(this).addClass('on');
+    $('#evStatusSel').val(HOME_FILTER);
+    renderEvents();
+  });
+
+  $('#evStatusSel').on('change', function () {
+    HOME_FILTER = $(this).val();
+    $('#homeFilterBar .stat-pill').removeClass('on').filter('[data-filter="' + HOME_FILTER + '"]').addClass('on');
+    renderEvents();
+  });
+
+  $('#evSearchInp').on('input', function () {
+    HOME_SEARCH = $(this).val();
     renderEvents();
   });
 

@@ -27,10 +27,30 @@
         </div>
       </div>
     </div>
-    <div class="tab-bar" id="homeFilterBar">
-      <button class="tab-btn on" data-filter="pending">ค้างจ่าย <span id="fcPending">0</span></button>
-      <button class="tab-btn" data-filter="all">ทั้งหมด <span id="fcAll">0</span></button>
-      <button class="tab-btn" data-filter="settled">เคลียร์แล้ว <span id="fcSettled">0</span></button>
+    <div class="stat-pill-row" id="homeFilterBar">
+      <div class="stat-pill on" data-filter="pending">
+        <div class="stat-pill-num" id="fcPending">0</div>
+        <div class="stat-pill-lbl">ค้างจ่าย</div>
+      </div>
+      <div class="stat-pill" data-filter="all">
+        <div class="stat-pill-num" id="fcAll">0</div>
+        <div class="stat-pill-lbl">ทั้งหมด</div>
+      </div>
+      <div class="stat-pill" data-filter="settled">
+        <div class="stat-pill-num" id="fcSettled">0</div>
+        <div class="stat-pill-lbl">เคลียร์แล้ว</div>
+      </div>
+    </div>
+    <div class="home-toolbar">
+      <div class="ev-search-wrap">
+        <svg class="ev-search-icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+        <input class="ev-search-inp" id="evSearchInp" type="text" placeholder="Search events..." autocomplete="off"/>
+      </div>
+      <select class="ev-status-sel" id="evStatusSel">
+        <option value="pending">ค้างจ่าย</option>
+        <option value="all">All Status</option>
+        <option value="settled">เคลียร์แล้ว</option>
+      </select>
     </div>
     <div class="sec-row"><span class="sec-lbl">My Events</span><div class="sec-line"></div></div>
     <div id="eventsList" class="events-grid"></div>
