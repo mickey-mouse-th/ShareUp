@@ -225,6 +225,18 @@ function _cleanExpiredSessions() {
 // Entry Point
 // ----------------------------------------------------------------
 
+// Looked up at render time (not via getSharedEventView) so doGet can skip
+// sending the add/edit/delete transaction markup entirely for the common
+// view-only case, instead of shipping it and hiding it with CSS.
+function _sharePermissionByToken(shareToken) {
+  if (!shareToken) return 'view';
+  var data = getEventSharesSheet().getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][1] === shareToken) return _sharePermission(data[i]);
+  }
+  return 'view';
+}
+
 function doGet(e) {
   var rawToken = e && e.parameter && e.parameter.share;
   if (rawToken) {
@@ -232,6 +244,7 @@ function doGet(e) {
     var shareToken = /^[a-zA-Z0-9-]{10,100}$/.test(rawToken) ? rawToken : '';
     var tpl = HtmlService.createTemplateFromFile('SharedView');
     tpl.shareToken = shareToken;
+    tpl.canEdit = shareToken ? (_sharePermissionByToken(shareToken) === 'edit') : false;
     return tpl.evaluate()
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
       .setTitle('ShareUp - Shared Event');
@@ -1289,6 +1302,47 @@ function deleteDetailViaShare(shareToken, transactionId) {
     _removeRowsWhere(sheet, 2, transactionId, data);
     _removeRowsWhere(getTransactionSlipsSheet(), 0, transactionId);
     return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function uploadTransactionSlipViaShare(shareToken, transactionId, slip, slipHi) {
+  try {
+    var eventId = _shareEventId(shareToken, true);
+    if (!eventId) return { success: false, error: 'This share link cannot make changes' };
+    if (!slip) return { success: false, error: 'No photo provided' };
+    if (slip.length > 45000) return { success: false, error: 'Photo is too large - please try a smaller one' };
+    if (slipHi && slipHi.length > 48000) return { success: false, error: 'Photo is too large - please try a smaller one' };
+
+    var dtData = getSpreadsheet().getSheetByName('Details').getDataRange().getValues();
+    if (_transactionEventId(dtData, transactionId) !== eventId) return { success: false, error: 'Transaction not found' };
+
+    var id = Utilities.getUuid();
+    getTransactionSlipsSheet().appendRow([transactionId, slip, new Date().toISOString(), id, slipHi || '']);
+    return { success: true, id: id };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function deleteTransactionSlipViaShare(shareToken, transactionId, slipId) {
+  try {
+    var eventId = _shareEventId(shareToken, true);
+    if (!eventId) return { success: false, error: 'This share link cannot make changes' };
+
+    var dtData = getSpreadsheet().getSheetByName('Details').getDataRange().getValues();
+    if (_transactionEventId(dtData, transactionId) !== eventId) return { success: false, error: 'Transaction not found' };
+
+    var sheet = getTransactionSlipsSheet();
+    var data = _backfillSlipIds(sheet, sheet.getDataRange().getValues());
+    for (var j = 1; j < data.length; j++) {
+      if (data[j][0] === transactionId && data[j][3] === slipId) {
+        sheet.deleteRow(j + 1);
+        return { success: true };
+      }
+    }
+    return { success: false, error: 'Photo not found' };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

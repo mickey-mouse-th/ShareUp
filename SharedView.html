@@ -9,6 +9,10 @@
 <?!= include('Detail_css') ?>
 <?!= include('Sheets_css') ?>
 <style>
+  /* This page is a plain scrollable document (unlike the main app's locked
+     shell), so iOS rubber-band overscroll at the bottom can visually reveal
+     position:fixed sheets that are supposed to be off-screen. */
+  html,body{overscroll-behavior-y:none}
   .shared-wrap{max-width:520px;margin:0 auto;padding:calc(var(--si)+20px) 16px calc(24px + var(--sb))}
   .shared-hdr{display:flex;align-items:center;gap:10px;margin-bottom:18px}
   .shared-hdr .hdr-brand{width:34px;height:34px;border-radius:11px}
@@ -20,6 +24,7 @@
     display:inline-flex;align-items:center;gap:6px;margin-bottom:18px;
   }
   .shared-badge svg{width:14px;height:14px;fill:currentColor}
+  .shared-badge.edit{color:var(--g);background:var(--g-dim);border-color:rgba(21,128,61,.28)}
   .shared-state{text-align:center;padding:60px 0;color:var(--t2)}
   .spinner{
     width:40px;height:40px;margin:0 auto 16px;
@@ -36,9 +41,9 @@
     <div class="hdr-brand"><svg viewBox="0 0 24 24"><path d="M12 12L12.7 4.03A8 8 0 0 1 19.25 15.38Z M12 12L18.55 16.59A8 8 0 0 1 5.45 16.59Z M12 12L4.75 15.38A8 8 0 0 1 11.3 4.03Z"/></svg></div>
     <span class="shared-hdr-name">ShareUp</span>
   </div>
-  <div class="shared-badge">
+  <div class="shared-badge" id="shPermBadge">
     <svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
-    View only
+    <span id="shPermBadgeText">View only</span>
   </div>
 
   <div id="shLoading" class="shared-state">
@@ -76,11 +81,12 @@
   </div>
 </div>
 
-<button class="fab hide" id="fab">
+<div class="overlay" id="overlay"></div>
+
+<? if (canEdit) { ?>
+<button class="fab" id="fab">
   <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
 </button>
-
-<div class="overlay" id="overlay"></div>
 
 <!-- Sheet: Add/Edit Transaction (only reachable on an 'edit' share link) -->
 <div class="sheet" id="shTx">
@@ -126,6 +132,11 @@
         <span class="ca-total-val" id="cusTotalVal">฿0.00</span>
       </div>
     </div>
+    <div class="inp-g">
+      <label class="inp-lbl">Receipt / Slip (optional)</label>
+      <div class="tx-slip-gallery" id="txSlipGallery"></div>
+      <input type="file" id="inpTxSlip" accept="image/*" style="display:none"/>
+    </div>
     <button class="sh-btn" id="btnSubmitTx">Add Transaction</button>
   </div>
 </div>
@@ -143,6 +154,7 @@
     </div>
   </div>
 </div>
+<? } ?>
 
 <!-- Sheet: View Slip -->
 <div class="sheet" id="shSlipView">
@@ -179,6 +191,10 @@
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script>
 var SHARE_TOKEN = '<?!= shareToken ?>';
+// True only if the link was 'edit' at page-load time - the add/edit/delete
+// sheets (and the fab) are only rendered into the DOM at all when this is
+// true (see doGet), so this must gate anything that opens them.
+var CAN_EDIT = <?!= canEdit ?>;
 
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -268,7 +284,7 @@ function renderTx(details) {
         '<button class="btn-slip tx-view-slip" data-tid="' + esc(tid) + '">' +
         '<svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>' +
         '</button>' : '') +
-      (SHARE_DATA.permission === 'edit' ?
+      (CAN_EDIT ?
         '<button class="btn-edit tx-edit" data-tid="' + esc(tid) + '">' +
         '<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>' +
         '</button>' +
@@ -377,7 +393,12 @@ function onData(r) {
   $('#shBanner').css('background', bannerGrad(r.event.name));
   renderSummary(r.settlements || []);
   renderTx(r.details);
-  $('#fab').toggleClass('hide', r.permission !== 'edit');
+  var editMode = r.permission === 'edit';
+  // #fab (and the edit sheets) are only rendered server-side at all when the
+  // link was 'edit' at page-load time - see doGet's canEdit. If the owner
+  // flips permission while this tab is already open, a refresh picks it up.
+  $('#shPermBadge').toggleClass('edit', editMode);
+  $('#shPermBadgeText').text(editMode ? 'Editable' : 'View only');
   $('#shContent').show();
 }
 
@@ -412,6 +433,77 @@ function closeSheets() {
 var splitMode = 'equal';
 var _editTxId = null;
 var _delTxId = null;
+var _txSlipsExisting = []; // [{id, slip, slipHi}] already saved on the server (only when editing)
+var _txSlipsRemoved  = []; // ids of existing photos marked for deletion on save
+var _txSlipsNew       = []; // [{slip, slipHi}] picked but not yet uploaded
+
+var _SLIP_ADD_ICON = '<div class="tx-slip-add" id="btnTxSlipAdd"><svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></div>';
+var _SLIP_REMOVE_ICON = '<svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
+
+function _renderTxSlipGallery() {
+  var html = _txSlipsExisting.map(function (s, idx) {
+    return '<div class="tx-slip-item"><img src="' + s.slip + '"/>' +
+      '<button type="button" class="tx-slip-remove" data-kind="existing" data-idx="' + idx + '">' + _SLIP_REMOVE_ICON + '</button></div>';
+  }).join('') + _txSlipsNew.map(function (s, idx) {
+    return '<div class="tx-slip-item"><img src="' + s.slip + '"/>' +
+      '<button type="button" class="tx-slip-remove" data-kind="new" data-idx="' + idx + '">' + _SLIP_REMOVE_ICON + '</button></div>';
+  }).join('') + _SLIP_ADD_ICON;
+  $('#txSlipGallery').html(html);
+}
+
+function _resizeImageFile(file, maxSize, quality) {
+  return new Promise(function (resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      var img = new Image();
+      img.onload = function () {
+        var scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+        var w = Math.max(1, Math.round(img.width * scale));
+        var h = Math.max(1, Math.round(img.height * scale));
+        var canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = function () { reject(new Error('Could not read image')) };
+      img.src = e.target.result;
+    };
+    reader.onerror = function () { reject(new Error('Could not read file')) };
+    reader.readAsDataURL(file);
+  });
+}
+
+function _compressSlip(file) {
+  var attempts = [[1000, 0.6], [800, 0.5], [640, 0.4], [480, 0.35]];
+  var i = 0;
+  function tryNext() {
+    return _resizeImageFile(file, attempts[i][0], attempts[i][1]).then(function (dataUrl) {
+      if (dataUrl.length < 45000 || i === attempts.length - 1) return dataUrl;
+      i++;
+      return tryNext();
+    });
+  }
+  return tryNext();
+}
+
+function _compressSlipHi(file) {
+  var attempts = [[1600, 0.85], [1400, 0.75], [1200, 0.65], [1000, 0.55]];
+  var i = 0;
+  function tryNext() {
+    return _resizeImageFile(file, attempts[i][0], attempts[i][1]).then(function (dataUrl) {
+      if (dataUrl.length < 48000 || i === attempts.length - 1) return dataUrl;
+      i++;
+      return tryNext();
+    });
+  }
+  return tryNext();
+}
+
+async function _saveTxSlipsIfNeeded(transactionId, removedIds, newSlips) {
+  if (!removedIds.length && !newSlips.length) return;
+  await Promise.all(removedIds.map(function (id) { return gscRun('deleteTransactionSlipViaShare', SHARE_TOKEN, transactionId, id) }));
+  await Promise.all(newSlips.map(function (s) { return gscRun('uploadTransactionSlipViaShare', SHARE_TOKEN, transactionId, s.slip, s.slipHi) }));
+}
 
 function setSplitMode(m, prefill) {
   splitMode = m;
@@ -482,6 +574,8 @@ function openAddTxSheet() {
   $('#ppBox').hide();
   setSplitMode('equal');
   buildTxFriendPickers(SHARE_DATA.friends.map(function (f) { return f.id }));
+  _txSlipsExisting = []; _txSlipsRemoved = []; _txSlipsNew = [];
+  _renderTxSlipGallery();
   openSheet('shTx');
 }
 
@@ -508,6 +602,9 @@ function openEditTxSheet(tid) {
     $('#inpAmt').val(parseFloat(f.totalAmount));
     calcPP();
   }
+  _txSlipsExisting = (SHARE_DATA.slips && SHARE_DATA.slips[tid] || []).slice();
+  _txSlipsRemoved = []; _txSlipsNew = [];
+  _renderTxSlipGallery();
   openSheet('shTx');
 }
 
@@ -534,15 +631,21 @@ async function submitTx() {
     if (!friendIds.length) { toast('ระบุจำนวนเงินอย่างน้อย 1 คน', 'warn'); return }
   }
   var editId = _editTxId;
+  var slipsRemoved = _txSlipsRemoved.slice();
+  var slipsNew = _txSlipsNew.slice();
   closeSheets();
   try {
     var r = editId
       ? await gscRun('updateDetailViaShare', SHARE_TOKEN, editId, pay, friendIds, totalAmount, desc, customAmounts)
       : await gscRun('addDetailViaShare', SHARE_TOKEN, pay, friendIds, totalAmount, desc, customAmounts);
-    if (r.success) { toast(editId ? 'Transaction updated' : 'Transaction added! 💸'); reloadShare() }
-    else toast(r.error || 'Something went wrong', 'err');
+    if (r.success) {
+      toast(editId ? 'Transaction updated' : 'Transaction added! 💸');
+      await _saveTxSlipsIfNeeded(editId || r.transactionId, slipsRemoved, slipsNew);
+      reloadShare();
+    } else toast(r.error || 'Something went wrong', 'err');
   } catch (e) { toast('' + e, 'err') }
   _editTxId = null;
+  _txSlipsExisting = []; _txSlipsRemoved = []; _txSlipsNew = [];
 }
 
 function askDeleteTx(tid) {
@@ -779,6 +882,31 @@ $(function () {
   $('#btnCkNone').on('click', function () {
     $('#inpShared .ck-row').each(function () { $(this).find('input').prop('checked', false); $(this).removeClass('checked') });
     calcPP();
+  });
+
+  // Transaction slip (edit-permission links only)
+  $('#txSlipGallery').on('click', '#btnTxSlipAdd', function () { $('#inpTxSlip').trigger('click') });
+  $('#txSlipGallery').on('click', '.tx-slip-remove', function () {
+    var kind = $(this).data('kind'), idx = $(this).data('idx');
+    if (kind === 'existing') {
+      _txSlipsRemoved.push(_txSlipsExisting[idx].id);
+      _txSlipsExisting.splice(idx, 1);
+    } else {
+      _txSlipsNew.splice(idx, 1);
+    }
+    _renderTxSlipGallery();
+  });
+  $('#inpTxSlip').on('change', async function () {
+    var file = this.files && this.files[0];
+    this.value = '';
+    if (!file) return;
+    if (file.type.indexOf('image/') !== 0) { toast('Please choose an image file', 'warn'); return }
+    try {
+      var slip = await _compressSlip(file);
+      var slipHi = await _compressSlipHi(file);
+      _txSlipsNew.push({ slip: slip, slipHi: slipHi });
+      _renderTxSlipGallery();
+    } catch (e) { toast('Could not process that image', 'err') }
   });
 });
 
