@@ -72,7 +72,7 @@ function initSheets(ss) {
   friendsSheet.appendRow(['id', 'accountId', 'name', 'isSelf']);
 
   var eventsSheet = ss.insertSheet('Events');
-  eventsSheet.appendRow(['id', 'name', 'accountId', 'createdAt', 'active']);
+  eventsSheet.appendRow(['id', 'name', 'accountId', 'createdAt', 'active', 'icon']);
 
   var detailsSheet = ss.insertSheet('Details');
   detailsSheet.appendRow(['id', 'eventId', 'transactionId', 'payId', 'friendId', 'amount', 'totalAmount', 'description', 'createdAt']);
@@ -623,7 +623,7 @@ function getHomeData(token) {
     var events = [], friends = [], friendMap = {};
     for (var i = 1; i < evData.length; i++) {
       if (evData[i][2] === user.id)
-        events.push({ id: evData[i][0], name: evData[i][1], accountId: evData[i][2], createdAt: evData[i][3], active: evData[i][4] !== false });
+        events.push({ id: evData[i][0], name: evData[i][1], accountId: evData[i][2], createdAt: evData[i][3], active: evData[i][4] !== false, icon: evData[i][5] || '' });
     }
     events.sort(function(a,b){ return b.createdAt > a.createdAt ? 1 : -1 });
     for (var i = 1; i < frData.length; i++) {
@@ -970,7 +970,7 @@ function setEventFriends(token, eventId, friendIds) {
 // Events
 // ----------------------------------------------------------------
 
-function addEvent(token, name) {
+function addEvent(token, name, icon) {
   try {
     var user = requireAuth(token);
     if (!name || name.trim() === '') return { success: false, error: 'Event name is required' };
@@ -978,7 +978,7 @@ function addEvent(token, name) {
     var sheet = ss.getSheetByName('Events');
     var id = Utilities.getUuid();
     var now = new Date().toISOString();
-    sheet.appendRow([id, name.trim(), user.id, now]);
+    sheet.appendRow([id, name.trim(), user.id, now, '', icon || '']);
 
     // Auto-link the account's own self-friend so every event starts with yourself in it
     var frData = ss.getSheetByName('Friends').getDataRange().getValues();
@@ -987,13 +987,13 @@ function addEvent(token, name) {
       getEventFriendsSheet().appendRow([Utilities.getUuid(), id, frData[selfRow][0], now]);
     }
 
-    return { success: true, event: { id: id, name: name.trim(), accountId: user.id, createdAt: now } };
+    return { success: true, event: { id: id, name: name.trim(), accountId: user.id, createdAt: now, icon: icon || '' } };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
 }
 
-function renameEvent(token, eventId, name) {
+function renameEvent(token, eventId, name, icon) {
   try {
     var user = requireAuth(token);
     if (!name || name.trim() === '') return { success: false, error: 'Event name is required' };
@@ -1003,7 +1003,8 @@ function renameEvent(token, eventId, name) {
     for (var i = 1; i < data.length; i++) {
       if (data[i][0] === eventId && data[i][2] === user.id) {
         sheet.getRange(i + 1, 2).setValue(name.trim());
-        return { success: true, name: name.trim() };
+        sheet.getRange(i + 1, 6).setValue(icon || '');
+        return { success: true, name: name.trim(), icon: icon || '' };
       }
     }
     return { success: false, error: 'Event not found' };
@@ -1226,7 +1227,7 @@ function getSharedEventView(shareToken) {
 
     return {
       success: true,
-      event: { name: eventRow[1], createdAt: eventRow[3] },
+      event: { name: eventRow[1], createdAt: eventRow[3], icon: eventRow[5] || '' },
       details: details,
       friends: friends,
       settlements: _computeSettlements(rawDetails, friendMap),

@@ -118,11 +118,23 @@ function calcPP() {
 }
 
 // ── New Event / Rename Event ─────────────────
+var _evIcon = '';
+
+function _renderEvIconGrid(selected) {
+  _evIcon = selected || '';
+  var html = $.map(EMOJIS, function (em) {
+    return '<button type="button" class="icon-pick' + (em === _evIcon ? ' on' : '') + '" data-icon="' + em + '">' + em + '</button>';
+  }).join('');
+  $('#evIconGrid').html(html);
+}
+
 function openNewEventSheet() {
   _evMode = 'create'; _evEditId = null;
   $('#evTitle').text('New Event');
   $('#btnSubmitEvent').text('Next');
+  $('#btnEvManageFriends').hide();
   $('#inpEv').val('');
+  _renderEvIconGrid('');
   openSheet('shEvent');
 }
 
@@ -130,7 +142,9 @@ function openRenameEventSheet(ev) {
   _evMode = 'rename'; _evEditId = ev.id;
   $('#evTitle').text('Edit Event');
   $('#btnSubmitEvent').text('Save');
+  $('#btnEvManageFriends').show();
   $('#inpEv').val(ev.name);
+  _renderEvIconGrid(ev.icon || evEmoji(ev.name));
   openSheet('shEvent');
 }
 
@@ -141,17 +155,20 @@ async function submitEvent() {
   if (_evMode === 'rename') {
     closeSheets();
     try {
-      var r = await gsc('renameEvent', TK, _evEditId, n);
+      var r = await gsc('renameEvent', TK, _evEditId, n, _evIcon);
       if (r.success) {
-        toast('Event renamed');
+        toast('Event saved');
         var idx = -1;
         for (var i = 0; i < EVENTS.length; i++) { if (EVENTS[i].id === _evEditId) { idx = i; break } }
-        if (idx !== -1) EVENTS[idx].name = r.name;
+        if (idx !== -1) { EVENTS[idx].name = r.name; EVENTS[idx].icon = r.icon }
         refreshEventsUI();
         if (CUR_EV && CUR_EV.id === _evEditId) {
           CUR_EV.name = r.name;
+          CUR_EV.icon = r.icon;
           $('#hdrTitle').text(r.name);
           $('#detailBannerName').text(r.name);
+          $('#detailEmoji').text(r.icon || evEmoji(r.name));
+          $('#detailBanner').css('background', bannerGrad(r.name));
         }
       } else toast(r.error, 'err');
     } catch (e) { toast('' + e, 'err') }
@@ -159,7 +176,7 @@ async function submitEvent() {
   }
 
   try {
-    var r = await gsc('addEvent', TK, n);
+    var r = await gsc('addEvent', TK, n, _evIcon);
     if (r.success) {
       r.event.settled = true; // brand-new event has no transactions yet
       EVENTS.unshift(r.event);
@@ -440,11 +457,16 @@ function _resizeImageFile(file, maxSize, quality) {
   });
 }
 
+var _pfPwPolicy = null;
+
 async function openProfileSheet() {
   openSheet('shProfile');
   _pfPhotoPending = undefined;
   $('#inpPfCurPw, #inpPfNewPw').val('');
-  gsc('getPasswordPolicy').then(function (p) { $('#pfPwHint').text(pwPolicyText(p)) }).catch(function () {});
+  gsc('getPasswordPolicy').then(function (p) {
+    _pfPwPolicy = p;
+    renderPwChecklist('pfPwChecklist', p);
+  }).catch(function () {});
   try {
     var r = await gsc('getMyProfile', TK);
     if (r.success) {
@@ -543,6 +565,18 @@ $(function () {
   });
   $('#btnPfSave').on('click', submitProfile);
   $('#btnPfChangePw').on('click', submitChangePassword);
+  $('#inpPfNewPw').on('input', function () {
+    if (_pfPwPolicy) updatePwChecklist('pfPwChecklist', _pfPwPolicy, $(this).val());
+  });
+
+  $('#evIconGrid').on('click', '.icon-pick', function () {
+    $('#evIconGrid .icon-pick').removeClass('on');
+    $(this).addClass('on');
+    _evIcon = $(this).data('icon');
+  });
+  $('#btnEvManageFriends').on('click', function () {
+    if (_evEditId) openEventFriendsSheet(_evEditId, 'manage');
+  });
 
   // Submit buttons
   $('#btnSubmitEvent').on('click', submitEvent);

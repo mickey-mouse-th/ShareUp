@@ -102,6 +102,31 @@ function pwPolicyText(p) {
   return parts.join(', ');
 }
 
+// ── Live password requirement checklist (Register + Profile) ──
+var _PW_RULES = [
+  { rule: 'len',     label: function (p) { return 'At least ' + p.pwMinLength + ' characters' }, on: function () { return true }, test: function (v, p) { return v.length >= p.pwMinLength } },
+  { rule: 'upper',   label: function () { return 'An uppercase letter (A-Z)' }, on: function (p) { return p.pwRequireUpper }, test: function (v) { return /[A-Z]/.test(v) } },
+  { rule: 'lower',   label: function () { return 'A lowercase letter (a-z)' }, on: function (p) { return p.pwRequireLower }, test: function (v) { return /[a-z]/.test(v) } },
+  { rule: 'number',  label: function () { return 'A number (0-9)' }, on: function (p) { return p.pwRequireNumber }, test: function (v) { return /[0-9]/.test(v) } },
+  { rule: 'special', label: function () { return 'A special character' }, on: function (p) { return p.pwRequireSpecial }, test: function (v) { return /[^A-Za-z0-9]/.test(v) } }
+];
+
+function renderPwChecklist(containerId, policy) {
+  var html = _PW_RULES.filter(function (r) { return r.on(policy) }).map(function (r) {
+    return '<div class="pw-rule" data-rule="' + r.rule + '">' +
+      '<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>' +
+      '<span>' + esc(r.label(policy)) + '</span></div>';
+  }).join('');
+  $('#' + containerId).html(html);
+}
+
+function updatePwChecklist(containerId, policy, value) {
+  _PW_RULES.forEach(function (r) {
+    if (!r.on(policy)) return;
+    $('#' + containerId + ' [data-rule="' + r.rule + '"]').toggleClass('met', r.test(value || '', policy));
+  });
+}
+
 // ── Skeleton ─────────────────────────────────
 function skeletonHtml(count, type) {
   var card;
@@ -193,7 +218,7 @@ function openDetail(ev) {
   $('#hdrTitle').text(ev.name);
   $('#appHdr').addClass('show-back');
   $('#detailBanner').css('background', bannerGrad(ev.name));
-  $('#detailEmoji').text(evEmoji(ev.name));
+  $('#detailEmoji').text(ev.icon || evEmoji(ev.name));
   $('#detailBannerName').text(ev.name);
   $('#detailBannerDate').text(fmtDate(ev.createdAt));
   var pgMap = { home: 'pgHome', admin: 'pgAdmin' };
@@ -201,8 +226,8 @@ function openDetail(ev) {
   $.each(pgMap, function (_, pgId) { $('#' + pgId).addClass('hidden') });
   if (prev) { $('#' + prev).removeClass('hidden').addClass('behind') }
   $('#pgDetail').removeClass('hidden behind');
-  $('#tabTx').addClass('on'); $('#tabSum').removeClass('on'); $('#tabFr').removeClass('on');
-  $('#panelTx').show(); $('#panelSum').hide(); $('#panelFr').hide();
+  $('#tabTx').addClass('on'); $('#tabSum').removeClass('on');
+  $('#panelTx').show(); $('#panelSum').hide();
   $('#fab').removeClass('hide');
   loadDetailData(ev.id);
   _saveView();
@@ -226,17 +251,14 @@ function switchTab(t) {
   CUR_DT = t;
   $('#tabTx').toggleClass('on', t === 'tx');
   $('#tabSum').toggleClass('on', t === 'sum');
-  $('#tabFr').toggleClass('on', t === 'friends');
   $('#panelTx').toggle(t === 'tx');
   $('#panelSum').toggle(t === 'sum');
-  $('#panelFr').toggle(t === 'friends');
   if (t === 'sum' && CUR_EV) {
     // SETTLEMENTS is already bundled into the initial detail load — only hit
     // the server again if it was invalidated (e.g. a transaction changed).
     if (SETTLEMENTS) renderSummary(SETTLEMENTS);
     else loadSummary(CUR_EV.id);
   }
-  if (t === 'friends') renderEventFriends();
   _saveView();
 }
 

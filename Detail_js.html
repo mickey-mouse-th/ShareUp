@@ -106,7 +106,7 @@ function renderDetails() {
     var isLast = i === ord.length - 1;
     return '<div class="sched-item">' +
       '<div class="sched-time-col"><div class="sched-time">' + esc(timeStr) + '</div><div class="sched-date">' + fmtDate(f.createdAt) + '</div></div>' +
-      '<div class="sched-axis"><div class="sched-dot"></div>' + (isLast ? '' : '<div class="sched-line"></div>') + '</div>' +
+      '<div class="sched-axis">' + (isLast ? '' : '<div class="sched-line"></div>') + '</div>' +
       '<div class="sched-card" data-tid="' + esc(tid) + '">' +
       '<div class="tx-head">' +
       avatarHtml('tx-av', pn, f.payId) +
@@ -449,48 +449,9 @@ function copyShareLink() {
   }
 }
 
-function renderEventFriends() {
-  var $el = $('#detailFriendsList');
-  if (!FRIENDS.length) {
-    $el.html(
-      '<div class="empty">' +
-      '<div class="empty-t">No friends in this event yet</div>' +
-      '<div class="empty-s">Tap + to add friends</div>' +
-      '</div>'
-    );
-    return;
-  }
-  var html = $.map(FRIENDS, function (f, i) {
-    return (i > 0 ? '<div class="fr-sep"></div>' : '') +
-      '<div class="fr-row">' +
-      '<div class="fr-av" style="background:' + avCol(f.name) + '">' + initials(f.name) + '</div>' +
-      '<span class="fr-name">' + esc(f.name) + '</span>' +
-      '<button class="btn-del ef-remove" data-id="' + esc(f.id) + '">' +
-      '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>' +
-      '</button>' +
-      '</div>';
-  }).join('');
-  $el.html(html);
-}
-
-async function removeEventFriend(friendId) {
-  var ids = FRIENDS.filter(function (f) { return f.id !== friendId }).map(function (f) { return f.id });
-  try {
-    var r = await gsc('setEventFriends', TK, CUR_EV.id, ids);
-    if (r.success) {
-      FRIENDS = r.friends;
-      renderEventFriends();
-      if (r.blocked && r.blocked.length) {
-        toast(r.blocked.map(function (b) { return b.name }).join(', ') + ' has transactions here and can\'t be removed', 'warn');
-      }
-    } else toast(r.error, 'err');
-  } catch (e) { toast('' + e, 'err') }
-}
-
 $(function () {
   $('#tabTx').on('click', function () { switchTab('tx') });
   $('#tabSum').on('click', function () { switchTab('sum') });
-  $('#tabFr').on('click', function () { switchTab('friends') });
   $('#txList').on('click', '.tx-del', function (e) {
     e.stopPropagation();
     askDel('tx', $(this).data('tid'), $(this).data('desc'));
@@ -525,10 +486,6 @@ $(function () {
     var cur = _slipCarouselList[_slipCarouselIdx];
     if (cur) _downloadDataUri(cur.slipHi || cur.slip, 'receipt.jpg');
   });
-  $('#detailFriendsList').on('click', '.ef-remove', function (e) {
-    e.stopPropagation();
-    removeEventFriend($(this).data('id'));
-  });
   $('#sumList').on('change', '.se-paid-cb', async function () {
     if (!CUR_EV) return;
     var from = $(this).data('from'), to = $(this).data('to'), amt = $(this).data('amt');
@@ -538,9 +495,6 @@ $(function () {
       if (!r.success) toast(r.error, 'err');
     } catch (e) { toast('' + e, 'err') }
     loadSummary(CUR_EV.id);
-  });
-  $('#btnEditEvent').on('click', function () {
-    if (CUR_EV) openRenameEventSheet(CUR_EV);
   });
   $('#btnShareEvent').on('click', openShareSheet);
   $('#btnEnableShare').on('click', enableShare);

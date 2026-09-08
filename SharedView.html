@@ -62,16 +62,14 @@
       <div class="ev-detail-dots"></div>
       <div class="ev-detail-emoji" id="shEmoji">🎉</div>
       <div class="ev-detail-info">
-        <div class="ev-detail-name" id="shName"></div>
+        <div class="ev-detail-name-row">
+          <div class="ev-detail-name" id="shName"></div>
+          <button class="ev-detail-edit" id="shExportBtn" title="Export expenses as PDF">
+            <svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/></svg>
+          </button>
+        </div>
         <div class="ev-detail-date" id="shDate"></div>
       </div>
-    </div>
-
-    <div class="tx-toolbar">
-      <button class="btn-export" id="shExportBtn" title="Export expenses as PDF">
-        <svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/></svg>
-        <span>Export</span>
-      </button>
     </div>
 
     <div class="sec-row"><span class="sec-lbl">Summary</span><div class="sec-line"></div></div>
@@ -276,7 +274,7 @@ function renderTx(details) {
     var hasSlip = SHARE_DATA.slips && SHARE_DATA.slips[tid] && SHARE_DATA.slips[tid].length;
     return '<div class="sched-item">' +
       '<div class="sched-time-col"><div class="sched-time">' + esc(timeStr) + '</div><div class="sched-date">' + fmtDate(f.createdAt) + '</div></div>' +
-      '<div class="sched-axis"><div class="sched-dot"></div>' + (isLast ? '' : '<div class="sched-line"></div>') + '</div>' +
+      '<div class="sched-axis">' + (isLast ? '' : '<div class="sched-line"></div>') + '</div>' +
       '<div class="sched-card" data-tid="' + esc(tid) + '">' +
       '<div class="tx-head">' +
       _avatarHtml('tx-av', f.payerName, f.payId) +
@@ -397,7 +395,7 @@ function onData(r) {
   SHARE_DATA = r;
   $('#shName').text(r.event.name);
   $('#shDate').text(fmtDate(r.event.createdAt));
-  $('#shEmoji').text(evEmoji(r.event.name));
+  $('#shEmoji').text(r.event.icon || evEmoji(r.event.name));
   $('#shBanner').css('background', bannerGrad(r.event.name));
   renderSummary(r.settlements || []);
   renderTx(r.details);

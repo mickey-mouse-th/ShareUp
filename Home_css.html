@@ -101,6 +101,14 @@
   background-size:20px 20px;
 }
 .ev-card-body{flex:1;padding:14px 16px 10px;min-width:0}
+.ev-name-row{display:flex;align-items:center;gap:8px;min-width:0}
+.ev-icon-btn{
+  flex-shrink:0;width:26px;height:26px;border-radius:8px;
+  border:1px solid var(--bd);background:var(--s2);font-size:15px;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  transition:background var(--ease),border-color var(--ease);
+}
+.ev-icon-btn:hover{background:var(--p-dim);border-color:var(--p)}
 .ev-name{font-size:16px;font-weight:700;color:var(--t1);letter-spacing:-.3px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ev-date{font-size:13px;color:var(--t2);margin-top:5px;font-weight:500}
 

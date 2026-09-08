@@ -9,8 +9,17 @@ function authPg(p) {
   }
 }
 
+var _regPwPolicy = null;
+
 $(function () {
-  gsc('getPasswordPolicy').then(function (p) { $('#regPwHint').text(pwPolicyText(p)) }).catch(function () {});
+  gsc('getPasswordPolicy').then(function (p) {
+    _regPwPolicy = p;
+    renderPwChecklist('regPwChecklist', p);
+  }).catch(function () {});
+
+  $('#regPass').on('input', function () {
+    if (_regPwPolicy) updatePwChecklist('regPwChecklist', _regPwPolicy, $(this).val());
+  });
 
   $('#goRegister').on('click', function (e) { e.preventDefault(); authPg('reg') });
   $('#goLogin').on('click', function (e) { e.preventDefault(); authPg('login') });

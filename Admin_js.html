@@ -1,18 +1,23 @@
 <script>
 var ACCOUNTS = [];
 var _ueId = null; // account currently open in the Edit User sheet
+var USER_SEARCH = '';
 
 async function loadAccounts() {
   $('#accountsList').html(skeletonHtml(3, 'acc'));
   try {
     var r = await gsc('getAllAccounts', TK);
-    if (r.success) { ACCOUNTS = r.accounts || []; renderAccounts(ACCOUNTS) }
+    if (r.success) { ACCOUNTS = r.accounts || []; renderAccounts() }
     else _handleDataError(r.error);
   } catch (e) { _handleDataError('' + e) }
 }
 
-function renderAccounts(list) {
+function renderAccounts() {
   var $el = $('#accountsList');
+  var q = USER_SEARCH.trim().toLowerCase();
+  var list = !q ? ACCOUNTS : ACCOUNTS.filter(function (a) {
+    return a.displayName.toLowerCase().indexOf(q) !== -1 || a.username.toLowerCase().indexOf(q) !== -1;
+  });
   if (!list.length) {
     $el.html('<div class="empty"><div class="empty-t">No accounts found</div></div>');
     return;
@@ -26,8 +31,8 @@ function renderAccounts(list) {
     return '<div class="acc-card acc-tap" data-id="' + esc(a.id) + '"><div class="acc-row">' +
       avatarHtmlDirect('acc-av', a.displayName, a.photo) +
       '<div class="acc-info">' +
-      '<div class="acc-name">' + esc(a.displayName) + youBadge + (enabled ? '' : ' <small style="font-size:11px;color:var(--r);background:var(--r-dim);border-radius:6px;padding:2px 8px;border:1px solid rgba(244,63,94,.25)">Disabled</small>') + '</div>' +
-      '<div class="acc-user">@' + esc(a.username) + '</div>' +
+      '<div class="acc-name">' + highlightText(a.displayName, q) + youBadge + (enabled ? '' : ' <small style="font-size:11px;color:var(--r);background:var(--r-dim);border-radius:6px;padding:2px 8px;border:1px solid rgba(244,63,94,.25)">Disabled</small>') + '</div>' +
+      '<div class="acc-user">@' + highlightText(a.username, q) + '</div>' +
       '</div>' +
       '<span class="acc-role-badge">' + esc(a.role[0].toUpperCase() + a.role.slice(1)) + '</span>' +
       '<div class="acc-chev"><svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></div>' +
@@ -95,7 +100,7 @@ async function openAdminSettingsSheet() {
 
 // ── Theme Settings ────────────────────────────
 // Mirrors DEFAULT_THEME in Code.js - used only for the client-side "Reset to
-// Default" preview button; the actual save still goes through the server.
+// Default" button and to seed the reference table/previews before load.
 var DEFAULT_THEME_CLIENT = {
   p: '#4F46E5', pLt: '#4338CA',
   bg: '#F1F5F9', s1: '#FFFFFF', s2: '#F8FAFC', bd: '#E2E8F0',
@@ -108,36 +113,112 @@ var THEME_CSS_VAR = {
   t1: '--t1', t2: '--t2', t3: '--t3', g: '--g', r: '--r', o: '--o', b: '--b',
   hdrBg: '--hdr-bg', navBg: '--nav-bg', overlayBg: '--overlay-bg'
 };
+// Drives both the reference table and the editable rows below it. `kind`
+// picks which mini contextual preview markup/update logic to use for that
+// token (see _tpvHtml/_tpvUpdate) so "Card Surface" shows an actual card
+// swatch, "Primary" shows a sample button, etc.
+var THEME_TOKENS = [
+  { token: 'p',         group: 'Brand',              label: 'Primary',                kind: 'btn' },
+  { token: 'pLt',       group: 'Brand',              label: 'Primary Dark / Accent',   kind: 'btn' },
+  { token: 'bg',        group: 'Page',                label: 'Page Background',        kind: 'swatch' },
+  { token: 's1',        group: 'Page',                label: 'Card Surface',           kind: 'card' },
+  { token: 's2',        group: 'Page',                label: 'Secondary Surface',      kind: 'swatch' },
+  { token: 'bd',        group: 'Page',                label: 'Border',                 kind: 'border' },
+  { token: 't1',        group: 'Text',                label: 'Primary Text',           kind: 'text' },
+  { token: 't2',        group: 'Text',                label: 'Muted Text',             kind: 'text' },
+  { token: 't3',        group: 'Text',                label: 'Faint Text',             kind: 'text' },
+  { token: 'g',         group: 'Status',              label: 'Success',                kind: 'badge' },
+  { token: 'r',         group: 'Status',              label: 'Danger',                 kind: 'badge' },
+  { token: 'o',         group: 'Status',              label: 'Warning',                kind: 'badge' },
+  { token: 'b',         group: 'Status',              label: 'Info',                   kind: 'badge' },
+  { token: 'hdrBg',     group: 'Header & Navigation', label: 'Header Background',      kind: 'bar' },
+  { token: 'navBg',     group: 'Header & Navigation', label: 'Bottom Nav Background',  kind: 'bar' },
+  { token: 'overlayBg', group: 'Header & Navigation', label: 'Modal Overlay',          kind: 'overlay' }
+];
+
+function _tpvHtml(t, token) {
+  var id = 'tpv-' + token;
+  if (t.kind === 'btn')    return '<div class="tpv"><div class="tpv-btn" id="' + id + '">Aa</div></div>';
+  if (t.kind === 'card')   return '<div class="tpv"><div class="tpv-swatch" id="' + id + '" style="box-shadow:var(--shadow)"></div></div>';
+  if (t.kind === 'border') return '<div class="tpv"><div class="tpv-swatch" id="' + id + '" style="background:var(--s1)"></div></div>';
+  if (t.kind === 'text')   return '<div class="tpv"><div class="tpv-text" id="' + id + '">Aa</div></div>';
+  if (t.kind === 'badge')  return '<div class="tpv"><span class="tpv-badge" id="' + id + '">Label</span></div>';
+  if (t.kind === 'bar')    return '<div class="tpv"><div class="tpv-bar" id="' + id + '"></div></div>';
+  if (t.kind === 'overlay') return '<div class="tpv"><div class="tpv-overlay"><div class="tpv-overlay-fill" id="' + id + '" style="position:absolute;inset:0"></div></div></div>';
+  return '<div class="tpv"><div class="tpv-swatch" id="' + id + '"></div></div>';
+}
+
+function _tpvUpdate(t, token, v) {
+  var $el = $('#tpv-' + token);
+  if (!$el.length) return;
+  if (t.kind === 'btn')      $el.css({ background: v, color: '#fff' });
+  else if (t.kind === 'card' || t.kind === 'swatch') $el.css('background', v);
+  else if (t.kind === 'border') $el.css('border-color', v);
+  else if (t.kind === 'text')  $el.css('color', v);
+  else if (t.kind === 'badge') $el.css({ color: v, background: v + '26' });
+  else if (t.kind === 'bar')   $el.css('background', v);
+  else if (t.kind === 'overlay') $el.css({ background: v, opacity: .45 });
+}
+
+function _renderThemeRefTable(theme) {
+  var html = THEME_TOKENS.map(function (t) {
+    return '<div class="theme-ref-item">' +
+      '<div class="theme-ref-swatch" id="ref-' + t.token + '" style="background:' + theme[t.token] + '"></div>' +
+      '<div class="theme-ref-label">' + esc(t.label) + '</div>' +
+      '<div class="theme-ref-hex" id="ref-hex-' + t.token + '">' + esc(theme[t.token]) + '</div>' +
+      '</div>';
+  }).join('');
+  $('#themeRefTable').html(html);
+}
+
+function _renderThemeRows(theme) {
+  var groups = [], byGroup = {};
+  THEME_TOKENS.forEach(function (t) {
+    if (!byGroup[t.group]) { byGroup[t.group] = []; groups.push(t.group) }
+    byGroup[t.group].push(t);
+  });
+  var html = groups.map(function (g) {
+    return '<label class="inp-lbl theme-group-lbl">' + esc(g) + '</label>' +
+      byGroup[g].map(function (t) {
+        return '<div class="theme-row">' +
+          '<div class="theme-row-main"><span>' + esc(t.label) + '</span><span class="theme-row-hex" id="hex-' + t.token + '">' + esc(theme[t.token]) + '</span></div>' +
+          _tpvHtml(t, t.token) +
+          '<input type="color" class="theme-inp" data-token="' + t.token + '" value="' + theme[t.token] + '"/>' +
+          '</div>';
+      }).join('') + '<div class="pf-divider"></div>';
+  }).join('');
+  $('#themeRows').html(html);
+  THEME_TOKENS.forEach(function (t) { _tpvUpdate(t, t.token, theme[t.token]) });
+}
+
+// Local-only preview: updates this row's swatch/hex/mini-preview and the
+// reference table above - never touches the live app until Save is pressed.
+function _previewThemeToken(token, value) {
+  var t = THEME_TOKENS.filter(function (x) { return x.token === token })[0];
+  if (!t) return;
+  $('#hex-' + token).text(value);
+  $('#ref-' + token).css('background', value);
+  $('#ref-hex-' + token).text(value);
+  _tpvUpdate(t, token, value);
+}
 
 function _applyThemeLive(theme) {
   var root = document.documentElement.style;
-  $('.theme-inp').each(function () {
-    var token = $(this).data('token');
-    var v = theme[token];
-    if (v) root.setProperty(THEME_CSS_VAR[token], v);
+  THEME_TOKENS.forEach(function (t) {
+    if (theme[t.token]) root.setProperty(THEME_CSS_VAR[t.token], theme[t.token]);
   });
 }
 
-var _themeOriginal = null;
-
 async function openThemeSettingsSheet() {
   openSheet('shThemeSettings');
+  _renderThemeRefTable(DEFAULT_THEME_CLIENT);
+  _renderThemeRows(DEFAULT_THEME_CLIENT);
   try {
     var r = await gsc('getTheme');
     if (!r.success) { toast(r.error || 'Failed to load theme', 'err'); closeSheets(); return }
-    _themeOriginal = r.theme;
-    $('.theme-inp').each(function () {
-      var token = $(this).data('token');
-      if (r.theme[token]) $(this).val(r.theme[token]);
-    });
+    _renderThemeRefTable(r.theme);
+    _renderThemeRows(r.theme);
   } catch (e) { toast('' + e, 'err') }
-}
-
-// Closing without saving should not leave the live-previewed (unsaved)
-// colors applied app-wide - revert to whatever was loaded when the sheet opened.
-function closeThemeSettingsSheet() {
-  if (_themeOriginal) _applyThemeLive(_themeOriginal);
-  closeSheets();
 }
 
 $(function () {
@@ -151,17 +232,28 @@ $(function () {
     width: '130px'
   });
 
-  $('#btnOpenAdminSettings').on('click', openAdminSettingsSheet);
-  $('#btnOpenThemeSettings').on('click', openThemeSettingsSheet);
-  $('#shThemeSettingsClose').on('click', closeThemeSettingsSheet);
-  $('#overlay').on('click', function () {
-    if (_activeSheet === 'shThemeSettings') closeThemeSettingsSheet();
+  $('#tabAdminSettings').on('click', openAdminSettingsSheet);
+  $('#tabAdminTheme').on('click', openThemeSettingsSheet);
+  $('#tabAdminUser').on('click', function () {
+    $('#pgAdmin .tab-bar .tab-btn').removeClass('on');
+    $(this).addClass('on');
   });
 
+  $('#userSearchInp').on('input', function () {
+    USER_SEARCH = $(this).val();
+    $('#userSearchClear').toggleClass('hidden', !USER_SEARCH);
+    renderAccounts();
+  });
+  $('#userSearchClear').on('click', function () {
+    USER_SEARCH = '';
+    $('#userSearchInp').val('').trigger('focus');
+    $(this).addClass('hidden');
+    renderAccounts();
+  });
+  $('#shThemeSettingsClose').on('click', closeSheets);
+
   $('#shThemeSettings').on('input', '.theme-inp', function () {
-    var theme = {};
-    $('.theme-inp').each(function () { theme[$(this).data('token')] = $(this).val() });
-    _applyThemeLive(theme);
+    _previewThemeToken($(this).data('token'), $(this).val());
   });
 
   $('#btnThemeSave').on('click', async function () {
@@ -169,17 +261,14 @@ $(function () {
     $('.theme-inp').each(function () { theme[$(this).data('token')] = $(this).val() });
     try {
       var r = await gsc('saveTheme', TK, theme);
-      if (r.success) { _themeOriginal = r.theme; toast('Theme saved'); closeSheets() }
+      if (r.success) { _applyThemeLive(r.theme); toast('Theme saved'); closeSheets() }
       else toast(r.error, 'err');
     } catch (e) { toast('' + e, 'err') }
   });
 
   $('#btnThemeReset').on('click', function () {
-    _applyThemeLive(DEFAULT_THEME_CLIENT);
-    $('.theme-inp').each(function () {
-      var token = $(this).data('token');
-      if (DEFAULT_THEME_CLIENT[token]) $(this).val(DEFAULT_THEME_CLIENT[token]);
-    });
+    _renderThemeRefTable(DEFAULT_THEME_CLIENT);
+    _renderThemeRows(DEFAULT_THEME_CLIENT);
   });
 
   $('#asSessionMin').on('input', function () {
