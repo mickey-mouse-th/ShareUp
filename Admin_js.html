@@ -20,7 +20,7 @@ function renderAccounts(list) {
   var html = $.map(list, function (a) {
     var isMe = ME && a.id === ME.id;
     var youBadge = isMe
-      ? ' <small style="font-size:11px;color:var(--p-lt);background:var(--p-dim);border-radius:6px;padding:2px 8px;border:1px solid rgba(147,51,234,.22)">You</small>'
+      ? ' <small style="font-size:11px;color:var(--p-lt);background:var(--p-dim);border-radius:6px;padding:2px 8px;border:1px solid var(--p-glow)">You</small>'
       : '';
     var enabled = a.status !== 'disabled';
     return '<div class="acc-card acc-tap" data-id="' + esc(a.id) + '"><div class="acc-row">' +
