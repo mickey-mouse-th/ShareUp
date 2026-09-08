@@ -66,10 +66,15 @@
   flex:1;min-width:0;background:var(--s1);border:1px solid var(--bd);
   border-left:3.5px solid var(--p);border-radius:var(--rad-sm);
   padding:16px 18px 14px;margin-bottom:16px;margin-left:2px;
-  box-shadow:var(--shadow);cursor:pointer;
-  transition:box-shadow .18s ease,transform .18s ease;
+  box-shadow:var(--shadow);
 }
-.sched-card:hover{box-shadow:var(--shadow-lg);transform:translateY(-1px)}
+.sched-slip-btn{
+  width:32px;height:32px;border-radius:var(--rad-sm);background:var(--p-dim);
+  border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;cursor:pointer;transition:background var(--ease);
+}
+.sched-slip-btn:hover{background:var(--bd)}
+.sched-slip-btn svg{width:16px;height:16px;fill:var(--p-lt)}
 .sched-card-footer{display:flex;border-top:1px solid var(--bd);margin-top:12px;padding-top:2px}
 .sched-act-btn{
   flex:1;display:flex;align-items:center;justify-content:center;gap:5px;
