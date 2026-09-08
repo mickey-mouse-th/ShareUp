@@ -73,6 +73,15 @@ function avatarHtmlDirect(cls, name, photo) {
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+// Escapes text like esc(), but wraps every case-insensitive match of `q` in
+// a <mark class="search-hl"> - used to highlight search matches in list UIs.
+function highlightText(text, q) {
+  var safe = esc(text);
+  q = (q || '').trim();
+  if (!q) return safe;
+  var safeQ = esc(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return safe.replace(new RegExp('(' + safeQ + ')', 'ig'), '<mark class="search-hl">$1</mark>');
+}
 function fmtAmt(n) {
   return '฿' + parseFloat(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }

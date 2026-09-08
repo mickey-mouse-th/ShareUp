@@ -163,6 +163,40 @@ button,input,select,textarea{font:inherit;-webkit-appearance:none}
 .empty-t{font-size:19px;font-weight:700;color:var(--t1);margin-bottom:8px;letter-spacing:-.3px}
 .empty-s{font-size:15px;color:var(--t2);line-height:1.6}
 
+/* ── Search highlight ─────────────────────────── */
+.search-hl{background:#fef9c3;color:#78350f;border-radius:2px;padding:0 1px;font-style:normal}
+
+/* ── Select2 overrides ─────────────────────────── */
+.select2-container--default .select2-selection--single{
+  height:48px;border:1.5px solid var(--bd);border-radius:var(--rad-sm);
+  background:var(--s1);display:flex;align-items:center;
+}
+.select2-container--default .select2-selection--single .select2-selection__rendered{
+  line-height:48px;padding-left:16px;padding-right:36px;font-size:15px;color:var(--t1);
+}
+.select2-container--default .select2-selection--single .select2-selection__placeholder{color:var(--t3)}
+.select2-container--default .select2-selection--single .select2-selection__arrow{height:48px;right:10px}
+.select2-container--default.select2-container--disabled .select2-selection--single{opacity:.5}
+.select2-dropdown{
+  border:1.5px solid var(--bd);border-radius:var(--rad-sm);
+  box-shadow:var(--shadow-lg);overflow:hidden;
+}
+.select2-results__options{scrollbar-width:none}
+.select2-results__options::-webkit-scrollbar{display:none}
+.select2-container--default .select2-results__option{padding:11px 16px;font-size:15px;color:var(--t1)}
+.select2-container--default .select2-results__option--highlighted[aria-selected]{
+  background:var(--p);color:#fff;
+}
+.select2-container--default .select2-results__option[aria-selected=true]{
+  background:var(--p-dim);color:var(--p-lt);font-weight:600;
+}
+.select2-search--dropdown{padding:8px}
+.select2-search--dropdown .select2-search__field{
+  border:1px solid var(--bd);border-radius:8px;padding:8px 10px;font-size:14px;
+  background:var(--s1);color:var(--t1);outline:none;
+}
+.select2-container--open .select2-dropdown{z-index:100000}
+
 /* ── Skeleton Loader ─────────────────────────── */
 .sk-wrap{display:flex;flex-direction:column;gap:12px}
 .sk-card{background:var(--s1);border:1px solid var(--bd);border-radius:22px;padding:16px 18px}

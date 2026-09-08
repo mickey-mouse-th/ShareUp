@@ -52,7 +52,7 @@ function openUserEditSheet(id) {
   _renderUeAvatar(a.displayName, a.photo);
   $('#ueName').text(a.displayName);
   $('#ueUsername').text('@' + a.username);
-  $('#ueRoleSel').val(a.role).prop('disabled', isMe);
+  $('#ueRoleSel').val(a.role).trigger('change.select2').prop('disabled', isMe).select2('enable', !isMe);
   $('#ueStatusTgl').prop('checked', enabled).prop('disabled', isMe);
   $('#ueTglWrap').toggleClass('on', enabled);
   $('#ueStatusHint').text(enabled ? 'Active — can sign in' : 'Disabled — can\'t sign in');
@@ -143,6 +143,12 @@ function closeThemeSettingsSheet() {
 $(function () {
   $('#accountsList').on('click', '.acc-tap', function () {
     openUserEditSheet($(this).data('id'));
+  });
+
+  $('#ueRoleSel').select2({
+    minimumResultsForSearch: Infinity,
+    dropdownParent: $(document.body),
+    width: '130px'
   });
 
   $('#btnOpenAdminSettings').on('click', openAdminSettingsSheet);

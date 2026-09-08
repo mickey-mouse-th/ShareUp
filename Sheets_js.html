@@ -252,7 +252,13 @@ function buildTxFriendPickers(checkedIds) {
   var payerHtml = $.map(FRIENDS, function (f) {
     return '<option value="' + esc(f.id) + '">' + esc(f.name) + '</option>';
   }).join('');
-  $('#inpPayer').html(payerHtml);
+  var $payer = $('#inpPayer');
+  if ($payer.hasClass('select2-hidden-accessible')) $payer.select2('destroy');
+  $payer.html(payerHtml).select2({
+    minimumResultsForSearch: Infinity,
+    dropdownParent: $(document.body),
+    width: '100%'
+  });
   var ckHtml = $.map(FRIENDS, function (f) {
     var checked = checkedIds.indexOf(f.id) !== -1;
     return '<div class="ck-row' + (checked ? ' checked' : '') + '" data-id="' + esc(f.id) + '">' +
@@ -304,7 +310,7 @@ function openEditTxSheet(tid) {
   $('#btnSubmitTx').text('Save Changes');
   $('#inpDesc').val(f.description || '');
   buildTxFriendPickers(friendIds);
-  $('#inpPayer').val(f.payId);
+  $('#inpPayer').val(f.payId).trigger('change.select2');
 
   if (isCustom) {
     var prefill = {};

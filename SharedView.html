@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
 <meta name="theme-color" content="#f1f5f9"/>
 <title>ShareUp - Shared Event</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css"/>
 <?!= include('Shared_css') ?>
 <?!= include('Detail_css') ?>
 <?!= include('Sheets_css') ?>
@@ -189,6 +190,7 @@
 </div>
 
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js"></script>
 <script>
 var SHARE_TOKEN = '<?!= shareToken ?>';
 // True only if the link was 'edit' at page-load time - the add/edit/delete
@@ -553,7 +555,13 @@ function buildTxFriendPickers(checkedIds) {
   var payerHtml = $.map(SHARE_DATA.friends, function (f) {
     return '<option value="' + esc(f.id) + '">' + esc(f.name) + '</option>';
   }).join('');
-  $('#inpPayer').html(payerHtml);
+  var $payer = $('#inpPayer');
+  if ($payer.hasClass('select2-hidden-accessible')) $payer.select2('destroy');
+  $payer.html(payerHtml).select2({
+    minimumResultsForSearch: Infinity,
+    dropdownParent: $(document.body),
+    width: '100%'
+  });
   var ckHtml = $.map(SHARE_DATA.friends, function (f) {
     var checked = checkedIds.indexOf(f.id) !== -1;
     return '<div class="ck-row' + (checked ? ' checked' : '') + '" data-id="' + esc(f.id) + '">' +
@@ -591,7 +599,7 @@ function openEditTxSheet(tid) {
   $('#btnSubmitTx').text('Save Changes');
   $('#inpDesc').val(f.description || '');
   buildTxFriendPickers(friendIds);
-  $('#inpPayer').val(f.payId);
+  $('#inpPayer').val(f.payId).trigger('change.select2');
 
   if (isCustom) {
     var prefill = {};

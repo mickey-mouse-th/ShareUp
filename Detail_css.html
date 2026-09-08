@@ -49,10 +49,38 @@
 .btn-export:active{background:var(--p-dim)}
 .btn-export svg{width:16px;height:16px;fill:currentColor}
 
-.tx-card{
-  background:var(--s1);border:1px solid var(--bd);border-radius:var(--rad);
-  margin-bottom:12px;overflow:hidden;padding:18px 20px;box-shadow:var(--shadow);
+/* ── Transaction timeline ─────────────────────── */
+.tx-timeline{padding:4px 4px 8px}
+.sched-item{display:flex;gap:0}
+.sched-time-col{width:56px;flex-shrink:0;text-align:right;padding-top:15px;padding-right:12px}
+.sched-time{font-size:13px;font-weight:800;color:var(--t1);line-height:1.15;letter-spacing:-.3px}
+.sched-date{font-size:10px;font-weight:500;color:var(--t3);margin-top:3px}
+.sched-axis{display:flex;flex-direction:column;align-items:center;flex-shrink:0;width:26px}
+.sched-dot{
+  width:14px;height:14px;border-radius:50%;flex-shrink:0;margin-top:19px;
+  border:2.5px solid var(--p);background:var(--s1);
+  box-shadow:0 0 0 4px var(--p-dim);
 }
+.sched-line{width:2px;flex:1;background:linear-gradient(to bottom,var(--bd) 40%,transparent);margin:6px 0 0;min-height:20px}
+.sched-card{
+  flex:1;min-width:0;background:var(--s1);border:1px solid var(--bd);
+  border-left:3.5px solid var(--p);border-radius:var(--rad-sm);
+  padding:16px 18px 14px;margin-bottom:16px;margin-left:2px;
+  box-shadow:var(--shadow);cursor:pointer;
+  transition:box-shadow .18s ease,transform .18s ease;
+}
+.sched-card:hover{box-shadow:var(--shadow-lg);transform:translateY(-1px)}
+.sched-card-footer{display:flex;border-top:1px solid var(--bd);margin-top:12px;padding-top:2px}
+.sched-act-btn{
+  flex:1;display:flex;align-items:center;justify-content:center;gap:5px;
+  padding:10px 6px;background:none;border:none;cursor:pointer;
+  color:var(--t2);font-size:12px;font-weight:500;
+  transition:background var(--ease),color var(--ease);
+}
+.sched-act-btn+.sched-act-btn{border-left:1px solid var(--bd)}
+.sched-act-btn:hover{background:var(--s2);color:var(--t1)}
+.sched-act-btn.del:hover{background:var(--r-dim);color:var(--r)}
+.sched-act-btn svg{width:15px;height:15px;fill:currentColor}
 .tx-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:14px}
 .tx-av{
   width:50px;height:50px;border-radius:16px;
@@ -67,6 +95,12 @@
 .tx-chip{
   font-size:13px;font-weight:600;color:var(--p-lt);
   background:var(--p-dim);border-radius:var(--rad);padding:5px 14px;border:1px solid var(--bd);
+}
+/* Kept for SharedView.html's public transaction list, which still uses the
+   pre-timeline card layout (not yet migrated - see main app's .sched-card). */
+.tx-card{
+  background:var(--s1);border:1px solid var(--bd);border-radius:var(--rad);
+  margin-bottom:12px;overflow:hidden;padding:18px 20px;box-shadow:var(--shadow);
 }
 .tx-foot{display:flex;align-items:center;justify-content:space-between}
 .tx-date{font-size:13px;color:var(--t3)}

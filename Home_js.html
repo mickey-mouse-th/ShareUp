@@ -43,26 +43,23 @@ function renderEvents() {
     return;
   }
   var html = list.map(function (ev) {
-    return '<div class="ev-card" data-ev=\'' + esc(JSON.stringify(ev)) + '\'>' +
-      '<div class="ev-card-banner" style="background:' + bannerGrad(ev.name) + '">' + evEmoji(ev.name) + '</div>' +
+    var isActive = ev.active !== false;
+    return '<div class="ev-card' + (isActive ? '' : ' disabled') + '" data-ev=\'' + esc(JSON.stringify(ev)) + '\'>' +
+      '<div class="ev-card-banner" style="background:' + bannerGrad(ev.name) + '">' + evEmoji(ev.name) +
+      (isActive ? '' : '<span class="ev-disabled-badge">Disabled</span>') +
+      '</div>' +
       '<div class="ev-card-body">' +
-      '<div class="ev-name">' + esc(ev.name) + '</div>' +
+      '<div class="ev-name">' + highlightText(ev.name, q) + '</div>' +
       '<div class="ev-date">' + fmtDate(ev.createdAt) + '</div>' +
       '</div>' +
       '<div class="ev-card-actions">' +
-      '<button class="ev-action-btn view">' +
-      '<svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>View</button>' +
       '<button class="ev-action-btn edit ev-edit">' +
       '<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75z"/></svg>Edit</button>' +
-      '<div class="ev-more-wrap">' +
-      '<button class="ev-action-btn more ev-more-toggle">' +
-      '<svg viewBox="0 0 24 24"><path d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm0 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg></button>' +
-      '<div class="ev-more-menu hidden">' +
-      '<button class="ev-more-item ev-share"><svg viewBox="0 0 24 24"><path d="M18 16.08a2.9 2.9 0 0 0-1.94.75l-7.05-4.11c.05-.23.09-.47.09-.72s-.04-.49-.09-.72l6.97-4.06c.56.53 1.31.86 2.14.86 1.75 0 3.16-1.42 3.16-3.16A3.16 3.16 0 1 0 15.02 8c0 .25.04.49.09.72L8.14 12.8a3.14 3.14 0 1 0 0 4.38l7.04 4.13c-.05.21-.08.44-.08.67 0 1.71 1.39 3.1 3.1 3.1 1.71 0 3.1-1.39 3.1-3.1 0-1.71-1.39-3.1-3.1-3.1z"/></svg>Share</button>' +
-      '<button class="ev-more-item del ev-del" data-id="' + esc(ev.id) + '" data-name="' + esc(ev.name) + '">' +
-      '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>Delete</button>' +
-      '</div>' +
-      '</div>' +
+      '<button class="ev-action-btn toggle ev-toggle-active" title="' + (isActive ? 'Disable event' : 'Enable event') + '">' +
+      (isActive
+        ? '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12z"/></svg>Disable'
+        : '<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>Enable') +
+      '</button>' +
       '</div>' +
       '</div>';
   }).join('');
@@ -70,11 +67,17 @@ function renderEvents() {
 }
 
 $(function () {
+  $('#evStatusSel').select2({
+    minimumResultsForSearch: Infinity,
+    dropdownParent: $(document.body),
+    width: '160px'
+  });
+
   $('#homeFilterBar').on('click', '.stat-pill', function () {
     HOME_FILTER = $(this).data('filter');
     $('#homeFilterBar .stat-pill').removeClass('on');
     $(this).addClass('on');
-    $('#evStatusSel').val(HOME_FILTER);
+    $('#evStatusSel').val(HOME_FILTER).trigger('change.select2');
     renderEvents();
   });
 
@@ -86,11 +89,18 @@ $(function () {
 
   $('#evSearchInp').on('input', function () {
     HOME_SEARCH = $(this).val();
+    $('#evSearchClear').toggleClass('hidden', !HOME_SEARCH);
+    renderEvents();
+  });
+  $('#evSearchClear').on('click', function () {
+    HOME_SEARCH = '';
+    $('#evSearchInp').val('').trigger('focus');
+    $(this).addClass('hidden');
     renderEvents();
   });
 
   $('#eventsList').on('click', '.ev-card', function (e) {
-    if ($(e.target).closest('.ev-edit, .ev-more-wrap').length) return;
+    if ($(e.target).closest('.ev-edit, .ev-toggle-active').length) return;
     var ev = JSON.parse($(this).attr('data-ev'));
     openDetail(ev);
   });
@@ -99,27 +109,19 @@ $(function () {
     var ev = JSON.parse($(this).closest('.ev-card').attr('data-ev'));
     openRenameEventSheet(ev);
   });
-  $('#eventsList').on('click', '.ev-more-toggle', function (e) {
+  $('#eventsList').on('click', '.ev-toggle-active', async function (e) {
     e.stopPropagation();
-    var $menu = $(this).siblings('.ev-more-menu');
-    var isOpen = !$menu.hasClass('hidden');
-    $('.ev-more-menu').addClass('hidden');
-    if (!isOpen) $menu.removeClass('hidden');
-  });
-  $('#eventsList').on('click', '.ev-share', function (e) {
-    e.stopPropagation();
-    $('.ev-more-menu').addClass('hidden');
     var ev = JSON.parse($(this).closest('.ev-card').attr('data-ev'));
-    CUR_EV = ev;
-    openShareSheet();
-  });
-  $('#eventsList').on('click', '.ev-del', function (e) {
-    e.stopPropagation();
-    $('.ev-more-menu').addClass('hidden');
-    askDel('event', $(this).data('id'), $(this).data('name'));
-  });
-  $(document).on('click', function () {
-    $('.ev-more-menu').addClass('hidden');
+    try {
+      var r = await gsc('setEventActive', TK, ev.id, ev.active === false);
+      if (r.success) {
+        var idx = -1;
+        for (var i = 0; i < EVENTS.length; i++) { if (EVENTS[i].id === ev.id) { idx = i; break } }
+        if (idx !== -1) EVENTS[idx].active = r.active;
+        toast(r.active ? 'Event enabled' : 'Event disabled');
+        renderEvents();
+      } else toast(r.error, 'err');
+    } catch (e2) { toast('' + e2, 'err') }
   });
 });
 </script>

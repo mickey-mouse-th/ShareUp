@@ -72,7 +72,7 @@ function initSheets(ss) {
   friendsSheet.appendRow(['id', 'accountId', 'name', 'isSelf']);
 
   var eventsSheet = ss.insertSheet('Events');
-  eventsSheet.appendRow(['id', 'name', 'accountId', 'createdAt']);
+  eventsSheet.appendRow(['id', 'name', 'accountId', 'createdAt', 'active']);
 
   var detailsSheet = ss.insertSheet('Details');
   detailsSheet.appendRow(['id', 'eventId', 'transactionId', 'payId', 'friendId', 'amount', 'totalAmount', 'description', 'createdAt']);
@@ -623,7 +623,7 @@ function getHomeData(token) {
     var events = [], friends = [], friendMap = {};
     for (var i = 1; i < evData.length; i++) {
       if (evData[i][2] === user.id)
-        events.push({ id: evData[i][0], name: evData[i][1], accountId: evData[i][2], createdAt: evData[i][3] });
+        events.push({ id: evData[i][0], name: evData[i][1], accountId: evData[i][2], createdAt: evData[i][3], active: evData[i][4] !== false });
     }
     events.sort(function(a,b){ return b.createdAt > a.createdAt ? 1 : -1 });
     for (var i = 1; i < frData.length; i++) {
@@ -1004,6 +1004,24 @@ function renameEvent(token, eventId, name) {
       if (data[i][0] === eventId && data[i][2] === user.id) {
         sheet.getRange(i + 1, 2).setValue(name.trim());
         return { success: true, name: name.trim() };
+      }
+    }
+    return { success: false, error: 'Event not found' };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function setEventActive(token, eventId, active) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    var sheet = ss.getSheetByName('Events');
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] === eventId && data[i][2] === user.id) {
+        sheet.getRange(i + 1, 5).setValue(active === true);
+        return { success: true, active: active === true };
       }
     }
     return { success: false, error: 'Event not found' };

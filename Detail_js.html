@@ -89,7 +89,7 @@ function renderDetails() {
     grp[d.transactionId].push(d);
   });
   ord.reverse();
-  var html = $.map(ord, function (tid) {
+  var html = $.map(ord, function (tid, i) {
     var rows = grp[tid], f = rows[0];
     var pn    = fm[f.payId] || f.payId;
     var total = parseFloat(f.totalAmount);
@@ -101,7 +101,13 @@ function renderDetails() {
       var name = fm[r.friendId] || r.friendId;
       return '<span class="tx-chip">' + esc(name) + (isCustom ? ' ' + fmtAmt(r.amount) : '') + '</span>';
     }).join('');
-    return '<div class="tx-card">' +
+    var d = new Date(f.createdAt);
+    var timeStr = isNaN(d) ? '' : d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    var isLast = i === ord.length - 1;
+    return '<div class="sched-item">' +
+      '<div class="sched-time-col"><div class="sched-time">' + esc(timeStr) + '</div><div class="sched-date">' + fmtDate(f.createdAt) + '</div></div>' +
+      '<div class="sched-axis"><div class="sched-dot"></div>' + (isLast ? '' : '<div class="sched-line"></div>') + '</div>' +
+      '<div class="sched-card" data-tid="' + esc(tid) + '">' +
       '<div class="tx-head">' +
       avatarHtml('tx-av', pn, f.payId) +
       '<div class="tx-meta">' +
@@ -111,19 +117,16 @@ function renderDetails() {
       '<div class="tx-amt">' + fmtAmt(total) + '</div>' +
       '</div>' +
       '<div class="tx-people">' + chips + '</div>' +
-      '<div class="tx-foot">' +
-      '<span class="tx-date">' + fmtDate(f.createdAt) + '</span>' +
-      '<div class="tx-actions">' +
+      '<div class="sched-card-footer">' +
+      '<button class="sched-act-btn tx-edit" data-tid="' + esc(tid) + '">' +
+      '<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>Edit</button>' +
       (SLIPS[tid] && SLIPS[tid].length ?
-        '<button class="btn-slip tx-view-slip" data-tid="' + esc(tid) + '">' +
-        '<svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>' +
-        '</button>' : '') +
-      '<button class="btn-edit tx-edit" data-tid="' + esc(tid) + '">' +
-      '<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>' +
-      '</button>' +
-      '<button class="btn-del tx-del" data-tid="' + esc(tid) + '" data-desc="' + esc(desc) + '">' +
-      '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>' +
-      '</button>' +
+        '<button class="sched-act-btn tx-view-slip" data-tid="' + esc(tid) + '">' +
+        '<svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>Transaction</button>'
+        : '<button class="sched-act-btn tx-view" data-tid="' + esc(tid) + '">' +
+        '<svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>Transaction</button>') +
+      '<button class="sched-act-btn del tx-del" data-tid="' + esc(tid) + '" data-desc="' + esc(desc) + '">' +
+      '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>Delete</button>' +
       '</div>' +
       '</div>' +
       '</div>';
@@ -489,11 +492,15 @@ $(function () {
   $('#tabTx').on('click', function () { switchTab('tx') });
   $('#tabSum').on('click', function () { switchTab('sum') });
   $('#tabFr').on('click', function () { switchTab('friends') });
+  $('#txList').on('click', '.sched-card', function (e) {
+    if ($(e.target).closest('.sched-card-footer').length) return;
+    openEditTxSheet($(this).data('tid'));
+  });
   $('#txList').on('click', '.tx-del', function (e) {
     e.stopPropagation();
     askDel('tx', $(this).data('tid'), $(this).data('desc'));
   });
-  $('#txList').on('click', '.tx-edit', function (e) {
+  $('#txList').on('click', '.tx-edit, .tx-view', function (e) {
     e.stopPropagation();
     openEditTxSheet($(this).data('tid'));
   });

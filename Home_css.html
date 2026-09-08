@@ -49,13 +49,21 @@
   width:18px;height:18px;fill:var(--t3);pointer-events:none;
 }
 .ev-search-inp{
-  width:100%;height:48px;padding:0 14px 0 42px;
+  width:100%;height:48px;padding:0 40px 0 42px;
   border:1.5px solid var(--bd);border-radius:var(--rad);
   background:var(--s1);font-size:15px;color:var(--t1);
   outline:none;box-shadow:var(--shadow);transition:border-color var(--ease);
 }
 .ev-search-inp::placeholder{color:var(--t3)}
 .ev-search-inp:focus{border-color:var(--p)}
+.ev-search-clear{
+  position:absolute;right:10px;top:50%;transform:translateY(-50%);
+  width:24px;height:24px;border-radius:50%;border:none;background:var(--s2);
+  color:var(--t3);display:flex;align-items:center;justify-content:center;cursor:pointer;
+  transition:background var(--ease),color var(--ease);
+}
+.ev-search-clear svg{width:14px;height:14px;fill:currentColor}
+.ev-search-clear:hover{background:var(--bd);color:var(--t1)}
 .ev-status-sel{
   flex-shrink:0;height:48px;padding:0 14px;
   border:1.5px solid var(--bd);border-radius:var(--rad);
@@ -67,6 +75,10 @@
 @media (min-width:640px){
   .events-grid{display:grid;grid-template-columns:1fr 1fr}
   .events-grid .empty{grid-column:1/-1}
+  /* Skeleton cards are wrapped in their own .sk-wrap (see skeletonHtml()) -
+     let it disappear from layout so its .sk-card children land directly in
+     the 2-col grid instead of stacking in a single left-hand column. */
+  .events-grid .sk-wrap{display:contents}
 }
 
 .ev-card{
@@ -101,26 +113,15 @@
 }
 .ev-action-btn+.ev-action-btn{border-left:1px solid var(--bd)}
 .ev-action-btn:hover{background:var(--s2);color:var(--t1)}
-.ev-action-btn.del:hover{background:var(--r-dim);color:var(--r)}
+.ev-action-btn.toggle:hover{background:var(--o-dim);color:var(--o)}
 .ev-action-btn svg{width:16px;height:16px;fill:currentColor}
 
-.ev-more-wrap{flex:1;position:relative;display:flex}
-.ev-more-wrap .ev-action-btn{flex:1}
-.ev-more-menu{
-  position:absolute;bottom:calc(100% + 6px);right:0;z-index:30;min-width:150px;
-  background:var(--s1);border:1px solid var(--bd);border-radius:var(--rad-sm);
-  box-shadow:var(--shadow-lg);overflow:hidden;
+/* ── Disabled event ────────────────────────────── */
+.ev-card.disabled{opacity:.6}
+.ev-card.disabled .ev-card-banner{filter:grayscale(.6) drop-shadow(0 2px 6px rgba(0,0,0,.25))}
+.ev-disabled-badge{
+  position:absolute;top:8px;right:10px;
+  background:rgba(0,0,0,.35);color:#fff;font-size:10px;font-weight:700;
+  padding:3px 9px;border-radius:20px;letter-spacing:.3px;
 }
-.ev-more-menu.hidden{display:none}
-.ev-more-item{
-  width:100%;display:flex;align-items:center;gap:9px;padding:11px 14px;
-  background:none;border:none;cursor:pointer;text-align:left;
-  font-size:13px;font-weight:500;color:var(--t1);
-  transition:background var(--ease);
-}
-.ev-more-item+.ev-more-item{border-top:1px solid var(--bd)}
-.ev-more-item:hover{background:var(--s2)}
-.ev-more-item.del{color:var(--r)}
-.ev-more-item.del:hover{background:var(--r-dim)}
-.ev-more-item svg{width:16px;height:16px;fill:currentColor;flex-shrink:0}
 </style>
