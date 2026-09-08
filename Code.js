@@ -12,15 +12,15 @@ var DEFAULT_SETTINGS = {
   pwRequireNumber: false,
   pwRequireSpecial: false
 };
-// Mirrors the current hand-picked dark/amber palette baked into Shared_css.html's
-// :root, so opening the theme picker for the first time shows accurate starting
-// colors. buildThemeCss() only emits overrides for keys actually saved (see below),
-// so nothing visually changes until an admin explicitly saves via the picker.
+// Mirrors the light indigo palette baked into Shared_css.html's :root, so opening
+// the theme picker for the first time shows accurate starting colors.
+// buildThemeCss() only emits overrides for keys actually saved (see below), so
+// nothing visually changes until an admin explicitly saves via the picker.
 var DEFAULT_THEME = {
-  p: '#F59E0B', pLt: '#FCD34D',
-  bg: '#100F22', s1: '#1A1935', s2: '#22213E', bd: '#2C2A50',
-  t1: '#FFFFFF', t2: '#A6A9C2', t3: '#55566B',
-  g: '#22C55E', r: '#F43F5E', o: '#EA580C', b: '#38BDF8',
+  p: '#4F46E5', pLt: '#4338CA',
+  bg: '#F1F5F9', s1: '#FFFFFF', s2: '#F8FAFC', bd: '#E2E8F0',
+  t1: '#0F172A', t2: '#64748B', t3: '#94A3B8',
+  g: '#15803D', r: '#EF4444', o: '#B45309', b: '#0F766E',
   hdrBg: '#FFFFFF', navBg: '#FFFFFF', overlayBg: '#0F172A'
 };
 
