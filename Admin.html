@@ -11,16 +11,58 @@
         Settings
       </button>
     </div>
-    <div class="sec-row"><span class="sec-lbl">All Accounts</span><div class="sec-line"></div></div>
-    <div class="home-toolbar">
-      <div class="ev-search-wrap">
-        <svg class="ev-search-icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-        <input class="ev-search-inp" id="userSearchInp" type="text" placeholder="Search accounts..." autocomplete="off"/>
-        <button type="button" class="ev-search-clear hidden" id="userSearchClear">
-          <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-        </button>
+    <div id="panelAdminUser">
+      <div class="sec-row"><span class="sec-lbl">All Accounts</span><div class="sec-line"></div></div>
+      <div class="home-toolbar">
+        <div class="ev-search-wrap">
+          <svg class="ev-search-icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+          <input class="ev-search-inp" id="userSearchInp" type="text" placeholder="Search accounts..." autocomplete="off"/>
+          <button type="button" class="ev-search-clear hidden" id="userSearchClear">
+            <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          </button>
+        </div>
       </div>
+      <div id="accountsList"></div>
     </div>
-    <div id="accountsList"></div>
+
+    <div id="panelAdminTheme" style="display:none">
+      <div class="theme-hint">Tap any tile to change its color. Nothing on the live app changes until you press Save.</div>
+      <div id="themeGroups"></div>
+      <button class="sh-btn" id="btnThemeSave" style="margin-top:8px">Save Theme</button>
+      <button class="sh-btn sh-btn-ghost" id="btnThemeReset" style="margin-top:8px">Reset to Default</button>
+    </div>
+
+    <div id="panelAdminSettings" style="display:none">
+      <div class="inp-g">
+        <label class="inp-lbl">Session Length (minutes)</label>
+        <input class="inp" id="asSessionMin" type="number" min="1" step="1" placeholder="e.g. 43200"/>
+        <div class="pf-hint" id="asSessionHint"></div>
+      </div>
+
+      <div class="pf-divider"></div>
+
+      <label class="inp-lbl">Password Requirements</label>
+      <div class="inp-g">
+        <input class="inp" id="asPwMinLen" type="number" min="1" step="1" placeholder="Minimum length"/>
+      </div>
+      <div class="ue-status-row" style="margin-top:0">
+        <div class="ue-status-hint">Require uppercase letter (A-Z)</div>
+        <label class="tgl" id="asPwUpperWrap"><input type="checkbox" id="asPwUpper"/><span class="tgl-track"></span></label>
+      </div>
+      <div class="ue-status-row">
+        <div class="ue-status-hint">Require lowercase letter (a-z)</div>
+        <label class="tgl" id="asPwLowerWrap"><input type="checkbox" id="asPwLower"/><span class="tgl-track"></span></label>
+      </div>
+      <div class="ue-status-row">
+        <div class="ue-status-hint">Require number (0-9)</div>
+        <label class="tgl" id="asPwNumberWrap"><input type="checkbox" id="asPwNumber"/><span class="tgl-track"></span></label>
+      </div>
+      <div class="ue-status-row">
+        <div class="ue-status-hint">Require special character</div>
+        <label class="tgl" id="asPwSpecialWrap"><input type="checkbox" id="asPwSpecial"/><span class="tgl-track"></span></label>
+      </div>
+
+      <button class="sh-btn" id="btnAsSave" style="margin-top:8px">Save Settings</button>
+    </div>
   </div>
 </div>

@@ -72,7 +72,7 @@ select.inp option{background:var(--s1);color:var(--t1)}
 .sh-btn-ghost{background:var(--s2);color:var(--t2);box-shadow:none;border:1px solid var(--bd);margin-top:12px}
 
 /* ── Event icon picker ───────────────────────── */
-.icon-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+.icon-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(42px,1fr));gap:8px}
 .icon-pick{
   aspect-ratio:1;display:flex;align-items:center;justify-content:center;
   font-size:22px;border-radius:var(--rad-sm);border:2px solid var(--bd);
@@ -86,45 +86,31 @@ select.inp option{background:var(--s1);color:var(--t1)}
   font-size:13px;color:var(--t2);background:var(--s2);border:1px solid var(--bd);
   border-radius:var(--rad-sm);padding:10px 14px;margin-bottom:16px;line-height:1.5;
 }
-.theme-ref-table{
-  display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px;margin-bottom:4px;
+.theme-group{margin-bottom:22px}
+.theme-group-lbl{display:block;margin-bottom:10px}
+.theme-tile-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:12px}
+.theme-tile{
+  display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;
 }
-.theme-ref-item{display:flex;flex-direction:column;align-items:center;gap:4px}
-.theme-ref-swatch{width:28px;height:28px;border-radius:50%;border:2px solid var(--bd);flex-shrink:0}
-.theme-ref-label{font-size:9px;color:var(--t3);text-align:center;line-height:1.2}
-.theme-ref-hex{font-size:9px;color:var(--t2);font-family:monospace}
+.theme-inp{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+.theme-tile-lbl{font-size:11px;color:var(--t2);text-align:center;line-height:1.25;font-weight:500}
+.theme-tile:hover .tpv-lg{transform:scale(1.04)}
 
-.theme-group-lbl{margin-top:4px}
-.theme-row{
-  display:flex;align-items:center;justify-content:space-between;gap:12px;
-  padding:12px 0;border-bottom:1px solid var(--bd);
+/* Per-token contextual preview - the tile itself IS the color picker trigger,
+   sized big enough to actually look like the thing it controls. */
+.tpv-lg{
+  width:100%;aspect-ratio:1;border-radius:var(--rad-sm);
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:700;transition:transform var(--ease);
+  box-shadow:0 0 0 1px var(--bd);
 }
-.theme-row:last-of-type{border-bottom:none}
-.theme-row-main{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
-.theme-row-main span{font-size:14px;color:var(--t1);font-weight:500}
-.theme-row-hex{font-size:11px;color:var(--t3);font-family:monospace}
-.theme-inp{
-  -webkit-appearance:none;appearance:none;width:36px;height:36px;
-  border-radius:50%;border:2px solid var(--bd);padding:0;background:none;
-  cursor:pointer;flex-shrink:0;
-}
-.theme-inp::-webkit-color-swatch-wrapper{padding:0;border-radius:50%}
-.theme-inp::-webkit-color-swatch{border:none;border-radius:50%}
-.theme-inp::-moz-color-swatch{border:none;border-radius:50%}
-
-/* Per-token contextual preview chips */
-.tpv{flex-shrink:0;display:flex;align-items:center;justify-content:center}
-.tpv-swatch{width:40px;height:28px;border-radius:8px;border:1px solid var(--bd)}
-.tpv-text{
-  width:40px;height:28px;border-radius:8px;border:1px solid var(--bd);
-  background:#fff;font-size:13px;font-weight:700;
-}
-.tpv-btn{
-  width:40px;height:28px;border-radius:8px;color:#fff;font-size:11px;font-weight:700;
-}
-.tpv-badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
-.tpv-bar{width:40px;height:16px;border-radius:4px;border:1px solid var(--bd)}
-.tpv-overlay{width:40px;height:28px;border-radius:8px;position:relative;overflow:hidden;background:var(--s2);border:1px solid var(--bd)}
+.tpv-swatch{box-shadow:0 0 0 1px var(--bd),var(--shadow)}
+.tpv-text{background:#fff;color:#000}
+.tpv-btn{color:#fff}
+.tpv-badge{font-size:11px}
+.tpv-bar{aspect-ratio:auto;height:24px}
+.tpv-overlay{position:relative;overflow:hidden;background:var(--s2)}
+.tpv-overlay-fill{position:absolute;inset:0}
 .cf-icon{
   width:72px;height:72px;border-radius:var(--rad-sm);background:var(--r-dim);
   border:1px solid var(--r);display:flex;align-items:center;

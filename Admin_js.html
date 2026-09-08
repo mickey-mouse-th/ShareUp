@@ -57,7 +57,7 @@ function openUserEditSheet(id) {
   _renderUeAvatar(a.displayName, a.photo);
   $('#ueName').text(a.displayName);
   $('#ueUsername').text('@' + a.username);
-  $('#ueRoleSel').val(a.role).trigger('change.select2').prop('disabled', isMe).select2('enable', !isMe);
+  $('#ueRoleSel').val(a.role).trigger('change.select2').prop('disabled', isMe);
   $('#ueStatusTgl').prop('checked', enabled).prop('disabled', isMe);
   $('#ueTglWrap').toggleClass('on', enabled);
   $('#ueStatusHint').text(enabled ? 'Active — can sign in' : 'Disabled — can\'t sign in');
@@ -82,11 +82,10 @@ function _sessionHintText(minutes) {
   return '≈ ' + (minutes / 1440).toFixed(1) + ' days';
 }
 
-async function openAdminSettingsSheet() {
-  openSheet('shAdminSettings');
+async function loadSettingsPanel() {
   try {
     var r = await gsc('getSettings', TK);
-    if (!r.success) { toast(r.error, 'err'); closeSheets(); return }
+    if (!r.success) { toast(r.error, 'err'); return }
     var s = r.settings;
     $('#asSessionMin').val(s.sessionMinutes);
     $('#asSessionHint').text(_sessionHintText(s.sessionMinutes));
@@ -96,6 +95,21 @@ async function openAdminSettingsSheet() {
     _tglSet('asPwNumberWrap', 'asPwNumber', s.pwRequireNumber);
     _tglSet('asPwSpecialWrap', 'asPwSpecial', s.pwRequireSpecial);
   } catch (e) { toast('' + e, 'err') }
+}
+
+// ── Admin sub-nav (User / Theme / Settings) ────
+var ADMIN_TAB = 'user';
+var _themeLoaded = false, _settingsLoaded = false;
+
+function switchAdminTab(t) {
+  ADMIN_TAB = t;
+  $('#pgAdmin .tab-bar .tab-btn').removeClass('on');
+  $('#tabAdmin' + t[0].toUpperCase() + t.slice(1)).addClass('on');
+  $('#panelAdminUser').toggle(t === 'user');
+  $('#panelAdminTheme').toggle(t === 'theme');
+  $('#panelAdminSettings').toggle(t === 'settings');
+  if (t === 'theme' && !_themeLoaded) { _themeLoaded = true; loadThemePanel() }
+  if (t === 'settings' && !_settingsLoaded) { _settingsLoaded = true; loadSettingsPanel() }
 }
 
 // ── Theme Settings ────────────────────────────
@@ -136,20 +150,23 @@ var THEME_TOKENS = [
   { token: 'overlayBg', group: 'Header & Navigation', label: 'Modal Overlay',          kind: 'overlay' }
 ];
 
-function _tpvHtml(t, token) {
-  var id = 'tpv-' + token;
-  if (t.kind === 'btn')    return '<div class="tpv"><div class="tpv-btn" id="' + id + '">Aa</div></div>';
-  if (t.kind === 'card')   return '<div class="tpv"><div class="tpv-swatch" id="' + id + '" style="box-shadow:var(--shadow)"></div></div>';
-  if (t.kind === 'border') return '<div class="tpv"><div class="tpv-swatch" id="' + id + '" style="background:var(--s1)"></div></div>';
-  if (t.kind === 'text')   return '<div class="tpv"><div class="tpv-text" id="' + id + '">Aa</div></div>';
-  if (t.kind === 'badge')  return '<div class="tpv"><span class="tpv-badge" id="' + id + '">Label</span></div>';
-  if (t.kind === 'bar')    return '<div class="tpv"><div class="tpv-bar" id="' + id + '"></div></div>';
-  if (t.kind === 'overlay') return '<div class="tpv"><div class="tpv-overlay"><div class="tpv-overlay-fill" id="' + id + '" style="position:absolute;inset:0"></div></div></div>';
-  return '<div class="tpv"><div class="tpv-swatch" id="' + id + '"></div></div>';
+// Big tile preview markup per token "kind" - no color codes anywhere, the
+// tile itself looks like the thing it controls and IS the color picker
+// trigger (a <label> wrapping a visually-hidden <input type=color>).
+function _tpvHtml(t) {
+  var id = 'tpv-' + t.token;
+  if (t.kind === 'btn')     return '<div class="tpv-lg tpv-btn" id="' + id + '">Aa</div>';
+  if (t.kind === 'card')    return '<div class="tpv-lg tpv-swatch" id="' + id + '"></div>';
+  if (t.kind === 'border')  return '<div class="tpv-lg tpv-swatch" id="' + id + '" style="background:var(--s1)"></div>';
+  if (t.kind === 'text')    return '<div class="tpv-lg tpv-text" id="' + id + '">Aa</div>';
+  if (t.kind === 'badge')   return '<div class="tpv-lg tpv-badge" id="' + id + '">Label</div>';
+  if (t.kind === 'bar')     return '<div class="tpv-lg tpv-bar" id="' + id + '"></div>';
+  if (t.kind === 'overlay') return '<div class="tpv-lg tpv-overlay"><div class="tpv-overlay-fill" id="' + id + '"></div></div>';
+  return '<div class="tpv-lg tpv-swatch" id="' + id + '"></div>';
 }
 
-function _tpvUpdate(t, token, v) {
-  var $el = $('#tpv-' + token);
+function _tpvUpdate(t, v) {
+  var $el = $('#tpv-' + t.token);
   if (!$el.length) return;
   if (t.kind === 'btn')      $el.css({ background: v, color: '#fff' });
   else if (t.kind === 'card' || t.kind === 'swatch') $el.css('background', v);
@@ -160,46 +177,34 @@ function _tpvUpdate(t, token, v) {
   else if (t.kind === 'overlay') $el.css({ background: v, opacity: .45 });
 }
 
-function _renderThemeRefTable(theme) {
-  var html = THEME_TOKENS.map(function (t) {
-    return '<div class="theme-ref-item">' +
-      '<div class="theme-ref-swatch" id="ref-' + t.token + '" style="background:' + theme[t.token] + '"></div>' +
-      '<div class="theme-ref-label">' + esc(t.label) + '</div>' +
-      '<div class="theme-ref-hex" id="ref-hex-' + t.token + '">' + esc(theme[t.token]) + '</div>' +
-      '</div>';
-  }).join('');
-  $('#themeRefTable').html(html);
-}
-
-function _renderThemeRows(theme) {
+function _renderThemeGroups(theme) {
   var groups = [], byGroup = {};
   THEME_TOKENS.forEach(function (t) {
     if (!byGroup[t.group]) { byGroup[t.group] = []; groups.push(t.group) }
     byGroup[t.group].push(t);
   });
   var html = groups.map(function (g) {
-    return '<label class="inp-lbl theme-group-lbl">' + esc(g) + '</label>' +
+    return '<div class="theme-group">' +
+      '<label class="inp-lbl theme-group-lbl">' + esc(g) + '</label>' +
+      '<div class="theme-tile-grid">' +
       byGroup[g].map(function (t) {
-        return '<div class="theme-row">' +
-          '<div class="theme-row-main"><span>' + esc(t.label) + '</span><span class="theme-row-hex" id="hex-' + t.token + '">' + esc(theme[t.token]) + '</span></div>' +
-          _tpvHtml(t, t.token) +
+        return '<label class="theme-tile" title="' + esc(t.label) + '">' +
           '<input type="color" class="theme-inp" data-token="' + t.token + '" value="' + theme[t.token] + '"/>' +
-          '</div>';
-      }).join('') + '<div class="pf-divider"></div>';
+          _tpvHtml(t) +
+          '<span class="theme-tile-lbl">' + esc(t.label) + '</span>' +
+          '</label>';
+      }).join('') +
+      '</div></div>';
   }).join('');
-  $('#themeRows').html(html);
-  THEME_TOKENS.forEach(function (t) { _tpvUpdate(t, t.token, theme[t.token]) });
+  $('#themeGroups').html(html);
+  THEME_TOKENS.forEach(function (t) { _tpvUpdate(t, theme[t.token]) });
 }
 
-// Local-only preview: updates this row's swatch/hex/mini-preview and the
-// reference table above - never touches the live app until Save is pressed.
+// Local-only preview: updates just this tile's own preview - never touches
+// the live app until Save is pressed.
 function _previewThemeToken(token, value) {
   var t = THEME_TOKENS.filter(function (x) { return x.token === token })[0];
-  if (!t) return;
-  $('#hex-' + token).text(value);
-  $('#ref-' + token).css('background', value);
-  $('#ref-hex-' + token).text(value);
-  _tpvUpdate(t, token, value);
+  if (t) _tpvUpdate(t, value);
 }
 
 function _applyThemeLive(theme) {
@@ -209,15 +214,12 @@ function _applyThemeLive(theme) {
   });
 }
 
-async function openThemeSettingsSheet() {
-  openSheet('shThemeSettings');
-  _renderThemeRefTable(DEFAULT_THEME_CLIENT);
-  _renderThemeRows(DEFAULT_THEME_CLIENT);
+async function loadThemePanel() {
+  _renderThemeGroups(DEFAULT_THEME_CLIENT);
   try {
     var r = await gsc('getTheme');
-    if (!r.success) { toast(r.error || 'Failed to load theme', 'err'); closeSheets(); return }
-    _renderThemeRefTable(r.theme);
-    _renderThemeRows(r.theme);
+    if (!r.success) { toast(r.error || 'Failed to load theme', 'err'); return }
+    _renderThemeGroups(r.theme);
   } catch (e) { toast('' + e, 'err') }
 }
 
@@ -232,12 +234,9 @@ $(function () {
     width: '130px'
   });
 
-  $('#tabAdminSettings').on('click', openAdminSettingsSheet);
-  $('#tabAdminTheme').on('click', openThemeSettingsSheet);
-  $('#tabAdminUser').on('click', function () {
-    $('#pgAdmin .tab-bar .tab-btn').removeClass('on');
-    $(this).addClass('on');
-  });
+  $('#tabAdminUser').on('click', function () { switchAdminTab('user') });
+  $('#tabAdminTheme').on('click', function () { switchAdminTab('theme') });
+  $('#tabAdminSettings').on('click', function () { switchAdminTab('settings') });
 
   $('#userSearchInp').on('input', function () {
     USER_SEARCH = $(this).val();
@@ -250,9 +249,8 @@ $(function () {
     $(this).addClass('hidden');
     renderAccounts();
   });
-  $('#shThemeSettingsClose').on('click', closeSheets);
 
-  $('#shThemeSettings').on('input', '.theme-inp', function () {
+  $('#themeGroups').on('input', '.theme-inp', function () {
     _previewThemeToken($(this).data('token'), $(this).val());
   });
 
@@ -261,21 +259,20 @@ $(function () {
     $('.theme-inp').each(function () { theme[$(this).data('token')] = $(this).val() });
     try {
       var r = await gsc('saveTheme', TK, theme);
-      if (r.success) { _applyThemeLive(r.theme); toast('Theme saved'); closeSheets() }
+      if (r.success) { _applyThemeLive(r.theme); toast('Theme saved') }
       else toast(r.error, 'err');
     } catch (e) { toast('' + e, 'err') }
   });
 
   $('#btnThemeReset').on('click', function () {
-    _renderThemeRefTable(DEFAULT_THEME_CLIENT);
-    _renderThemeRows(DEFAULT_THEME_CLIENT);
+    _renderThemeGroups(DEFAULT_THEME_CLIENT);
   });
 
   $('#asSessionMin').on('input', function () {
     $('#asSessionHint').text(_sessionHintText(parseFloat($(this).val())));
   });
 
-  $('.tgl input', '#shAdminSettings').on('change', function () {
+  $('.tgl input', '#panelAdminSettings').on('change', function () {
     $(this).closest('.tgl').toggleClass('on', $(this).is(':checked'));
   });
 
@@ -290,7 +287,7 @@ $(function () {
     };
     try {
       var r = await gsc('updateSettings', TK, settings);
-      if (r.success) { toast('Settings saved'); closeSheets() }
+      if (r.success) toast('Settings saved');
       else toast(r.error, 'err');
     } catch (e) { toast('' + e, 'err') }
   });

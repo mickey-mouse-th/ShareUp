@@ -45,8 +45,8 @@
     <div class="inp-g">
       <label class="inp-lbl">Split Type</label>
       <div class="split-toggle">
-        <button type="button" class="smode-btn on" id="modeEq">⚖️ หารเท่า</button>
-        <button type="button" class="smode-btn" id="modeCus">✏️ ระบุเอง</button>
+        <button type="button" class="smode-btn on" id="modeEq">⚖️ Split Equally</button>
+        <button type="button" class="smode-btn" id="modeCus">✏️ Custom</button>
       </div>
     </div>
     <div class="inp-g" id="eqAmtG">
@@ -70,10 +70,10 @@
       <div class="pp-amt" id="ppAmt">฿0.00</div>
     </div>
     <div id="cusG" style="display:none">
-      <label class="inp-lbl" style="margin-bottom:10px">จำนวนเงินของแต่ละคน</label>
+      <label class="inp-lbl" style="margin-bottom:10px">Amount per person</label>
       <div id="cusRows"></div>
       <div class="ca-total-box">
-        <span class="ca-total-lbl">รวมทั้งหมด</span>
+        <span class="ca-total-lbl">Total</span>
         <span class="ca-total-val" id="cusTotalVal">฿0.00</span>
       </div>
     </div>
@@ -233,60 +233,12 @@
   </div>
 </div>
 
-<!-- Sheet: App Settings (Admin) -->
-<div class="sheet" id="shAdminSettings">
+<!-- Sheet: Summary -->
+<div class="sheet" id="shSummary">
   <div class="sh-pill"></div>
-  <div class="sh-hd"><span class="sh-title">App Settings</span><button class="sh-close" id="shAdminSettingsClose">✕</button></div>
+  <div class="sh-hd"><span class="sh-title">Summary</span><button class="sh-close" id="shSummaryClose">✕</button></div>
   <div class="sh-body">
-    <div class="inp-g">
-      <label class="inp-lbl">Session Length (minutes)</label>
-      <input class="inp" id="asSessionMin" type="number" min="1" step="1" placeholder="e.g. 43200"/>
-      <div class="pf-hint" id="asSessionHint"></div>
-    </div>
-
-    <div class="pf-divider"></div>
-
-    <label class="inp-lbl">Password Requirements</label>
-    <div class="inp-g">
-      <input class="inp" id="asPwMinLen" type="number" min="1" step="1" placeholder="Minimum length"/>
-    </div>
-    <div class="ue-status-row" style="margin-top:0">
-      <div class="ue-status-hint">Require uppercase letter (A-Z)</div>
-      <label class="tgl" id="asPwUpperWrap"><input type="checkbox" id="asPwUpper"/><span class="tgl-track"></span></label>
-    </div>
-    <div class="ue-status-row">
-      <div class="ue-status-hint">Require lowercase letter (a-z)</div>
-      <label class="tgl" id="asPwLowerWrap"><input type="checkbox" id="asPwLower"/><span class="tgl-track"></span></label>
-    </div>
-    <div class="ue-status-row">
-      <div class="ue-status-hint">Require number (0-9)</div>
-      <label class="tgl" id="asPwNumberWrap"><input type="checkbox" id="asPwNumber"/><span class="tgl-track"></span></label>
-    </div>
-    <div class="ue-status-row">
-      <div class="ue-status-hint">Require special character</div>
-      <label class="tgl" id="asPwSpecialWrap"><input type="checkbox" id="asPwSpecial"/><span class="tgl-track"></span></label>
-    </div>
-
-    <button class="sh-btn" id="btnAsSave" style="margin-top:8px">Save Settings</button>
-  </div>
-</div>
-
-<!-- Sheet: Theme Settings (Admin) -->
-<div class="sheet" id="shThemeSettings">
-  <div class="sh-pill"></div>
-  <div class="sh-hd"><span class="sh-title">Theme</span><button class="sh-close" id="shThemeSettingsClose">✕</button></div>
-  <div class="sh-body">
-
-    <div class="theme-hint">Changes preview here only. Nothing on the live app changes until you press Save.</div>
-
-    <label class="inp-lbl">Current Palette</label>
-    <div class="theme-ref-table" id="themeRefTable"></div>
-
-    <div class="pf-divider"></div>
-    <div id="themeRows"></div>
-
-    <button class="sh-btn" id="btnThemeSave" style="margin-top:8px">Save Theme</button>
-    <button class="sh-btn sh-btn-ghost" id="btnThemeReset" style="margin-top:8px">Reset to Default</button>
+    <div id="sumList"></div>
   </div>
 </div>
 

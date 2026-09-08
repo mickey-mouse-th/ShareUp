@@ -45,12 +45,14 @@ function renderEvents() {
   var html = list.map(function (ev) {
     var icon = ev.icon || evEmoji(ev.name);
     return '<div class="ev-card" data-ev=\'' + esc(JSON.stringify(ev)) + '\'>' +
-      '<div class="ev-card-banner" style="background:' + bannerGrad(ev.name) + '">' + icon + '</div>' +
-      '<div class="ev-card-body">' +
-      '<div class="ev-name-row">' +
-      '<button class="ev-icon-btn ev-edit" title="Edit event">' + icon + '</button>' +
-      '<div class="ev-name">' + highlightText(ev.name, q) + '</div>' +
+      '<div class="ev-card-banner" style="background:' + bannerGrad(ev.name) + '">' +
+      '<span class="ev-banner-icon">' + icon + '</span>' +
+      '<span class="ev-banner-name">' + highlightText(ev.name, q) + '</span>' +
+      '<button class="ev-banner-edit ev-edit" title="Edit event">' +
+      '<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75z"/></svg>' +
+      '</button>' +
       '</div>' +
+      '<div class="ev-card-body">' +
       '<div class="ev-date">' + fmtDate(ev.createdAt) + '</div>' +
       '</div>' +
       '<div class="ev-card-actions">' +
@@ -68,7 +70,7 @@ $(function () {
   $('#evStatusSel').select2({
     minimumResultsForSearch: Infinity,
     dropdownParent: $(document.body),
-    width: '160px'
+    width: '130px'
   });
 
   $('#homeFilterBar').on('click', '.stat-pill', function () {

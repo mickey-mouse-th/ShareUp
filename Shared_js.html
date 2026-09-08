@@ -4,7 +4,6 @@ var TK      = localStorage.getItem('su_tk')  || null;
 var ME      = JSON.parse(localStorage.getItem('su_me') || 'null');
 var CUR_TAB = 'home';
 var CUR_EV  = null;
-var CUR_DT  = 'tx';
 var FRIENDS = [];
 var EVENTS  = [];
 var DETAILS = [];
@@ -87,7 +86,7 @@ function fmtAmt(n) {
 }
 function fmtDate(iso) {
   if (!iso) return '';
-  try { return new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) }
+  try { return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) }
   catch (e) { return iso }
 }
 
@@ -214,7 +213,7 @@ function goTab(tab) {
 }
 
 function openDetail(ev) {
-  CUR_EV = ev; CUR_DT = 'tx'; SETTLEMENTS = null;
+  CUR_EV = ev; SETTLEMENTS = null;
   $('#hdrTitle').text(ev.name);
   $('#appHdr').addClass('show-back');
   $('#detailBanner').css('background', bannerGrad(ev.name));
@@ -226,8 +225,6 @@ function openDetail(ev) {
   $.each(pgMap, function (_, pgId) { $('#' + pgId).addClass('hidden') });
   if (prev) { $('#' + prev).removeClass('hidden').addClass('behind') }
   $('#pgDetail').removeClass('hidden behind');
-  $('#tabTx').addClass('on'); $('#tabSum').removeClass('on');
-  $('#panelTx').show(); $('#panelSum').hide();
   $('#fab').removeClass('hide');
   loadDetailData(ev.id);
   _saveView();
@@ -247,19 +244,14 @@ function goBack() {
   _saveView();
 }
 
-function switchTab(t) {
-  CUR_DT = t;
-  $('#tabTx').toggleClass('on', t === 'tx');
-  $('#tabSum').toggleClass('on', t === 'sum');
-  $('#panelTx').toggle(t === 'tx');
-  $('#panelSum').toggle(t === 'sum');
-  if (t === 'sum' && CUR_EV) {
-    // SETTLEMENTS is already bundled into the initial detail load — only hit
-    // the server again if it was invalidated (e.g. a transaction changed).
-    if (SETTLEMENTS) renderSummary(SETTLEMENTS);
-    else loadSummary(CUR_EV.id);
-  }
-  _saveView();
+// Opens the Summary sheet - SETTLEMENTS is already bundled into the initial
+// detail load, so this only hits the server again if it was invalidated
+// (e.g. a transaction changed since).
+function openSummarySheet() {
+  if (!CUR_EV) return;
+  openSheet('shSummary');
+  if (SETTLEMENTS) renderSummary(SETTLEMENTS);
+  else loadSummary(CUR_EV.id);
 }
 
 // ── Reload/reopen persistence ─────────────────
@@ -270,7 +262,7 @@ function switchTab(t) {
 // a full page reload on every click; localStorage gets the same end result
 // (refresh restores the same view) without that cost.
 function _saveView() {
-  var view = CUR_EV ? { tab: 'event', eventId: CUR_EV.id, dt: CUR_DT } : { tab: CUR_TAB };
+  var view = CUR_EV ? { tab: 'event', eventId: CUR_EV.id } : { tab: CUR_TAB };
   localStorage.setItem('su_view', JSON.stringify(view));
 }
 
@@ -285,10 +277,7 @@ function _restoreView() {
   if (saved && saved.tab === 'event' && saved.eventId) {
     loadHomeData().then(function () {
       var ev = EVENTS.filter(function (e) { return e.id === saved.eventId })[0];
-      if (ev) {
-        openDetail(ev);
-        if (saved.dt && saved.dt !== 'tx') switchTab(saved.dt);
-      }
+      if (ev) openDetail(ev);
       // Event no longer exists (deleted elsewhere) — stay on the already-rendered Home.
     });
     return;

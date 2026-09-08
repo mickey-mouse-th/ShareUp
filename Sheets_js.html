@@ -288,10 +288,6 @@ function buildTxFriendPickers(checkedIds) {
 
 function handleFab() {
   if (CUR_EV) {
-    if (CUR_DT === 'friends') {
-      openEventFriendsSheet(CUR_EV.id, 'manage');
-      return;
-    }
     if (!FRIENDS.length) {
       toast('Add at least one friend to this event first', 'warn');
       openEventFriendsSheet(CUR_EV.id, 'manage');
@@ -373,7 +369,7 @@ async function submitTx() {
         friendIds.push(id); customAmounts[id] = a; totalAmount += a;
       }
     });
-    if (!friendIds.length) { toast('ระบุจำนวนเงินอย่างน้อย 1 คน', 'warn'); return }
+    if (!friendIds.length) { toast('Enter an amount for at least 1 person', 'warn'); return }
   }
   var editId = _editTxId;
   var slipsRemoved = _txSlipsRemoved.slice();
@@ -511,7 +507,7 @@ $(function () {
   // Close buttons
   $('#shEventClose, #shEfClose, #shTxClose, #shShareClose').on('click', closeSheets);
   $('#cfCancel, #logoutCancel').on('click', closeSheets);
-  $('#shAccountClose, #shProfileClose, #shUserEditClose, #shAdminSettingsClose').on('click', closeSheets);
+  $('#shAccountClose, #shProfileClose, #shUserEditClose').on('click', closeSheets);
   $('#shSlipViewClose').on('click', closeSheets);
 
   // Transaction slip
