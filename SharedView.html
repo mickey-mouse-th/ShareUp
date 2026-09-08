@@ -78,7 +78,7 @@
     <div id="shSumList"></div>
 
     <div class="sec-row"><span class="sec-lbl">Expenses</span><div class="sec-line"></div></div>
-    <div id="shTxList"></div>
+    <div id="shTxList" class="tx-timeline"></div>
   </div>
 </div>
 
@@ -262,7 +262,7 @@ function renderTx(details) {
     if (!grp[d.transactionId]) { grp[d.transactionId] = []; ord.push(d.transactionId) }
     grp[d.transactionId].push(d);
   });
-  var html = ord.map(function (tid) {
+  var html = ord.map(function (tid, i) {
     var rows = grp[tid], f = rows[0];
     var total = parseFloat(f.totalAmount);
     var desc = f.description || 'Transaction';
@@ -270,30 +270,36 @@ function renderTx(details) {
     var chips = rows.map(function (r) {
       return '<span class="tx-chip">' + esc(r.friendName) + (isCustom ? ' ' + fmtAmt(r.amount) : '') + '</span>';
     }).join('');
-    return '<div class="tx-card">' +
+    var d = new Date(f.createdAt);
+    var timeStr = isNaN(d) ? '' : d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    var isLast = i === ord.length - 1;
+    var hasSlip = SHARE_DATA.slips && SHARE_DATA.slips[tid] && SHARE_DATA.slips[tid].length;
+    return '<div class="sched-item">' +
+      '<div class="sched-time-col"><div class="sched-time">' + esc(timeStr) + '</div><div class="sched-date">' + fmtDate(f.createdAt) + '</div></div>' +
+      '<div class="sched-axis"><div class="sched-dot"></div>' + (isLast ? '' : '<div class="sched-line"></div>') + '</div>' +
+      '<div class="sched-card" data-tid="' + esc(tid) + '">' +
       '<div class="tx-head">' +
       _avatarHtml('tx-av', f.payerName, f.payId) +
       '<div class="tx-meta">' +
       '<div class="tx-desc">' + esc(desc) + '</div>' +
       '<div class="tx-by">Paid by ' + esc(f.payerName) + (isCustom ? ' · ระบุเอง' : '') + '</div>' +
       '</div>' +
+      (hasSlip ?
+        '<button class="sched-slip-btn tx-view-slip" data-tid="' + esc(tid) + '" title="View receipt">' +
+        '<svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>' +
+        '</button>' : '') +
       '<div class="tx-amt">' + fmtAmt(total) + '</div>' +
       '</div>' +
       '<div class="tx-people">' + chips + '</div>' +
-      '<div class="tx-foot"><span class="tx-date">' + fmtDate(f.createdAt) + '</span>' +
-      '<div class="tx-actions">' +
-      (SHARE_DATA.slips && SHARE_DATA.slips[tid] && SHARE_DATA.slips[tid].length ?
-        '<button class="btn-slip tx-view-slip" data-tid="' + esc(tid) + '">' +
-        '<svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>' +
-        '</button>' : '') +
       (CAN_EDIT ?
-        '<button class="btn-edit tx-edit" data-tid="' + esc(tid) + '">' +
-        '<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>' +
-        '</button>' +
-        '<button class="btn-del tx-del" data-tid="' + esc(tid) + '">' +
-        '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>' +
-        '</button>' : '') +
-      '</div></div></div>';
+        '<div class="sched-card-footer">' +
+        '<button class="sched-act-btn tx-edit" data-tid="' + esc(tid) + '" title="Edit">' +
+        '<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>' +
+        '<button class="sched-act-btn del tx-del" data-tid="' + esc(tid) + '" title="Delete">' +
+        '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>' +
+        '</div>' : '') +
+      '</div>' +
+      '</div>';
   }).join('');
   $el.html(html);
 }

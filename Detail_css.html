@@ -75,16 +75,15 @@
 }
 .sched-slip-btn:hover{background:var(--bd)}
 .sched-slip-btn svg{width:16px;height:16px;fill:var(--p-lt)}
-.sched-card-footer{display:flex;border-top:1px solid var(--bd);margin-top:12px;padding-top:2px}
+.sched-card-footer{display:flex;justify-content:flex-end;gap:8px;border-top:1px solid var(--bd);margin-top:12px;padding-top:10px}
 .sched-act-btn{
-  flex:1;display:flex;align-items:center;justify-content:center;gap:5px;
-  padding:10px 6px;background:none;border:none;cursor:pointer;
-  color:var(--t2);font-size:12px;font-weight:500;
-  transition:background var(--ease),color var(--ease);
+  width:32px;height:32px;border-radius:var(--rad-sm);
+  display:flex;align-items:center;justify-content:center;
+  background:var(--s2);border:1px solid var(--bd);cursor:pointer;
+  color:var(--t2);transition:background var(--ease),color var(--ease);
 }
-.sched-act-btn+.sched-act-btn{border-left:1px solid var(--bd)}
-.sched-act-btn:hover{background:var(--s2);color:var(--t1)}
-.sched-act-btn.del:hover{background:var(--r-dim);color:var(--r)}
+.sched-act-btn:hover{background:var(--bd);color:var(--t1)}
+.sched-act-btn.del:hover{background:var(--r-dim);color:var(--r);border-color:var(--r)}
 .sched-act-btn svg{width:15px;height:15px;fill:currentColor}
 .tx-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:14px}
 .tx-av{
@@ -101,23 +100,6 @@
   font-size:13px;font-weight:600;color:var(--p-lt);
   background:var(--p-dim);border-radius:var(--rad);padding:5px 14px;border:1px solid var(--bd);
 }
-/* Kept for SharedView.html's public transaction list, which still uses the
-   pre-timeline card layout (not yet migrated - see main app's .sched-card). */
-.tx-card{
-  background:var(--s1);border:1px solid var(--bd);border-radius:var(--rad);
-  margin-bottom:12px;overflow:hidden;padding:18px 20px;box-shadow:var(--shadow);
-}
-.tx-foot{display:flex;align-items:center;justify-content:space-between}
-.tx-date{font-size:13px;color:var(--t3)}
-.tx-actions{display:flex;gap:8px}
-.btn-edit{
-  width:36px;height:36px;border-radius:12px;background:var(--p-dim);
-  border:1px solid var(--bd);display:flex;align-items:center;
-  justify-content:center;flex-shrink:0;transition:background .15s;cursor:pointer;
-}
-.btn-edit:active{background:var(--p-dim)}
-.btn-edit svg{width:17px;height:17px;fill:var(--p-lt)}
-
 .settle-card{
   background:var(--s1);border:1px solid var(--bd);border-radius:var(--rad);
   margin-bottom:12px;padding:20px;display:flex;align-items:center;gap:12px;box-shadow:var(--shadow);
