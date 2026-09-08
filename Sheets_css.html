@@ -1,6 +1,6 @@
 <style>
 .overlay{
-  position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:600;
+  position:fixed;inset:0;background:color-mix(in srgb,var(--overlay-bg) 45%,transparent);z-index:600;
   opacity:0;pointer-events:none;transition:opacity .3s;
   backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
 }
@@ -69,6 +69,46 @@ select.inp option{background:var(--s1);color:var(--t1)}
   transition:opacity .15s;cursor:pointer;
 }
 .sh-btn:active{opacity:.85}
+.sh-btn-ghost{background:var(--s2);color:var(--t2);box-shadow:none;border:1px solid var(--bd)}
+
+/* ── Theme settings ──────────────────────────── */
+.theme-row{
+  display:flex;align-items:center;justify-content:space-between;gap:14px;
+  padding:12px 0;border-bottom:1px solid var(--bd);
+}
+.theme-row:last-of-type{border-bottom:none}
+.theme-row span{font-size:15px;color:var(--t1);font-weight:500}
+.theme-inp{
+  -webkit-appearance:none;appearance:none;width:44px;height:44px;
+  border-radius:50%;border:2px solid var(--bd);padding:0;background:none;
+  cursor:pointer;flex-shrink:0;
+}
+.theme-inp::-webkit-color-swatch-wrapper{padding:0;border-radius:50%}
+.theme-inp::-webkit-color-swatch{border:none;border-radius:50%}
+.theme-inp::-moz-color-swatch{border:none;border-radius:50%}
+.theme-preview{
+  background:var(--s2);border:1px solid var(--bd);border-radius:var(--rad-sm);
+  padding:18px;display:flex;flex-direction:column;gap:14px;margin-bottom:4px;
+}
+.theme-preview-card{
+  background:var(--s1);border:1px solid var(--bd);border-radius:var(--rad-sm);
+  padding:16px;box-shadow:var(--shadow);
+}
+.theme-preview-title{font-size:16px;font-weight:700;color:var(--t1)}
+.theme-preview-sub{font-size:13px;color:var(--t2);margin-top:4px}
+.theme-preview-badges{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.theme-preview-badge{font-size:12px;font-weight:700;padding:4px 12px;border-radius:20px}
+.theme-preview-badge.ok{background:color-mix(in srgb,var(--g) 16%,transparent);color:var(--g)}
+.theme-preview-badge.err{background:color-mix(in srgb,var(--r) 16%,transparent);color:var(--r)}
+.theme-preview-badge.warn{background:color-mix(in srgb,var(--o) 16%,transparent);color:var(--o)}
+.theme-preview-btn{
+  width:100%;height:52px;border:none;border-radius:var(--rad-sm);
+  background:linear-gradient(135deg,var(--p) 0%,var(--p-lt) 100%);
+  color:#fff;font-size:15px;font-weight:700;cursor:pointer;
+  transition:transform .15s;
+}
+.theme-preview-btn:hover{transform:translateY(-1px)}
+.theme-preview-btn:active{transform:scale(.98)}
 .cf-icon{
   width:72px;height:72px;border-radius:var(--rad-sm);background:var(--r-dim);
   border:1px solid var(--r);display:flex;align-items:center;

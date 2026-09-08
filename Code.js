@@ -12,6 +12,17 @@ var DEFAULT_SETTINGS = {
   pwRequireNumber: false,
   pwRequireSpecial: false
 };
+// Mirrors the current hand-picked dark/amber palette baked into Shared_css.html's
+// :root, so opening the theme picker for the first time shows accurate starting
+// colors. buildThemeCss() only emits overrides for keys actually saved (see below),
+// so nothing visually changes until an admin explicitly saves via the picker.
+var DEFAULT_THEME = {
+  p: '#F59E0B', pLt: '#FCD34D',
+  bg: '#100F22', s1: '#1A1935', s2: '#22213E', bd: '#2C2A50',
+  t1: '#FFFFFF', t2: '#A6A9C2', t3: '#55566B',
+  g: '#22C55E', r: '#F43F5E', o: '#EA580C', b: '#38BDF8',
+  hdrBg: '#FFFFFF', navBg: '#FFFFFF', overlayBg: '#0F172A'
+};
 
 // ----------------------------------------------------------------
 // Database Setup
@@ -331,6 +342,71 @@ function updateSettings(token, settings) {
   } catch (e) {
     return { success: false, error: e.toString() };
   }
+}
+
+// ----------------------------------------------------------------
+// App Theme - global color palette, applied identically to every user.
+// Stored in Script Properties (singleton, like APP_SETTINGS above).
+// buildThemeCss() only emits overrides for keys actually saved, so an
+// empty/never-saved theme leaves Shared_css.html's own colors untouched.
+// ----------------------------------------------------------------
+
+var HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+
+function _rawTheme() {
+  var raw = PropertiesService.getScriptProperties().getProperty('APP_THEME');
+  return raw ? JSON.parse(raw) : {};
+}
+
+function getAppTheme() {
+  var saved = _rawTheme();
+  var merged = {};
+  for (var k in DEFAULT_THEME) {
+    merged[k] = HEX_COLOR_RE.test(saved[k]) ? saved[k] : DEFAULT_THEME[k];
+  }
+  return merged;
+}
+
+// No auth required: needs to be embeddable server-side into Index.html
+// before login (see buildThemeCss/ThemeOverride.html), same reasoning as
+// getPasswordPolicy() above.
+function getTheme() {
+  return { success: true, theme: getAppTheme() };
+}
+
+function saveTheme(token, theme) {
+  try {
+    var user = requireAuth(token);
+    if (user.role !== 'admin') return { success: false, error: 'Forbidden' };
+    var saved = _rawTheme();
+    var merged = {};
+    for (var k in DEFAULT_THEME) merged[k] = saved[k];
+    for (var key in DEFAULT_THEME) {
+      if (theme && HEX_COLOR_RE.test(theme[key])) merged[key] = theme[key];
+    }
+    PropertiesService.getScriptProperties().setProperty('APP_THEME', JSON.stringify(merged));
+    return { success: true, theme: getAppTheme() };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+// Builds a :root override CSS string from only the keys an admin has actually
+// saved (raw property, NOT the DEFAULT_THEME-merged view) - included right
+// after Shared_css.html in Index.html's <head> so it wins the cascade with
+// zero client round-trip / zero flash-of-unstyled-color.
+function buildThemeCss() {
+  var saved = _rawTheme();
+  var decls = [];
+  var cssVarName = {
+    p: '--p', pLt: '--p-lt', bg: '--bg', s1: '--s1', s2: '--s2', bd: '--bd',
+    t1: '--t1', t2: '--t2', t3: '--t3', g: '--g', r: '--r', o: '--o', b: '--b',
+    hdrBg: '--hdr-bg', navBg: '--nav-bg', overlayBg: '--overlay-bg'
+  };
+  for (var k in DEFAULT_THEME) {
+    if (HEX_COLOR_RE.test(saved[k])) decls.push(cssVarName[k] + ':' + saved[k]);
+  }
+  return decls.length ? (':root{' + decls.join(';') + '}') : '';
 }
 
 // ----------------------------------------------------------------

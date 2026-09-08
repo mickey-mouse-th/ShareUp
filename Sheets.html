@@ -266,6 +266,61 @@
   </div>
 </div>
 
+<!-- Sheet: Theme Settings (Admin) -->
+<div class="sheet" id="shThemeSettings">
+  <div class="sh-pill"></div>
+  <div class="sh-hd"><span class="sh-title">Theme</span><button class="sh-close" id="shThemeSettingsClose">✕</button></div>
+  <div class="sh-body">
+
+    <div class="theme-preview" id="themePreview">
+      <div class="theme-preview-card">
+        <div class="theme-preview-title">Sample card</div>
+        <div class="theme-preview-sub">This updates live as you pick colors</div>
+        <div class="theme-preview-badges">
+          <span class="theme-preview-badge ok">Success</span>
+          <span class="theme-preview-badge err">Danger</span>
+          <span class="theme-preview-badge warn">Warning</span>
+        </div>
+      </div>
+      <button type="button" class="theme-preview-btn">Primary Button</button>
+    </div>
+
+    <div class="pf-divider"></div>
+    <label class="inp-lbl">Brand</label>
+    <div class="theme-row"><span>Primary</span><input type="color" class="theme-inp" data-token="p"/></div>
+    <div class="theme-row"><span>Primary Dark / Accent</span><input type="color" class="theme-inp" data-token="pLt"/></div>
+
+    <div class="pf-divider"></div>
+    <label class="inp-lbl">Page</label>
+    <div class="theme-row"><span>Page Background</span><input type="color" class="theme-inp" data-token="bg"/></div>
+    <div class="theme-row"><span>Card Surface</span><input type="color" class="theme-inp" data-token="s1"/></div>
+    <div class="theme-row"><span>Secondary Surface</span><input type="color" class="theme-inp" data-token="s2"/></div>
+    <div class="theme-row"><span>Border</span><input type="color" class="theme-inp" data-token="bd"/></div>
+
+    <div class="pf-divider"></div>
+    <label class="inp-lbl">Text</label>
+    <div class="theme-row"><span>Primary Text</span><input type="color" class="theme-inp" data-token="t1"/></div>
+    <div class="theme-row"><span>Muted Text</span><input type="color" class="theme-inp" data-token="t2"/></div>
+    <div class="theme-row"><span>Faint Text</span><input type="color" class="theme-inp" data-token="t3"/></div>
+
+    <div class="pf-divider"></div>
+    <label class="inp-lbl">Status</label>
+    <div class="theme-row"><span>Success</span><input type="color" class="theme-inp" data-token="g"/></div>
+    <div class="theme-row"><span>Danger</span><input type="color" class="theme-inp" data-token="r"/></div>
+    <div class="theme-row"><span>Warning</span><input type="color" class="theme-inp" data-token="o"/></div>
+    <div class="theme-row"><span>Info</span><input type="color" class="theme-inp" data-token="b"/></div>
+
+    <div class="pf-divider"></div>
+    <label class="inp-lbl">Header &amp; Navigation</label>
+    <div class="theme-row"><span>Header Background</span><input type="color" class="theme-inp" data-token="hdrBg"/></div>
+    <div class="theme-row"><span>Bottom Nav Background</span><input type="color" class="theme-inp" data-token="navBg"/></div>
+    <div class="theme-row"><span>Modal Overlay</span><input type="color" class="theme-inp" data-token="overlayBg"/></div>
+
+    <button class="sh-btn" id="btnThemeSave" style="margin-top:8px">Save Theme</button>
+    <button class="sh-btn sh-btn-ghost" id="btnThemeReset" style="margin-top:8px">Reset to Default</button>
+  </div>
+</div>
+
 <!-- Sheet: View Slip -->
 <div class="sheet" id="shSlipView">
   <div class="sh-pill"></div>

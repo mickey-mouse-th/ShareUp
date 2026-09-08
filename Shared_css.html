@@ -12,6 +12,7 @@
   --s1:#1A1935;--s2:#22213E;--s3:#2C2A50;
   --bd:rgba(255,255,255,.08);--bd2:rgba(255,255,255,.14);
   --t1:#FFFFFF;--t2:rgba(255,255,255,.62);--t3:rgba(255,255,255,.32);
+  --hdr-bg:#FFFFFF;--nav-bg:#FFFFFF;--overlay-bg:#0F172A;
   --rad:16px;--rad-sm:12px;
   --shadow:0 1px 3px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.35);
   --shadow-lg:0 24px 64px rgba(0,0,0,.5);
@@ -73,7 +74,7 @@ button,input,select,textarea{font:inherit;-webkit-appearance:none}
 #appView{display:none;flex-direction:column;height:100dvh;overflow:hidden}
 .hdr{
   padding:calc(var(--si)+10px) 16px 10px;min-height:calc(var(--si)+var(--hh));
-  background:rgba(255,255,255,.85);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+  background:color-mix(in srgb,var(--hdr-bg) 85%,transparent);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
   border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:12px;flex-shrink:0;z-index:20;
 }
 .hdr-back{
@@ -110,7 +111,7 @@ button,input,select,textarea{font:inherit;-webkit-appearance:none}
 .page.behind{transform:translateX(-100%);pointer-events:none}
 .pg{padding:16px 16px calc(24px + var(--nh) + var(--sb))}
 .bnav{
-  padding-bottom:var(--sb);background:rgba(255,255,255,.92);
+  padding-bottom:var(--sb);background:color-mix(in srgb,var(--nav-bg) 92%,transparent);
   backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
   border-top:1px solid var(--bd);display:flex;flex-shrink:0;z-index:20;
 }
