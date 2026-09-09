@@ -12,6 +12,19 @@ var ME_PHOTO = ''; // currently-displayed header avatar photo (base64), '' = sho
 var SELF_FRIEND_ID = null; // the open event's friend row that maps back to this account (see getDetailData)
 var SLIPS = {}; // transactionId -> receipt/slip data URI, for the currently open event
 
+// ── Share-link viewer state ───────────────────
+// SHARE_TOKEN/SHARE_PERMISSION are emitted by doGet into Index.html before
+// this script loads - '' when this is a normal logged-in visit.
+var IS_SHARE = !!SHARE_TOKEN;
+var PERM = { canAdd: true, canEdit: true, canDelete: true, canDownload: true, canSummary: true, canShare: true };
+// Re-derived from the LIVE getSharedEventView response every load (not just
+// the page-load-time SHARE_PERMISSION) so a link whose permission changes
+// while a tab is open is picked up on next refresh - single source of truth.
+function _applyPermFromShare(permission) {
+  var canEdit = permission === 'edit';
+  PERM = { canAdd: canEdit, canEdit: canEdit, canDelete: false, canDownload: true, canSummary: true, canShare: false };
+}
+
 // ── Color / Emoji Constants ───────────────────
 var BANNER_GRADS = [
   'linear-gradient(135deg,#3730A3,#A5B4FC)',
@@ -318,6 +331,21 @@ function doLogout() {
   authPg('login');
 }
 
+// Anonymous share-link visit: jumps straight into the Detail page for the
+// linked event, skipping #authView and the Home/Admin pages entirely (a
+// share link is scoped to one event, there's nowhere else for it to go).
+function startShareApp() {
+  $('#appView').css('display', 'flex');
+  $('.bnav').hide();
+  $('#btnBack').hide();
+  $('#hdrAv').hide();
+  $('#navAd').hide();
+  var pgMap = { home: 'pgHome', admin: 'pgAdmin' };
+  $.each(pgMap, function (_, pgId) { $('#' + pgId).addClass('hidden') });
+  $('#pgDetail').removeClass('hidden behind');
+  loadDetailData(null);
+}
+
 function hideSplash() {
   $('#splash').addClass('out');
   setTimeout(function () { $('#splash').hide() }, 500);
@@ -335,7 +363,10 @@ $(function () {
 
   // Boot — optimistic: show app immediately with cached data,
   // validate session in background to avoid login on every cold start
-  if (TK && ME) {
+  if (IS_SHARE) {
+    hideSplash();
+    startShareApp();
+  } else if (TK && ME) {
     hideSplash();
     startApp();
     gsc('getSessionUser', TK)

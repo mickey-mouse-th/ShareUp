@@ -250,20 +250,14 @@ function _sharePermissionByToken(shareToken) {
 
 function doGet(e) {
   var rawToken = e && e.parameter && e.parameter.share;
-  if (rawToken) {
-    // Strict allowlist so this can be embedded directly into the page's inline script safely.
-    var shareToken = /^[a-zA-Z0-9-]{10,100}$/.test(rawToken) ? rawToken : '';
-    var tpl = HtmlService.createTemplateFromFile('SharedView');
-    tpl.shareToken = shareToken;
-    tpl.canEdit = shareToken ? (_sharePermissionByToken(shareToken) === 'edit') : false;
-    return tpl.evaluate()
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-      .setTitle('ShareUp - Shared Event');
-  }
-  return HtmlService.createTemplateFromFile('Index')
-    .evaluate()
+  // Strict allowlist so this can be embedded directly into the page's inline script safely.
+  var shareToken = (rawToken && /^[a-zA-Z0-9-]{10,100}$/.test(rawToken)) ? rawToken : '';
+  var tpl = HtmlService.createTemplateFromFile('Index');
+  tpl.shareToken = shareToken;
+  tpl.sharePermission = shareToken ? _sharePermissionByToken(shareToken) : '';
+  return tpl.evaluate()
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-    .setTitle('ShareUp - Expense Splitting');
+    .setTitle(shareToken ? 'ShareUp - Shared Event' : 'ShareUp - Expense Splitting');
 }
 
 function include(filename) {
@@ -658,54 +652,66 @@ function getHomeData(token) {
   } catch (e) { return { success: false, error: e.toString() } }
 }
 
+// Shared core behind getDetailData (authenticated) and getSharedEventView
+// (public share link) so both paths compute details/friends/settlements/slips
+// identically instead of maintaining two parallel implementations.
+function _buildDetailPayload(ss, eventId, accountId) {
+  var dtData = ss.getSheetByName('Details').getDataRange().getValues();
+  var details = [], rows = [];
+  for (var i = 1; i < dtData.length; i++) {
+    if (dtData[i][1] === eventId) {
+      details.push({ id: dtData[i][0], eventId: dtData[i][1], transactionId: dtData[i][2],
+        payId: dtData[i][3], friendId: dtData[i][4], amount: dtData[i][5],
+        totalAmount: dtData[i][6], description: dtData[i][7], createdAt: dtData[i][8] });
+      rows.push({ payId: dtData[i][3], friendId: dtData[i][4], amount: dtData[i][5] });
+    }
+  }
+  var frRawData = ss.getSheetByName('Friends').getDataRange().getValues();
+  var ownedFriendMap = {};
+  for (var i = 1; i < frRawData.length; i++) {
+    if (frRawData[i][1] === accountId) ownedFriendMap[frRawData[i][0]] = frRawData[i][2];
+  }
+  var selfRow = _findSelfFriendRow(frRawData, accountId);
+  var selfFriendId = selfRow !== -1 ? frRawData[selfRow][0] : null;
+
+  var friends = _getEventFriends(ss, eventId, accountId, ownedFriendMap, undefined, dtData);
+  var friendMap = {};
+  friends.forEach(function (f) { friendMap[f.id] = f.name });
+  // Bundled here so opening the Summary tab or exporting a PDF right after
+  // doesn't force a second round-trip that re-reads the same Details rows.
+  // _computeSettlementsWithPaid (not the plain variant) so a share-link
+  // visitor sees the exact same "paid" checkmarks the owner does.
+  var settlements = _computeSettlementsWithPaid(rows, friendMap, eventId);
+
+  // Only this event's transactionIds - TransactionSlips isn't keyed by
+  // eventId, so without this filter every event's photos would be shipped
+  // down on every load (slow, and a lot of wasted bandwidth as photos add up).
+  var eventTxIds = {};
+  details.forEach(function (d) { eventTxIds[d.transactionId] = true });
+  var slipSheet = getTransactionSlipsSheet();
+  var slipData = _backfillSlipIds(slipSheet, slipSheet.getDataRange().getValues());
+  var slips = {};
+  for (var i = 1; i < slipData.length; i++) {
+    if (slipData[i][1] && eventTxIds[slipData[i][0]]) {
+      var stid = slipData[i][0];
+      if (!slips[stid]) slips[stid] = [];
+      slips[stid].push({ id: slipData[i][3], slip: slipData[i][1], slipHi: slipData[i][4] || '' });
+    }
+  }
+
+  // selfFriendId lets the client show the account's own profile photo (set
+  // via My Profile) for its own avatar instead of the initials circle.
+  return { details: details, friends: friends, settlements: settlements, selfFriendId: selfFriendId, slips: slips };
+}
+
 function getDetailData(token, eventId) {
   try {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
-    var dtData = ss.getSheetByName('Details').getDataRange().getValues();
-    var details = [], rows = [];
-    for (var i = 1; i < dtData.length; i++) {
-      if (dtData[i][1] === eventId) {
-        details.push({ id: dtData[i][0], eventId: dtData[i][1], transactionId: dtData[i][2],
-          payId: dtData[i][3], friendId: dtData[i][4], amount: dtData[i][5],
-          totalAmount: dtData[i][6], description: dtData[i][7], createdAt: dtData[i][8] });
-        rows.push({ payId: dtData[i][3], friendId: dtData[i][4], amount: dtData[i][5] });
-      }
-    }
-    var frRawData = ss.getSheetByName('Friends').getDataRange().getValues();
-    var ownedFriendMap = {};
-    for (var i = 1; i < frRawData.length; i++) {
-      if (frRawData[i][1] === user.id) ownedFriendMap[frRawData[i][0]] = frRawData[i][2];
-    }
-    var selfRow = _findSelfFriendRow(frRawData, user.id);
-    var selfFriendId = selfRow !== -1 ? frRawData[selfRow][0] : null;
-
-    var friends = _getEventFriends(ss, eventId, user.id, ownedFriendMap, undefined, dtData);
-    var friendMap = {};
-    friends.forEach(function (f) { friendMap[f.id] = f.name });
-    // Bundled here so opening the Summary tab or exporting a PDF right after
-    // doesn't force a second round-trip that re-reads the same Details rows.
-    var settlements = _computeSettlementsWithPaid(rows, friendMap, eventId);
-
-    // Only this event's transactionIds - TransactionSlips isn't keyed by
-    // eventId, so without this filter every event's photos would be shipped
-    // down on every load (slow, and a lot of wasted bandwidth as photos add up).
-    var eventTxIds = {};
-    details.forEach(function (d) { eventTxIds[d.transactionId] = true });
-    var slipSheet = getTransactionSlipsSheet();
-    var slipData = _backfillSlipIds(slipSheet, slipSheet.getDataRange().getValues());
-    var slips = {};
-    for (var i = 1; i < slipData.length; i++) {
-      if (slipData[i][1] && eventTxIds[slipData[i][0]]) {
-        var stid = slipData[i][0];
-        if (!slips[stid]) slips[stid] = [];
-        slips[stid].push({ id: slipData[i][3], slip: slipData[i][1], slipHi: slipData[i][4] || '' });
-      }
-    }
-
-    // selfFriendId lets the client show the account's own profile photo (set
-    // via My Profile) for its own avatar instead of the initials circle.
-    return { success: true, details: details, friends: friends, settlements: settlements, selfFriendId: selfFriendId, slips: slips };
+    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
+    var payload = _buildDetailPayload(ss, eventId, user.id);
+    payload.success = true;
+    return payload;
   } catch (e) { return { success: false, error: e.toString() } }
 }
 
@@ -1158,82 +1164,26 @@ function getSharedEventView(shareToken) {
     if (!eventRow) return { success: false, error: 'This share link is no longer active' };
     var accountId = eventRow[2];
 
-    var dtData = ss.getSheetByName('Details').getDataRange().getValues();
-    var rawDetails = [];
-    for (var i = 1; i < dtData.length; i++) {
-      if (dtData[i][1] === eventId) {
-        rawDetails.push({ transactionId: dtData[i][2], payId: dtData[i][3], friendId: dtData[i][4],
-          amount: dtData[i][5], totalAmount: dtData[i][6], description: dtData[i][7], createdAt: dtData[i][8] });
-      }
-    }
-
-    // Read Friends once, both for the name map and to find the event owner's
-    // self-friend (so their own photo — set via My Profile — can be shown
-    // for their avatar on this public page instead of initials).
-    var frRawData = ss.getSheetByName('Friends').getDataRange().getValues();
-    var friendMap = {};
-    for (var i = 1; i < frRawData.length; i++) {
-      if (frRawData[i][1] === accountId) friendMap[frRawData[i][0]] = frRawData[i][2];
-    }
-    var selfRow = _findSelfFriendRow(frRawData, accountId);
-    var selfFriendId = selfRow !== -1 ? frRawData[selfRow][0] : null;
-
     var ownerPhoto = '';
-    if (selfFriendId) {
-      var acData = ss.getSheetByName('Accounts').getDataRange().getValues();
-      for (var i = 1; i < acData.length; i++) {
-        if (acData[i][0] === accountId) { ownerPhoto = acData[i][9] || ''; break; }
-      }
+    var acData = ss.getSheetByName('Accounts').getDataRange().getValues();
+    for (var i = 1; i < acData.length; i++) {
+      if (acData[i][0] === accountId) { ownerPhoto = acData[i][9] || ''; break; }
     }
 
-    var details = rawDetails.map(function (d) {
-      return {
-        transactionId: d.transactionId,
-        payId: d.payId,
-        friendId: d.friendId,
-        payerName: friendMap[d.payId] || d.payId,
-        friendName: friendMap[d.friendId] || d.friendId,
-        amount: d.amount,
-        totalAmount: d.totalAmount,
-        description: d.description,
-        createdAt: d.createdAt
-      };
-    });
-
-    // Only this event's transactionIds - TransactionSlips isn't keyed by
-    // eventId, so without this filter a public share link would receive every
-    // photo from every one of the owner's events, not just this one (slow,
-    // wasteful, and a real privacy leak on a link meant to scope to one event).
-    var eventTxIds = {};
-    rawDetails.forEach(function (d) { eventTxIds[d.transactionId] = true });
-    var slipSheet = getTransactionSlipsSheet();
-    var slipData = _backfillSlipIds(slipSheet, slipSheet.getDataRange().getValues());
-    var slips = {};
-    for (var i = 1; i < slipData.length; i++) {
-      if (slipData[i][1] && eventTxIds[slipData[i][0]]) {
-        var stid = slipData[i][0];
-        if (!slips[stid]) slips[stid] = [];
-        slips[stid].push({ id: slipData[i][3], slip: slipData[i][1], slipHi: slipData[i][4] || '' });
-      }
-    }
-
-    // Only needed so an 'edit' link can render payer/split pickers - scoped to
-    // this event's actual members (not the owner's whole friend list, which
-    // would leak names from their other events and let an anonymous editor
-    // split against people not part of this one). Passes the already-read
-    // Details data so the self-heal path (when EventFriends has no rows yet)
-    // doesn't re-read the whole sheet.
-    var friends = _getEventFriends(ss, eventId, accountId, friendMap, undefined, dtData);
+    // Same core the authenticated getDetailData uses, so a share visitor sees
+    // identical details/friends/settlements (including paid state)/slips
+    // shapes — the client renders both through the exact same Detail code.
+    var payload = _buildDetailPayload(ss, eventId, accountId);
 
     return {
       success: true,
       event: { name: eventRow[1], createdAt: eventRow[3], icon: eventRow[5] || '' },
-      details: details,
-      friends: friends,
-      settlements: _computeSettlements(rawDetails, friendMap),
-      selfFriendId: selfFriendId,
+      details: payload.details,
+      friends: payload.friends,
+      settlements: payload.settlements,
+      selfFriendId: payload.selfFriendId,
       ownerPhoto: ownerPhoto,
-      slips: slips,
+      slips: payload.slips,
       permission: permission
     };
   } catch (e) {
@@ -1381,26 +1331,9 @@ function updateDetailViaShare(shareToken, transactionId, payId, friendIds, total
   }
 }
 
-function deleteDetailViaShare(shareToken, transactionId) {
-  try {
-    var eventId = _shareEventId(shareToken, true);
-    if (!eventId) return { success: false, error: 'This share link cannot make changes' };
-
-    var sheet = getSpreadsheet().getSheetByName('Details');
-    var data = sheet.getDataRange().getValues();
-    var txEventId = null;
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][2] === transactionId) { txEventId = data[i][1]; break; }
-    }
-    if (txEventId !== eventId) return { success: false, error: 'Transaction not found' };
-
-    _removeRowsWhere(sheet, 2, transactionId, data);
-    _removeRowsWhere(getTransactionSlipsSheet(), 0, transactionId);
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  }
-}
+// deleteDetailViaShare / deleteTransactionSlipViaShare were removed on purpose
+// (not merely hidden client-side): no share link, editable or not, may ever
+// delete a transaction or a saved photo. Add/Edit stays available below.
 
 function uploadTransactionSlipViaShare(shareToken, transactionId, slip, slipHi) {
   try {
@@ -1416,28 +1349,6 @@ function uploadTransactionSlipViaShare(shareToken, transactionId, slip, slipHi) 
     var id = Utilities.getUuid();
     getTransactionSlipsSheet().appendRow([transactionId, slip, new Date().toISOString(), id, slipHi || '']);
     return { success: true, id: id };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  }
-}
-
-function deleteTransactionSlipViaShare(shareToken, transactionId, slipId) {
-  try {
-    var eventId = _shareEventId(shareToken, true);
-    if (!eventId) return { success: false, error: 'This share link cannot make changes' };
-
-    var dtData = getSpreadsheet().getSheetByName('Details').getDataRange().getValues();
-    if (_transactionEventId(dtData, transactionId) !== eventId) return { success: false, error: 'Transaction not found' };
-
-    var sheet = getTransactionSlipsSheet();
-    var data = _backfillSlipIds(sheet, sheet.getDataRange().getValues());
-    for (var j = 1; j < data.length; j++) {
-      if (data[j][0] === transactionId && data[j][3] === slipId) {
-        sheet.deleteRow(j + 1);
-        return { success: true };
-      }
-    }
-    return { success: false, error: 'Photo not found' };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

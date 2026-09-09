@@ -15,9 +15,13 @@ var _SLIP_ADD_ICON = '<div class="tx-slip-add" id="btnTxSlipAdd"><svg viewBox="0
 var _SLIP_REMOVE_ICON = '<svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
 
 function _renderTxSlipGallery() {
+  // Removing an already-saved photo is a delete, never allowed via a share
+  // link (even an editable one) - only newly-picked, not-yet-uploaded photos
+  // stay removable in share mode.
+  var canRemoveExisting = !IS_SHARE;
   var html = _txSlipsExisting.map(function (s, idx) {
     return '<div class="tx-slip-item"><img src="' + s.slip + '"/>' +
-      '<button type="button" class="tx-slip-remove" data-kind="existing" data-idx="' + idx + '">' + _SLIP_REMOVE_ICON + '</button></div>';
+      (canRemoveExisting ? '<button type="button" class="tx-slip-remove" data-kind="existing" data-idx="' + idx + '">' + _SLIP_REMOVE_ICON + '</button>' : '') + '</div>';
   }).join('') + _txSlipsNew.map(function (s, idx) {
     return '<div class="tx-slip-item"><img src="' + s.slip + '"/>' +
       '<button type="button" class="tx-slip-remove" data-kind="new" data-idx="' + idx + '">' + _SLIP_REMOVE_ICON + '</button></div>';
@@ -58,13 +62,22 @@ function _compressSlipHi(file) {
 }
 
 async function _saveTxSlipsIfNeeded(transactionId, removedIds, newSlips) {
+  if (IS_SHARE) removedIds = []; // slip deletion is never allowed via a share link (server function no longer exists either)
   if (!removedIds.length && !newSlips.length) return;
   try {
-    await Promise.all(removedIds.map(function (id) { return gsc('deleteTransactionSlip', TK, transactionId, id) }));
-    var results = await Promise.all(newSlips.map(function (s) { return gsc('uploadTransactionSlip', TK, transactionId, s.slip, s.slipHi) }));
+    if (removedIds.length) await Promise.all(removedIds.map(function (id) { return gsc('deleteTransactionSlip', TK, transactionId, id) }));
+    var results = await Promise.all(newSlips.map(function (s) {
+      return IS_SHARE
+        ? gsc('uploadTransactionSlipViaShare', SHARE_TOKEN, transactionId, s.slip, s.slipHi)
+        : gsc('uploadTransactionSlip', TK, transactionId, s.slip, s.slipHi);
+    }));
     var added = results.map(function (r, idx) {
       return r.success ? { id: r.id, slip: newSlips[idx].slip, slipHi: newSlips[idx].slipHi } : null;
     }).filter(Boolean);
+    // Failed uploads (expired session, or still-too-large after compression)
+    // used to be dropped silently here - surface them instead.
+    var failures = results.filter(function (r) { return !r.success });
+    if (failures.length) toast(failures[0].error || 'Could not upload one or more photos', 'err');
     var current = (SLIPS[transactionId] || [])
       .filter(function (s) { return removedIds.indexOf(s.id) === -1 })
       .concat(added);
@@ -287,6 +300,7 @@ function buildTxFriendPickers(checkedIds) {
 }
 
 function handleFab() {
+  if (IS_SHARE && !PERM.canAdd) return; // defense-in-depth - FAB is already hidden in this case
   if (CUR_EV) {
     if (!FRIENDS.length) {
       toast('Add at least one friend to this event first', 'warn');
@@ -310,6 +324,7 @@ function handleFab() {
 }
 
 function openEditTxSheet(tid) {
+  if (IS_SHARE && !PERM.canEdit) return; // defense-in-depth - the Edit icon is already hidden in this case
   var rows = DETAILS.filter(function (d) { return d.transactionId === tid });
   if (!rows.length) return;
   var f = rows[0];
@@ -377,7 +392,9 @@ async function submitTx() {
   closeSheets();
   try {
     if (editId) {
-      var r = await gsc('updateDetail', TK, editId, pay, friendIds, totalAmount, desc, customAmounts);
+      var r = IS_SHARE
+        ? await gsc('updateDetailViaShare', SHARE_TOKEN, editId, pay, friendIds, totalAmount, desc, customAmounts)
+        : await gsc('updateDetail', TK, editId, pay, friendIds, totalAmount, desc, customAmounts);
       if (r.success) {
         toast('Transaction updated');
         var existing = DETAILS.filter(function (d) { return d.transactionId === editId })[0];
@@ -389,7 +406,9 @@ async function submitTx() {
         await _saveTxSlipsIfNeeded(editId, slipsRemoved, slipsNew);
       } else toast(r.error, 'err');
     } else {
-      var r = await gsc('addDetail', TK, CUR_EV.id, pay, friendIds, totalAmount, desc, customAmounts);
+      var r = IS_SHARE
+        ? await gsc('addDetailViaShare', SHARE_TOKEN, pay, friendIds, totalAmount, desc, customAmounts)
+        : await gsc('addDetail', TK, CUR_EV.id, pay, friendIds, totalAmount, desc, customAmounts);
       if (r.success) {
         toast('Transaction added! 💸');
         DETAILS = DETAILS.concat(_buildLocalDetailRows(r.transactionId, pay, friendIds, totalAmount, desc, customAmounts, new Date().toISOString()));
@@ -404,6 +423,7 @@ async function submitTx() {
 }
 
 function askDel(type, id, name) {
+  if (type === 'tx' && IS_SHARE) return; // defense-in-depth - delete is never allowed via a share link, button is already hidden
   var titles = {
     event:   'Delete Event?',
     tx:      'Delete Transaction?',
@@ -626,6 +646,7 @@ $(function () {
   $('#cfOk').on('click', async function () {
     if (!_del) return;
     var t = _del.type, id = _del.id; _del = null; closeSheets();
+    if (t === 'tx' && IS_SHARE) return; // defense-in-depth - delete is never allowed via a share link
     try {
       var r;
       if (t === 'event')        r = await gsc('deleteEvent',   TK, id);

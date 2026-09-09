@@ -59,6 +59,30 @@ async function loadDetailData(id) {
   $('#txSearchClear').addClass('hidden');
   $('#txList').html(skeletonHtml(3, 'tx'));
   try {
+    if (IS_SHARE) {
+      var r = await gsc('getSharedEventView', SHARE_TOKEN);
+      if (r.success) {
+        _applyPermFromShare(r.permission);
+        CUR_EV = { id: null, name: r.event.name, createdAt: r.event.createdAt, icon: r.event.icon };
+        $('#hdrTitle').text(CUR_EV.name);
+        $('#detailBanner').css('background', bannerGrad(CUR_EV.name));
+        $('#detailEmoji').text(CUR_EV.icon || evEmoji(CUR_EV.name));
+        $('#detailBannerName').text(CUR_EV.name);
+        $('#detailBannerDate').text(fmtDate(CUR_EV.createdAt));
+        $('#fab').toggleClass('hide', !PERM.canAdd);
+        $('#btnShareEvent').toggle(!!PERM.canShare);
+        DETAILS = r.details || [];
+        FRIENDS = r.friends || [];
+        SETTLEMENTS = r.settlements || [];
+        SELF_FRIEND_ID = r.selfFriendId || null;
+        SLIPS = r.slips || {};
+        ME_PHOTO = r.ownerPhoto || '';
+        renderDetails();
+      } else {
+        $('#txList').html('<div class="empty"><div class="empty-t">Link unavailable</div><div class="empty-s">' + esc(r.error || 'This share link is no longer active') + '</div></div>');
+      }
+      return;
+    }
     var r = await gsc('getDetailData', TK, id);
     if (r.success) {
       DETAILS = r.details || [];
@@ -122,6 +146,12 @@ function renderDetails() {
     var d = new Date(f.createdAt);
     var timeStr = isNaN(d) ? '' : d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     var isLast = i === ord.length - 1;
+    var footerBtns =
+      (PERM.canEdit ? '<button class="sched-act-btn tx-edit" data-tid="' + esc(tid) + '" title="Edit">' +
+        '<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>' : '') +
+      (PERM.canDelete ? '<button class="sched-act-btn del tx-del" data-tid="' + esc(tid) + '" data-desc="' + esc(desc) + '" title="Delete">' +
+        '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>' : '');
+    var footerHtml = footerBtns ? '<div class="sched-card-footer">' + footerBtns + '</div>' : '';
     return '<div class="sched-item">' +
       '<div class="sched-time-col"><div class="sched-time">' + esc(timeStr) + '</div><div class="sched-date">' + fmtDate(f.createdAt) + '</div></div>' +
       '<div class="sched-axis">' + (isLast ? '' : '<div class="sched-line"></div>') + '</div>' +
@@ -139,12 +169,7 @@ function renderDetails() {
       '<div class="tx-amt">' + fmtAmt(total) + '</div>' +
       '</div>' +
       '<div class="tx-people">' + chips + '</div>' +
-      '<div class="sched-card-footer">' +
-      '<button class="sched-act-btn tx-edit" data-tid="' + esc(tid) + '" title="Edit">' +
-      '<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>' +
-      '<button class="sched-act-btn del tx-del" data-tid="' + esc(tid) + '" data-desc="' + esc(desc) + '" title="Delete">' +
-      '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>' +
-      '</div>' +
+      footerHtml +
       '</div>' +
       '</div>';
   }).join('');
@@ -223,7 +248,7 @@ async function exportExpensesPdf() {
   var settlements = SETTLEMENTS;
   if (settlements === null) {
     try {
-      var r = await gsc('getSummary', TK, CUR_EV.id);
+      var r = IS_SHARE ? await gsc('getSharedEventView', SHARE_TOKEN) : await gsc('getSummary', TK, CUR_EV.id);
       if (r.success) settlements = r.settlements || [];
     } catch (e) {}
   }
@@ -338,6 +363,12 @@ async function exportExpensesPdf() {
 async function loadSummary(id) {
   $('#sumList').html(skeletonHtml(2, 'sum'));
   try {
+    if (IS_SHARE) {
+      var r = await gsc('getSharedEventView', SHARE_TOKEN);
+      if (r.success) { SETTLEMENTS = r.settlements || []; renderSummary(SETTLEMENTS) }
+      else _handleDataError(r.error);
+      return;
+    }
     var r = await gsc('getSummary', TK, id);
     if (r.success) {
       SETTLEMENTS = r.settlements || [];
@@ -376,7 +407,7 @@ function renderSummary(ss) {
       '<div class="se-name">' + esc(x.toName) + '</div>' +
       '</div>' +
       '<label class="se-check">' +
-      '<input type="checkbox" class="se-paid-cb" data-from="' + esc(x.from) + '" data-to="' + esc(x.to) + '" data-amt="' + x.amount + '"' + (x.paid ? ' checked' : '') + '>' +
+      '<input type="checkbox" class="se-paid-cb" data-from="' + esc(x.from) + '" data-to="' + esc(x.to) + '" data-amt="' + x.amount + '"' + (x.paid ? ' checked' : '') + (IS_SHARE ? ' disabled' : '') + '>' +
       '<span class="se-check-box"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></span>' +
       '</label>' +
       '</div>';
