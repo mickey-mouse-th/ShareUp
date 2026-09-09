@@ -45,7 +45,12 @@ $(function () {
         // Redirect the actual top-level page (not just this iframe) to a URL
         // carrying the token, so Safari has an address to fall back to when
         // it wipes localStorage - see loginUser's `url` field in Code.js.
-        if (r.url) { top.location.href = r.url; return }
+        // Best-effort only: Apps Script's sandboxed content frame can block
+        // top-level navigation outright depending on its sandbox flags, in
+        // which case this silently no-ops - always fall through to starting
+        // the app locally (the TK/ME we already have) so login never appears
+        // to hang just because the redirect didn't go through.
+        if (r.url) { try { top.location.href = r.url } catch (e) {} }
         startApp();
       } else {
         toast(r.error || 'Login failed', 'err');
