@@ -352,9 +352,30 @@ function doGet(e) {
   var rawToken = e && e.parameter && e.parameter.share;
   // Strict allowlist so this can be embedded directly into the page's inline script safely.
   var shareToken = (rawToken && /^[a-zA-Z0-9-]{10,100}$/.test(rawToken)) ? rawToken : '';
+
+  // Optional ?tk=<token> - the client silently redirects here right after a
+  // "remember me" login (see Auth_js.html). localStorage/sessionStorage are
+  // both wiped by Safari on every real app close for Apps Script's sandboxed
+  // content frame (treated as a fresh cross-site storage partition each
+  // time), but Safari DOES keep a closed tab's last URL across a full
+  // restart - reopening it re-runs doGet with this param still attached, so
+  // login survives without the user ever bookmarking/saving anything.
+  // Re-validated here at render time so a revoked/expired token silently
+  // falls back to a normal logged-out page instead of erroring.
+  var bootToken = '', bootUser = null;
+  var rawTk = e && e.parameter && e.parameter.tk;
+  if (!shareToken && rawTk && /^[a-zA-Z0-9-]{10,100}$/.test(rawTk)) {
+    try {
+      var found = _lookupSession(rawTk);
+      if (found) { bootToken = rawTk; bootUser = found.userInfo; }
+    } catch (err) { /* ignore - falls back to logged-out */ }
+  }
+
   var tpl = HtmlService.createTemplateFromFile('Index');
   tpl.shareToken = shareToken;
   tpl.sharePermission = shareToken ? _sharePermissionByToken(shareToken) : '';
+  tpl.bootToken = bootToken;
+  tpl.bootUser = bootUser;
   return tpl.evaluate()
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .setTitle(shareToken ? 'ShareUp - Shared Event' : 'ShareUp - Expense Splitting');
@@ -535,7 +556,7 @@ function loginUser(username, password) {
         getCache().put('token_' + token, JSON.stringify(userInfo), cacheTtl);
         getSessionsSheet().appendRow([token, row[0], JSON.stringify(userInfo), now.toISOString(), expires.toISOString()]);
         _cleanExpiredSessions();
-        return { success: true, token: token, user: userInfo };
+        return { success: true, token: token, user: userInfo, url: ScriptApp.getService().getUrl() + '?tk=' + encodeURIComponent(token) };
       }
     }
     return { success: false, error: 'Invalid username or password' };

@@ -414,6 +414,14 @@ $(function () {
   $('#hdrAv').on('click',  function () { openSheet('shAccount') });
   $('#overlay').on('click', closeSheets);
 
+  // A ?tk= URL (see doGet/Auth_js.html) re-logs in even when localStorage was
+  // wiped - adopt it as the normal session and persist it going forward.
+  if (!IS_SHARE && BOOT_TOKEN && BOOT_USER) {
+    TK = BOOT_TOKEN; ME = BOOT_USER;
+    localStorage.setItem('su_tk', TK);
+    localStorage.setItem('su_me', JSON.stringify(ME));
+  }
+
   // Boot — optimistic: show app immediately with cached data,
   // validate session in background to avoid login on every cold start
   if (IS_SHARE) {
