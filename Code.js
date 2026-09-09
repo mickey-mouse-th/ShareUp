@@ -567,7 +567,14 @@ function loginUser(username, password) {
         getCache().put('token_' + token, JSON.stringify(userInfo), cacheTtl);
         getSessionsSheet().appendRow([token, row[0], JSON.stringify(userInfo), now.toISOString(), expires.toISOString()]);
         _cleanExpiredSessions();
-        return { success: true, token: token, user: userInfo };
+        // url: client redirects here right after login (see Auth_js.html) so
+        // the address bar itself carries the token - Safari wipes this app's
+        // localStorage on every close (ITP treats Apps Script's sandboxed
+        // content frame as third-party), so the token has nowhere else to
+        // reliably survive between visits. Bookmarking/Adding this exact URL
+        // to Home Screen logs back in automatically as long as the session
+        // (per the admin-configured length) hasn't expired.
+        return { success: true, token: token, user: userInfo, url: ScriptApp.getService().getUrl() + '?tk=' + encodeURIComponent(token) };
       }
     }
     return { success: false, error: 'Invalid username or password' };

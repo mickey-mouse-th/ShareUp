@@ -42,6 +42,10 @@ $(function () {
         TK = r.token; ME = r.user;
         localStorage.setItem('su_tk', TK);
         localStorage.setItem('su_me', JSON.stringify(ME));
+        // Redirect the actual top-level page (not just this iframe) to a URL
+        // carrying the token, so Safari has an address to fall back to when
+        // it wipes localStorage - see loginUser's `url` field in Code.js.
+        if (r.url) { top.location.href = r.url; return }
         startApp();
       } else {
         toast(r.error || 'Login failed', 'err');
