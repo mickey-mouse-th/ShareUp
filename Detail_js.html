@@ -8,9 +8,14 @@ function _renderSlipCarousel() {
   $('#slipCounter').text(_slipCarouselList.length > 1 ? (_slipCarouselIdx + 1) + ' / ' + _slipCarouselList.length : '');
   $('#slipPrev, #slipNext').toggle(_slipCarouselList.length > 1);
 }
-function _downloadDataUri(dataUri, filename) {
+function _downloadDataUri(uri, filename) {
+  // Old slips are still raw data-URIs (pre-Drive) - the download trick works
+  // for those. New slips are remote Drive URLs, where the `download`
+  // attribute is ignored cross-origin - open it instead (Drive's
+  // export=download link forces a real download on its own).
+  if (uri.indexOf('data:') !== 0) { window.open(uri, '_blank'); return }
   var a = document.createElement('a');
-  a.href = dataUri;
+  a.href = uri;
   a.download = filename;
   document.body.appendChild(a);
   a.click();

@@ -159,12 +159,16 @@ function getSettlementPaymentsSheet() {
 // One row per PHOTO (a transaction can have several), not a column on
 // Details, since a transaction fans out into one Details row per
 // participant - a column there would duplicate every image N times.
+// Column F ('fileId') was added when slips moved to Drive storage (see
+// _uploadSlipToDrive below) - rows written before that have a blank fileId
+// and keep their original base64 data-URI in 'slip'/'slipHi', which still
+// renders fine in an <img>, so no migration of old rows is needed.
 function getTransactionSlipsSheet() {
   var ss = getSpreadsheet();
   var sheet = ss.getSheetByName('TransactionSlips');
   if (!sheet) {
     sheet = ss.insertSheet('TransactionSlips');
-    sheet.appendRow(['transactionId', 'slip', 'updatedAt', 'id', 'slipHi']);
+    sheet.appendRow(['transactionId', 'slip', 'updatedAt', 'id', 'slipHi', 'fileId']);
   }
   return sheet;
 }
@@ -182,6 +186,66 @@ function _backfillSlipIds(sheet, data) {
     sheet.getRange(2, 4, data.length - 1, 1).setValues(data.slice(1).map(function (r) { return [r[3]] }));
   }
   return data;
+}
+
+// ----------------------------------------------------------------
+// Slip photo storage (Google Drive) - a Sheets cell caps out around 50,000
+// characters, far too small for a real photo, so slips are uploaded as Drive
+// files instead and only the resulting URLs/fileId are kept in the sheet.
+// ----------------------------------------------------------------
+
+function _getSlipsFolder() {
+  var props = PropertiesService.getScriptProperties();
+  var folderId = props.getProperty('SLIPS_FOLDER_ID');
+  if (folderId) {
+    try { return DriveApp.getFolderById(folderId) } catch (e) { /* fall through and recreate */ }
+  }
+  var folder = DriveApp.createFolder('ShareUp_Slips');
+  props.setProperty('SLIPS_FOLDER_ID', folder.getId());
+  return folder;
+}
+
+// dataUri: a "data:<mime>;base64,<data>" string from the client's canvas
+// compression step. Shares the file "Anyone with the link - Viewer" so it can
+// be embedded in an <img> for anonymous share visitors too (view-only file
+// permissions, not edit) - matches this app's existing "unguessable link"
+// sharing model rather than requiring a login just to view a receipt photo.
+function _uploadSlipToDrive(dataUri) {
+  var m = /^data:([^;]+);base64,(.*)$/.exec(dataUri || '');
+  if (!m) throw new Error('Invalid image data');
+  var mimeType = m[1], base64 = m[2];
+  if (base64.length > 2000000) throw new Error('Photo is too large - please try a smaller one');
+  var bytes = Utilities.base64Decode(base64);
+  var blob = Utilities.newBlob(bytes, mimeType, 'slip-' + Utilities.getUuid());
+  var file = _getSlipsFolder().createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  var fileId = file.getId();
+  return {
+    fileId: fileId,
+    // Resized inline-viewable thumbnail - fast to load in the timeline/carousel.
+    previewUrl: 'https://lh3.googleusercontent.com/d/' + fileId + '=w1000',
+    // Forces a real file download (original quality) for the "Download Original" button.
+    downloadUrl: 'https://drive.google.com/uc?export=download&id=' + fileId
+  };
+}
+
+function _deleteSlipFile(fileId) {
+  if (!fileId) return; // pre-Drive rows have no fileId - nothing to trash
+  try { DriveApp.getFileById(fileId).setTrashed(true) } catch (e) { /* already gone - ignore */ }
+}
+
+function _trashSlipFilesForTx(transactionId) {
+  var data = getTransactionSlipsSheet().getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0] === transactionId && data[i][5]) _deleteSlipFile(data[i][5]);
+  }
+}
+
+function _trashSlipFilesForTxSet(txIdSet) {
+  var data = getTransactionSlipsSheet().getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (txIdSet[data[i][0]] && data[i][5]) _deleteSlipFile(data[i][5]);
+  }
 }
 
 function _lookupSession(token) {
@@ -1054,6 +1118,7 @@ function deleteEvent(token, eventId) {
       if (dtData[i][1] === eventId) txIds[dtData[i][2]] = true;
     }
 
+    _trashSlipFilesForTxSet(txIds);
     _removeRowsWhere(detailsSheet, 1, eventId, dtData);
     _removeRowsWhere(getEventFriendsSheet(), 1, eventId);
     _removeRowsWhere(getEventSharesSheet(), 0, eventId);
@@ -1263,6 +1328,7 @@ function deleteDetail(token, transactionId) {
     if (!eventId) return { success: false, error: 'Transaction not found' };
     if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Transaction not found' };
 
+    _trashSlipFilesForTx(transactionId);
     _removeRowsWhere(sheet, 2, transactionId, data);
     _removeRowsWhere(getTransactionSlipsSheet(), 0, transactionId);
     return { success: true };
@@ -1335,20 +1401,19 @@ function updateDetailViaShare(shareToken, transactionId, payId, friendIds, total
 // (not merely hidden client-side): no share link, editable or not, may ever
 // delete a transaction or a saved photo. Add/Edit stays available below.
 
-function uploadTransactionSlipViaShare(shareToken, transactionId, slip, slipHi) {
+function uploadTransactionSlipViaShare(shareToken, transactionId, slip) {
   try {
     var eventId = _shareEventId(shareToken, true);
     if (!eventId) return { success: false, error: 'This share link cannot make changes' };
     if (!slip) return { success: false, error: 'No photo provided' };
-    if (slip.length > 45000) return { success: false, error: 'Photo is too large - please try a smaller one' };
-    if (slipHi && slipHi.length > 48000) return { success: false, error: 'Photo is too large - please try a smaller one' };
 
     var dtData = getSpreadsheet().getSheetByName('Details').getDataRange().getValues();
     if (_transactionEventId(dtData, transactionId) !== eventId) return { success: false, error: 'Transaction not found' };
 
+    var uploaded = _uploadSlipToDrive(slip);
     var id = Utilities.getUuid();
-    getTransactionSlipsSheet().appendRow([transactionId, slip, new Date().toISOString(), id, slipHi || '']);
-    return { success: true, id: id };
+    getTransactionSlipsSheet().appendRow([transactionId, uploaded.previewUrl, new Date().toISOString(), id, uploaded.downloadUrl, uploaded.fileId]);
+    return { success: true, id: id, slip: uploaded.previewUrl, slipHi: uploaded.downloadUrl };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -1363,26 +1428,23 @@ function _transactionEventId(dtData, transactionId) {
 }
 
 // Always adds a new photo (a transaction can have several) - returns its id
-// so the client can target it with deleteTransactionSlip later.
-// slip: a compressed "preview" copy (used for thumbnails/inline viewing).
-// slipHi: an optional larger/higher-quality copy for the "Download Original"
-// button - still bounded by the Sheets cell limit, so not a true original,
-// just less aggressively compressed. Falls back to slip if omitted.
-function uploadTransactionSlip(token, transactionId, slip, slipHi) {
+// so the client can target it with deleteTransactionSlip later. The photo is
+// stored as a Drive file (see _uploadSlipToDrive); the returned slip/slipHi
+// are the preview/download URLs, not the raw upload the client sent.
+function uploadTransactionSlip(token, transactionId, slip) {
   try {
     var user = requireAuth(token);
     if (!slip) return { success: false, error: 'No photo provided' };
-    if (slip.length > 45000) return { success: false, error: 'Photo is too large - please try a smaller one' };
-    if (slipHi && slipHi.length > 48000) return { success: false, error: 'Photo is too large - please try a smaller one' };
     var ss = getSpreadsheet();
     var dtData = ss.getSheetByName('Details').getDataRange().getValues();
     var eventId = _transactionEventId(dtData, transactionId);
     if (!eventId) return { success: false, error: 'Transaction not found' };
     if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Transaction not found' };
 
+    var uploaded = _uploadSlipToDrive(slip);
     var id = Utilities.getUuid();
-    getTransactionSlipsSheet().appendRow([transactionId, slip, new Date().toISOString(), id, slipHi || '']);
-    return { success: true, id: id };
+    getTransactionSlipsSheet().appendRow([transactionId, uploaded.previewUrl, new Date().toISOString(), id, uploaded.downloadUrl, uploaded.fileId]);
+    return { success: true, id: id, slip: uploaded.previewUrl, slipHi: uploaded.downloadUrl };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -1401,6 +1463,7 @@ function deleteTransactionSlip(token, transactionId, slipId) {
     var data = _backfillSlipIds(sheet, sheet.getDataRange().getValues());
     for (var j = 1; j < data.length; j++) {
       if (data[j][0] === transactionId && data[j][3] === slipId) {
+        _deleteSlipFile(data[j][5]);
         sheet.deleteRow(j + 1);
         return { success: true };
       }

@@ -29,31 +29,16 @@ function _renderTxSlipGallery() {
   $('#txSlipGallery').html(html);
 }
 
-// Receipts need to stay legible (unlike a small avatar), but a Sheets cell
-// caps out around 50k characters - step down resolution/quality until the
-// encoded result fits comfortably, instead of a single fixed compression.
-function _compressSlip(file) {
-  var attempts = [[1000, 0.6], [800, 0.5], [640, 0.4], [480, 0.35]];
+// Slips upload to Drive now (no more ~50k-character Sheets cell cap), so a
+// single reasonably high-quality copy is enough - step down only if the
+// photo is still large after the first attempt. Target ~670,000 base64
+// characters (~500KB of actual image data once decoded).
+function _compressSlipForUpload(file) {
+  var attempts = [[1920, 0.85], [1600, 0.8], [1280, 0.72], [1024, 0.65], [800, 0.55]];
   var i = 0;
   function tryNext() {
     return _resizeImageFile(file, attempts[i][0], attempts[i][1]).then(function (dataUrl) {
-      if (dataUrl.length < 45000 || i === attempts.length - 1) return dataUrl;
-      i++;
-      return tryNext();
-    });
-  }
-  return tryNext();
-}
-
-// Same idea as _compressSlip but starts larger/higher-quality, for the
-// "Download Original" button - not a true original (still bounded by the
-// cell limit), just meaningfully less compressed than the preview copy.
-function _compressSlipHi(file) {
-  var attempts = [[1600, 0.85], [1400, 0.75], [1200, 0.65], [1000, 0.55]];
-  var i = 0;
-  function tryNext() {
-    return _resizeImageFile(file, attempts[i][0], attempts[i][1]).then(function (dataUrl) {
-      if (dataUrl.length < 48000 || i === attempts.length - 1) return dataUrl;
+      if (dataUrl.length < 670000 || i === attempts.length - 1) return dataUrl;
       i++;
       return tryNext();
     });
@@ -68,11 +53,13 @@ async function _saveTxSlipsIfNeeded(transactionId, removedIds, newSlips) {
     if (removedIds.length) await Promise.all(removedIds.map(function (id) { return gsc('deleteTransactionSlip', TK, transactionId, id) }));
     var results = await Promise.all(newSlips.map(function (s) {
       return IS_SHARE
-        ? gsc('uploadTransactionSlipViaShare', SHARE_TOKEN, transactionId, s.slip, s.slipHi)
-        : gsc('uploadTransactionSlip', TK, transactionId, s.slip, s.slipHi);
+        ? gsc('uploadTransactionSlipViaShare', SHARE_TOKEN, transactionId, s.slip)
+        : gsc('uploadTransactionSlip', TK, transactionId, s.slip);
     }));
-    var added = results.map(function (r, idx) {
-      return r.success ? { id: r.id, slip: newSlips[idx].slip, slipHi: newSlips[idx].slipHi } : null;
+    // Use the URLs the server/Drive actually stored, not the client's
+    // pre-upload copy, so the gallery matches what's really saved.
+    var added = results.map(function (r) {
+      return r.success ? { id: r.id, slip: r.slip, slipHi: r.slipHi } : null;
     }).filter(Boolean);
     // Failed uploads (expired session, or still-too-large after compression)
     // used to be dropped silently here - surface them instead.
@@ -548,9 +535,8 @@ $(function () {
     if (!file) return;
     if (file.type.indexOf('image/') !== 0) { toast('Please choose an image file', 'warn'); return }
     try {
-      var slip = await _compressSlip(file);
-      var slipHi = await _compressSlipHi(file);
-      _txSlipsNew.push({ slip: slip, slipHi: slipHi });
+      var slip = await _compressSlipForUpload(file);
+      _txSlipsNew.push({ slip: slip });
       _renderTxSlipGallery();
     } catch (e) { toast('Could not process that image', 'err') }
   });
