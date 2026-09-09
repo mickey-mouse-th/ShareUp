@@ -206,10 +206,14 @@ function _getSlipsFolder() {
 }
 
 // dataUri: a "data:<mime>;base64,<data>" string from the client's canvas
-// compression step. Shares the file "Anyone with the link - Viewer" so it can
-// be embedded in an <img> for anonymous share visitors too (view-only file
-// permissions, not edit) - matches this app's existing "unguessable link"
-// sharing model rather than requiring a login just to view a receipt photo.
+// compression step. The file is kept PRIVATE (no public Drive sharing) -
+// every direct Drive embed URL (lh3.googleusercontent.com/d/, drive.google.com
+// /thumbnail, /uc?export=) turned out to unreliably fail once hotlinked
+// cross-origin from inside this app's sandboxed iframe (Google's cookie/
+// referrer checks on those endpoints don't consistently pass through).
+// Instead the app serves the image itself via doGet's ?slip= route (see
+// _serveSlipImage), running as the deploying account regardless of who's
+// asking - the file never needs to be public.
 function _uploadSlipToDrive(dataUri) {
   var m = /^data:([^;]+);base64,(.*)$/.exec(dataUri || '');
   if (!m) throw new Error('Invalid image data');
@@ -218,17 +222,31 @@ function _uploadSlipToDrive(dataUri) {
   var bytes = Utilities.base64Decode(base64);
   var blob = Utilities.newBlob(bytes, mimeType, 'slip-' + Utilities.getUuid());
   var file = _getSlipsFolder().createFile(blob);
-  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   var fileId = file.getId();
-  return {
-    fileId: fileId,
-    // Drive's documented thumbnail endpoint - unlike the unofficial
-    // lh3.googleusercontent.com/d/<id> trick, this one reliably works in a
-    // plain <img src> for anyone with view access to the file.
-    previewUrl: 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w1000',
-    // Forces a real file download (original quality) for the "Download Original" button.
-    downloadUrl: 'https://drive.google.com/uc?export=download&id=' + fileId
-  };
+  var proxyUrl = ScriptApp.getService().getUrl() + '?slip=' + fileId;
+  return { fileId: fileId, previewUrl: proxyUrl, downloadUrl: proxyUrl };
+}
+
+// Serves a slip's actual image bytes through this app's own domain instead of
+// a direct Drive link (see _uploadSlipToDrive for why). Only fileIds that
+// actually appear in TransactionSlips are servable - otherwise this would be
+// an open proxy for reading ANY file in the deploying account's Drive by id,
+// since doGet always executes as that account (executeAs: USER_DEPLOYING).
+function _serveSlipImage(fileId) {
+  try {
+    if (!_isKnownSlipFile(fileId)) return HtmlService.createHtmlOutput('Not found');
+    return DriveApp.getFileById(fileId).getBlob();
+  } catch (e) {
+    return HtmlService.createHtmlOutput('Not found');
+  }
+}
+
+function _isKnownSlipFile(fileId) {
+  var data = getTransactionSlipsSheet().getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][5] === fileId) return true;
+  }
+  return false;
 }
 
 function _deleteSlipFile(fileId) {
@@ -315,6 +333,9 @@ function _sharePermissionByToken(shareToken) {
 }
 
 function doGet(e) {
+  var slipFileId = e && e.parameter && e.parameter.slip;
+  if (slipFileId) return _serveSlipImage(slipFileId);
+
   var rawToken = e && e.parameter && e.parameter.share;
   // Strict allowlist so this can be embedded directly into the page's inline script safely.
   var shareToken = (rawToken && /^[a-zA-Z0-9-]{10,100}$/.test(rawToken)) ? rawToken : '';
