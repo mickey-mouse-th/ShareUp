@@ -222,8 +222,10 @@ function _uploadSlipToDrive(dataUri) {
   var fileId = file.getId();
   return {
     fileId: fileId,
-    // Resized inline-viewable thumbnail - fast to load in the timeline/carousel.
-    previewUrl: 'https://lh3.googleusercontent.com/d/' + fileId + '=w1000',
+    // Drive's documented thumbnail endpoint - unlike the unofficial
+    // lh3.googleusercontent.com/d/<id> trick, this one reliably works in a
+    // plain <img src> for anyone with view access to the file.
+    previewUrl: 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w1000',
     // Forces a real file download (original quality) for the "Download Original" button.
     downloadUrl: 'https://drive.google.com/uc?export=download&id=' + fileId
   };
