@@ -474,6 +474,16 @@ function _resizeImageFile(file, maxSize, quality) {
 
 var _pfPwPolicy = null;
 
+async function openSaveLoginSheet() {
+  $('#saveLoginLinkInp').val('');
+  openSheet('shSaveLogin');
+  try {
+    var r = await gsc('getMyLoginLink', TK);
+    if (r.success) $('#saveLoginLinkInp').val(r.url);
+    else toast(r.error, 'err');
+  } catch (e) { toast('' + e, 'err') }
+}
+
 async function openProfileSheet() {
   openSheet('shProfile');
   _pfPhotoPending = undefined;
@@ -555,6 +565,9 @@ $(function () {
 
   // Account menu
   $('#btnOpenProfile').on('click', openProfileSheet);
+  $('#btnOpenSaveLogin').on('click', openSaveLoginSheet);
+  $('#shSaveLoginClose').on('click', closeSheets);
+  $('#btnCopySaveLogin').on('click', function () { copyInputValue('saveLoginLinkInp') });
   $('#btnOpenLogout').on('click', function () { openSheet('shLogout') });
 
   // My Profile

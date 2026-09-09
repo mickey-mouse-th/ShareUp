@@ -352,12 +352,44 @@ function doGet(e) {
   var rawToken = e && e.parameter && e.parameter.share;
   // Strict allowlist so this can be embedded directly into the page's inline script safely.
   var shareToken = (rawToken && /^[a-zA-Z0-9-]{10,100}$/.test(rawToken)) ? rawToken : '';
+
+  // Optional ?tk=<token> "save this device" login link (see getMyLoginLink) -
+  // works around Safari's ITP wiping localStorage for Apps Script's sandboxed
+  // content frame, treating every visit as third-party storage. Re-validated
+  // here at render time so a revoked/expired token silently falls back to a
+  // normal logged-out page instead of erroring.
+  var bootToken = '', bootUser = null;
+  var rawTk = e && e.parameter && e.parameter.tk;
+  if (!shareToken && rawTk && /^[a-zA-Z0-9-]{10,100}$/.test(rawTk)) {
+    try {
+      var found = _lookupSession(rawTk);
+      if (found) { bootToken = rawTk; bootUser = found.userInfo; }
+    } catch (err) { /* ignore - falls back to logged-out */ }
+  }
+
   var tpl = HtmlService.createTemplateFromFile('Index');
   tpl.shareToken = shareToken;
   tpl.sharePermission = shareToken ? _sharePermissionByToken(shareToken) : '';
+  tpl.bootToken = bootToken;
+  tpl.bootUser = bootUser;
   return tpl.evaluate()
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .setTitle(shareToken ? 'ShareUp - Shared Event' : 'ShareUp - Expense Splitting');
+}
+
+// Lets a user save a bookmark/Home Screen link that logs them straight back
+// in - a workaround for Safari's ITP clearing localStorage for Apps Script's
+// sandboxed content frame on every app close, which otherwise forces a fresh
+// login every time regardless of the configured session length. The token
+// itself grants full account access for as long as it's valid, same as any
+// other session token - the user is warned about this in the UI.
+function getMyLoginLink(token) {
+  try {
+    requireAuth(token);
+    return { success: true, url: ScriptApp.getService().getUrl() + '?tk=' + encodeURIComponent(token) };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
 }
 
 function include(filename) {
