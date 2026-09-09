@@ -474,16 +474,6 @@ function _resizeImageFile(file, maxSize, quality) {
 
 var _pfPwPolicy = null;
 
-async function openSaveLoginSheet() {
-  $('#saveLoginLinkInp').val('');
-  openSheet('shSaveLogin');
-  try {
-    var r = await gsc('getMyLoginLink', TK);
-    if (r.success) $('#saveLoginLinkInp').val(r.url);
-    else toast(r.error, 'err');
-  } catch (e) { toast('' + e, 'err') }
-}
-
 async function openProfileSheet() {
   openSheet('shProfile');
   _pfPhotoPending = undefined;
@@ -510,7 +500,7 @@ async function submitProfile() {
     var r = await gsc('updateProfile', TK, name, _pfPhotoPending);
     if (r.success) {
       ME = r.user;
-      localStorage.setItem('su_me', JSON.stringify(ME));
+      _authStore().setItem('su_me', JSON.stringify(ME));
       $('#heroName').text(ME.displayName);
       _renderHdrAvatar(ME.displayName, _pfPhotoPending !== undefined ? _pfPhotoPending : ME_PHOTO);
       toast('Profile updated');
@@ -565,9 +555,6 @@ $(function () {
 
   // Account menu
   $('#btnOpenProfile').on('click', openProfileSheet);
-  $('#btnOpenSaveLogin').on('click', openSaveLoginSheet);
-  $('#shSaveLoginClose').on('click', closeSheets);
-  $('#btnCopySaveLogin').on('click', function () { copyInputValue('saveLoginLinkInp') });
   $('#btnOpenLogout').on('click', function () { openSheet('shLogout') });
 
   // My Profile

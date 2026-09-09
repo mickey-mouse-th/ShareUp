@@ -1,7 +1,18 @@
 <script>
 // ── Global State ──────────────────────────────
-var TK      = localStorage.getItem('su_tk')  || null;
-var ME      = JSON.parse(localStorage.getItem('su_me') || 'null');
+// "Remember me" (Auth_js.html) decides which of these actually gets written
+// to on login - localStorage survives app closes, sessionStorage doesn't.
+// Read both here so either kind of saved session boots normally.
+var TK      = localStorage.getItem('su_tk')  || sessionStorage.getItem('su_tk')  || null;
+var ME      = JSON.parse(localStorage.getItem('su_me') || sessionStorage.getItem('su_me') || 'null');
+
+// Whichever storage currently holds the session - localStorage if "remember
+// me" was checked at login, sessionStorage otherwise. Used to keep ME in
+// sync (e.g. after a profile edit) without resurrecting a session in the
+// storage the user didn't choose to persist to.
+function _authStore() {
+  return localStorage.getItem('su_tk') ? localStorage : sessionStorage;
+}
 var CUR_TAB = 'home';
 var CUR_EV  = null;
 var FRIENDS = [];
@@ -366,6 +377,8 @@ function doLogout() {
   localStorage.removeItem('su_tk');
   localStorage.removeItem('su_me');
   localStorage.removeItem('su_view');
+  sessionStorage.removeItem('su_tk');
+  sessionStorage.removeItem('su_me');
   $('#appView').hide();
   $('#authView').css('display', 'flex');
   authPg('login');
@@ -401,15 +414,6 @@ $(function () {
   $('#hdrAv').on('click',  function () { openSheet('shAccount') });
   $('#overlay').on('click', closeSheets);
 
-  // A ?tk= "save this device" link (see getMyLoginLink) re-logs in even if
-  // localStorage was wiped (Safari ITP does this to Apps Script's sandboxed
-  // content frame) - adopt it as the normal session going forward.
-  if (!IS_SHARE && BOOT_TOKEN && BOOT_USER) {
-    TK = BOOT_TOKEN; ME = BOOT_USER;
-    localStorage.setItem('su_tk', TK);
-    localStorage.setItem('su_me', JSON.stringify(ME));
-  }
-
   // Boot — optimistic: show app immediately with cached data,
   // validate session in background to avoid login on every cold start
   if (IS_SHARE) {
@@ -422,7 +426,7 @@ $(function () {
       .then(function (r) {
         if (r.success) {
           ME = r.user;
-          localStorage.setItem('su_me', JSON.stringify(ME));
+          _authStore().setItem('su_me', JSON.stringify(ME));
         }
         // Don't force logout here — expired sessions are caught by data-load calls
       })
@@ -448,6 +452,8 @@ function _bootFail() {
   TK = null; ME = null;
   localStorage.removeItem('su_tk');
   localStorage.removeItem('su_me');
+  sessionStorage.removeItem('su_tk');
+  sessionStorage.removeItem('su_me');
   hideSplash();
   _showAuth();
 }
