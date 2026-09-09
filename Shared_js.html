@@ -171,6 +171,30 @@ function skeletonHtml(count, type) {
   return h + '</div>';
 }
 
+// ── Slip photo resolution ─────────────────────
+// New slips are stored as a Drive fileId (see Code.js _uploadSlipToDrive) -
+// every direct Drive embed URL turned out to be unreliable when hotlinked
+// from inside this app's sandboxed iframe, so the bytes are fetched through
+// the same google.script.run bridge as everything else and turned into a
+// data: URI here. Old slips are still a raw data: URI already (pre-Drive) -
+// those pass through untouched. Cached by fileId so re-rendering the same
+// transaction doesn't refetch it.
+var _slipSrcCache = {};
+async function _resolveSlipSrc(val) {
+  if (!val) return '';
+  if (val.indexOf('data:') === 0) return val;
+  if (_slipSrcCache[val]) return _slipSrcCache[val];
+  try {
+    var r = IS_SHARE ? await gsc('getSlipImageViaShare', SHARE_TOKEN, val) : await gsc('getSlipImage', TK, val);
+    if (r.success) {
+      var uri = 'data:' + r.mimeType + ';base64,' + r.base64;
+      _slipSrcCache[val] = uri;
+      return uri;
+    }
+  } catch (e) {}
+  return '';
+}
+
 // ── GAS Bridge ───────────────────────────────
 function gsc(fn) {
   var args = Array.prototype.slice.call(arguments, 1);

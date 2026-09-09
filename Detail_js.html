@@ -8,18 +8,31 @@ function _renderSlipCarousel() {
   $('#slipCounter').text(_slipCarouselList.length > 1 ? (_slipCarouselIdx + 1) + ' / ' + _slipCarouselList.length : '');
   $('#slipPrev, #slipNext').toggle(_slipCarouselList.length > 1);
 }
-function _downloadDataUri(uri, filename) {
-  // Old slips are still raw data-URIs (pre-Drive) - the download trick works
-  // for those. New slips are remote Drive URLs, where the `download`
-  // attribute is ignored cross-origin - open it instead (Drive's
-  // export=download link forces a real download on its own).
-  if (uri.indexOf('data:') !== 0) { window.open(uri, '_blank'); return }
+function _downloadDataUri(dataUri, filename) {
   var a = document.createElement('a');
-  a.href = uri;
+  a.href = dataUri;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+}
+
+// slips: [{id, slip, slipHi}] - slip/slipHi are either a data: URI already
+// (old, pre-Drive rows) or a Drive fileId that needs resolving first (see
+// _resolveSlipSrc in Shared_js.html).
+async function openSlipCarousel(slips) {
+  $('#slipDlMenu').removeClass('on');
+  _slipCarouselList = slips.map(function (s) { return { id: s.id, slip: '', slipHi: '' } });
+  _slipCarouselIdx = 0;
+  openSheet('shSlipView');
+  _renderSlipCarousel();
+  var resolved = await Promise.all(slips.map(function (s) {
+    return Promise.all([_resolveSlipSrc(s.slip), _resolveSlipSrc(s.slipHi)]).then(function (r) {
+      return { id: s.id, slip: r[0], slipHi: r[1] };
+    });
+  }));
+  _slipCarouselList = resolved;
+  _renderSlipCarousel();
 }
 function _slipGoPrev() {
   _slipCarouselIdx = (_slipCarouselIdx - 1 + _slipCarouselList.length) % _slipCarouselList.length;
@@ -530,11 +543,7 @@ $(function () {
     e.stopPropagation();
     var slips = SLIPS[$(this).data('tid')];
     if (!slips || !slips.length) return;
-    _slipCarouselList = slips;
-    _slipCarouselIdx = 0;
-    _renderSlipCarousel();
-    $('#slipDlMenu').removeClass('on');
-    openSheet('shSlipView');
+    openSlipCarousel(slips);
   });
   $('#slipPrev').on('click', _slipGoPrev);
   $('#slipNext').on('click', _slipGoNext);

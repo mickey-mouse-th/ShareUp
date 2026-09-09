@@ -340,6 +340,18 @@ function openEditTxSheet(tid) {
   _txSlipsRemoved = []; _txSlipsNew = [];
   _renderTxSlipGallery();
   openSheet('shTx');
+  _resolveExistingSlips(tid);
+}
+
+// Existing slips may be a Drive fileId that still needs resolving to a real
+// image (see _resolveSlipSrc) - render immediately with what we have, then
+// swap in real thumbnails once resolved. Guarded by _editTxId in case the
+// user closes/reopens a different transaction before this resolves.
+async function _resolveExistingSlips(tid) {
+  var resolved = await Promise.all(_txSlipsExisting.map(function (s) {
+    return _resolveSlipSrc(s.slip).then(function (src) { return { id: s.id, slip: src, slipHi: s.slipHi } });
+  }));
+  if (_editTxId === tid) { _txSlipsExisting = resolved; _renderTxSlipGallery() }
 }
 
 function _buildLocalDetailRows(transactionId, payId, friendIds, totalAmount, description, customAmounts, createdAt) {

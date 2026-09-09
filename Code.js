@@ -206,14 +206,15 @@ function _getSlipsFolder() {
 }
 
 // dataUri: a "data:<mime>;base64,<data>" string from the client's canvas
-// compression step. The file is kept PRIVATE (no public Drive sharing) -
-// every direct Drive embed URL (lh3.googleusercontent.com/d/, drive.google.com
+// compression step. The file is kept PRIVATE (no public Drive sharing) - every
+// direct Drive embed URL (lh3.googleusercontent.com/d/, drive.google.com
 // /thumbnail, /uc?export=) turned out to unreliably fail once hotlinked
-// cross-origin from inside this app's sandboxed iframe (Google's cookie/
-// referrer checks on those endpoints don't consistently pass through).
-// Instead the app serves the image itself via doGet's ?slip= route (see
-// _serveSlipImage), running as the deploying account regardless of who's
-// asking - the file never needs to be public.
+// cross-origin from inside this app's sandboxed iframe, and doGet can't
+// stream raw binary either (Apps Script web apps only support returning
+// HtmlOutput/TextOutput). Instead the image bytes are fetched through the
+// same google.script.run bridge every other read in this app already uses
+// (see getSlipImage/getSlipImageViaShare) and turned into a data: URI
+// client-side - the file never needs to be public.
 function _uploadSlipToDrive(dataUri) {
   var m = /^data:([^;]+);base64,(.*)$/.exec(dataUri || '');
   if (!m) throw new Error('Invalid image data');
@@ -222,22 +223,37 @@ function _uploadSlipToDrive(dataUri) {
   var bytes = Utilities.base64Decode(base64);
   var blob = Utilities.newBlob(bytes, mimeType, 'slip-' + Utilities.getUuid());
   var file = _getSlipsFolder().createFile(blob);
-  var fileId = file.getId();
-  var proxyUrl = ScriptApp.getService().getUrl() + '?slip=' + fileId;
-  return { fileId: fileId, previewUrl: proxyUrl, downloadUrl: proxyUrl };
+  return { fileId: file.getId() };
 }
 
-// Serves a slip's actual image bytes through this app's own domain instead of
-// a direct Drive link (see _uploadSlipToDrive for why). Only fileIds that
-// actually appear in TransactionSlips are servable - otherwise this would be
-// an open proxy for reading ANY file in the deploying account's Drive by id,
-// since doGet always executes as that account (executeAs: USER_DEPLOYING).
-function _serveSlipImage(fileId) {
+// Reads a slip file's bytes back out for the client to display - fileId must
+// already appear in TransactionSlips, otherwise this would be an open proxy
+// for reading ANY file in the deploying account's Drive by id (doGet/RPC
+// calls always execute as that account per executeAs: USER_DEPLOYING).
+function _slipBase64(fileId) {
+  var blob = DriveApp.getFileById(fileId).getBlob();
+  return { mimeType: blob.getContentType(), base64: Utilities.base64Encode(blob.getBytes()) };
+}
+
+function getSlipImage(token, fileId) {
   try {
-    if (!_isKnownSlipFile(fileId)) return HtmlService.createHtmlOutput('Not found');
-    return DriveApp.getFileById(fileId).getBlob();
+    requireAuth(token);
+    if (!_isKnownSlipFile(fileId)) return { success: false, error: 'Photo not found' };
+    var d = _slipBase64(fileId);
+    return { success: true, mimeType: d.mimeType, base64: d.base64 };
   } catch (e) {
-    return HtmlService.createHtmlOutput('Not found');
+    return { success: false, error: e.toString() };
+  }
+}
+
+function getSlipImageViaShare(shareToken, fileId) {
+  try {
+    if (!_shareEventId(shareToken, false)) return { success: false, error: 'Invalid link' };
+    if (!_isKnownSlipFile(fileId)) return { success: false, error: 'Photo not found' };
+    var d = _slipBase64(fileId);
+    return { success: true, mimeType: d.mimeType, base64: d.base64 };
+  } catch (e) {
+    return { success: false, error: e.toString() };
   }
 }
 
@@ -333,9 +349,6 @@ function _sharePermissionByToken(shareToken) {
 }
 
 function doGet(e) {
-  var slipFileId = e && e.parameter && e.parameter.slip;
-  if (slipFileId) return _serveSlipImage(slipFileId);
-
   var rawToken = e && e.parameter && e.parameter.share;
   // Strict allowlist so this can be embedded directly into the page's inline script safely.
   var shareToken = (rawToken && /^[a-zA-Z0-9-]{10,100}$/.test(rawToken)) ? rawToken : '';
@@ -1435,8 +1448,11 @@ function uploadTransactionSlipViaShare(shareToken, transactionId, slip) {
 
     var uploaded = _uploadSlipToDrive(slip);
     var id = Utilities.getUuid();
-    getTransactionSlipsSheet().appendRow([transactionId, uploaded.previewUrl, new Date().toISOString(), id, uploaded.downloadUrl, uploaded.fileId]);
-    return { success: true, id: id, slip: uploaded.previewUrl, slipHi: uploaded.downloadUrl };
+    // 'slip'/'slipHi' both hold the fileId now (client resolves it to a real
+    // image via getSlipImage/getSlipImageViaShare) - 'fileId' is kept as its
+    // own column too since that's what the delete-cleanup helpers key off of.
+    getTransactionSlipsSheet().appendRow([transactionId, uploaded.fileId, new Date().toISOString(), id, uploaded.fileId, uploaded.fileId]);
+    return { success: true, id: id, slip: uploaded.fileId, slipHi: uploaded.fileId };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -1466,8 +1482,11 @@ function uploadTransactionSlip(token, transactionId, slip) {
 
     var uploaded = _uploadSlipToDrive(slip);
     var id = Utilities.getUuid();
-    getTransactionSlipsSheet().appendRow([transactionId, uploaded.previewUrl, new Date().toISOString(), id, uploaded.downloadUrl, uploaded.fileId]);
-    return { success: true, id: id, slip: uploaded.previewUrl, slipHi: uploaded.downloadUrl };
+    // 'slip'/'slipHi' both hold the fileId now (client resolves it to a real
+    // image via getSlipImage/getSlipImageViaShare) - 'fileId' is kept as its
+    // own column too since that's what the delete-cleanup helpers key off of.
+    getTransactionSlipsSheet().appendRow([transactionId, uploaded.fileId, new Date().toISOString(), id, uploaded.fileId, uploaded.fileId]);
+    return { success: true, id: id, slip: uploaded.fileId, slipHi: uploaded.fileId };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
