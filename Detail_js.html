@@ -134,6 +134,54 @@ function _isCustomSplit(rows) {
   return rows.some(function (r) { return Math.abs(parseFloat(r.amount) - base) > 0.01 });
 }
 
+// Client-side port of Code.js's _computeSettlements - lets the paid
+// checkboxes recompute settlements instantly from data already on screen
+// instead of a round-trip after every click.
+function _computeSettlementsClient(detailRows, friendMap) {
+  var debt = {};
+  detailRows.forEach(function (row) {
+    var payerId = row.payId, participantId = row.friendId, amount = parseFloat(row.amount);
+    if (participantId !== payerId) {
+      if (!debt[participantId]) debt[participantId] = {};
+      debt[participantId][payerId] = (debt[participantId][payerId] || 0) + amount;
+    }
+  });
+  var netDebt = {}, processed = {};
+  Object.keys(debt).forEach(function (debtor) {
+    Object.keys(debt[debtor]).forEach(function (creditor) {
+      var key1 = debtor + '_' + creditor, key2 = creditor + '_' + debtor;
+      if (processed[key1] || processed[key2]) return;
+      processed[key1] = processed[key2] = true;
+      var net = (debt[debtor][creditor] || 0) - ((debt[creditor] && debt[creditor][debtor]) || 0);
+      if (Math.abs(net) < 0.01) return;
+      var from = net > 0 ? debtor : creditor, to = net > 0 ? creditor : debtor;
+      if (!netDebt[from]) netDebt[from] = {};
+      netDebt[from][to] = Math.abs(net);
+    });
+  });
+  var settlements = [];
+  Object.keys(netDebt).forEach(function (from) {
+    Object.keys(netDebt[from]).forEach(function (to) {
+      settlements.push({ from: from, fromName: friendMap[from] || from, to: to, toName: friendMap[to] || to, amount: Math.round(netDebt[from][to] * 100) / 100 });
+    });
+  });
+  return settlements;
+}
+// Carries .paid over from the old settlement list to the new one, matched by
+// (from, to, amount) - same invalidation rule the server uses, so a
+// settlement whose amount shifted (a transaction got excluded/included)
+// correctly reverts to unpaid instead of keeping a stale confirmation.
+function _carryPaidFlags(oldSettlements, newSettlements) {
+  var oldPaid = {};
+  oldSettlements.forEach(function (s) {
+    if (s.paid) oldPaid[s.from + '|' + s.to + '|' + Math.round(s.amount * 100)] = true;
+  });
+  newSettlements.forEach(function (s) {
+    s.paid = !!oldPaid[s.from + '|' + s.to + '|' + Math.round(s.amount * 100)];
+  });
+  return newSettlements;
+}
+
 function renderDetails() {
   var $el = $('#txList');
   if (!DETAILS.length) {
@@ -554,20 +602,36 @@ $(function () {
     var cur = _curSlip();
     if (cur) _downloadDataUri(cur.slipHi || cur.slip, 'receipt.jpg');
   });
-  $('#sumList').on('change', '.se-paid-cb', async function () {
+  // Both handlers below update SETTLEMENTS/DETAILS and re-render from data
+  // already on screen, then fire the save in the background - no reload on
+  // the happy path. On failure, fall back to a full reload to resync.
+  $('#sumList').on('change', '.se-paid-cb', function () {
     if (!CUR_EV) return;
-    var from = $(this).data('from'), to = $(this).data('to'), amt = $(this).data('amt');
+    var from = $(this).data('from'), to = $(this).data('to'), amt = parseFloat($(this).data('amt'));
     var paid = $(this).is(':checked');
-    await _gscOrToast('markSettlementPaid', TK, CUR_EV.id, from, to, amt, paid);
-    loadSummary(CUR_EV.id);
+    var s = SETTLEMENTS.filter(function (x) { return x.from === from && x.to === to && Math.abs(x.amount - amt) < 0.01 })[0];
+    if (s) s.paid = paid;
+    renderSummary(SETTLEMENTS);
+    _syncEventSettled(CUR_EV.id, SETTLEMENTS);
+    _gscOrToast('markSettlementPaid', TK, CUR_EV.id, from, to, amt, paid).then(function (r) {
+      if (!r || !r.success) loadSummary(CUR_EV.id);
+    });
   });
-  $('#txList').on('change', '.tx-paid-cb', async function () {
+  $('#txList').on('change', '.tx-paid-cb', function () {
     if (!CUR_EV || IS_SHARE) return;
     var tid = $(this).data('tid');
     var paid = $(this).is(':checked');
-    await _gscOrToast('markTransactionPaid', TK, CUR_EV.id, tid, paid);
-    await loadDetailData(CUR_EV.id);
+    DETAILS.forEach(function (d) { if (d.transactionId === tid) d.paid = paid });
+    var friendMap = _friendNameMap(FRIENDS);
+    var rows = DETAILS.filter(function (d) { return !d.paid })
+      .map(function (d) { return { payId: d.payId, friendId: d.friendId, amount: d.amount } });
+    SETTLEMENTS = _carryPaidFlags(SETTLEMENTS, _computeSettlementsClient(rows, friendMap));
+    renderDetails();
     renderSummary(SETTLEMENTS);
+    _syncEventSettled(CUR_EV.id, SETTLEMENTS);
+    _gscOrToast('markTransactionPaid', TK, CUR_EV.id, tid, paid).then(function (r) {
+      if (!r || !r.success) loadDetailData(CUR_EV.id);
+    });
   });
   $('#btnShareEvent').on('click', openShareSheet);
   $('#btnEnableShare').on('click', enableShare);
