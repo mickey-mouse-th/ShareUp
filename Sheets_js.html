@@ -393,34 +393,51 @@ async function submitTx() {
   var slipsRemoved = _txSlipsRemoved.slice();
   var slipsNew = _txSlipsNew.slice();
   closeSheets();
-  await _tryToast(async function () {
-    if (editId) {
-      var r = IS_SHARE
-        ? await gsc('updateDetailViaShare', SHARE_TOKEN, editId, pay, friendIds, totalAmount, desc, customAmounts)
-        : await gsc('updateDetail', TK, editId, pay, friendIds, totalAmount, desc, customAmounts);
-      if (r.success) {
-        toast('Transaction updated');
-        var existing = DETAILS.filter(function (d) { return d.transactionId === editId })[0];
-        var createdAt = existing ? existing.createdAt : new Date().toISOString();
-        DETAILS = DETAILS.filter(function (d) { return d.transactionId !== editId })
-          .concat(_buildLocalDetailRows(editId, pay, friendIds, totalAmount, desc, customAmounts, createdAt));
-        renderDetails();
-        SETTLEMENTS = null; // stale — the Summary tab/export will refetch next time they're needed
-        await _saveTxSlipsIfNeeded(editId, slipsRemoved, slipsNew);
-      } else toast(r.error, 'err');
+
+  // Optimistic: show the change immediately from local data, save in the
+  // background, roll back + toast only if the save actually fails.
+  if (editId) {
+    var oldRows = DETAILS.filter(function (d) { return d.transactionId === editId });
+    var createdAt = oldRows.length ? oldRows[0].createdAt : new Date().toISOString();
+    DETAILS = DETAILS.filter(function (d) { return d.transactionId !== editId })
+      .concat(_buildLocalDetailRows(editId, pay, friendIds, totalAmount, desc, customAmounts, createdAt));
+    _recomputeSettlementsLocal();
+    renderDetails();
+    var r = await (IS_SHARE
+      ? gsc('updateDetailViaShare', SHARE_TOKEN, editId, pay, friendIds, totalAmount, desc, customAmounts)
+      : gsc('updateDetail', TK, editId, pay, friendIds, totalAmount, desc, customAmounts)
+    ).catch(function (e) { return { success: false, error: '' + e } });
+    if (r.success) {
+      toast('Transaction updated');
+      await _saveTxSlipsIfNeeded(editId, slipsRemoved, slipsNew);
     } else {
-      var r = IS_SHARE
-        ? await gsc('addDetailViaShare', SHARE_TOKEN, pay, friendIds, totalAmount, desc, customAmounts)
-        : await gsc('addDetail', TK, CUR_EV.id, pay, friendIds, totalAmount, desc, customAmounts);
-      if (r.success) {
-        toast('Transaction added! 💸');
-        DETAILS = DETAILS.concat(_buildLocalDetailRows(r.transactionId, pay, friendIds, totalAmount, desc, customAmounts, new Date().toISOString()));
-        renderDetails();
-        SETTLEMENTS = null;
-        await _saveTxSlipsIfNeeded(r.transactionId, slipsRemoved, slipsNew);
-      } else toast(r.error, 'err');
+      DETAILS = DETAILS.filter(function (d) { return d.transactionId !== editId }).concat(oldRows);
+      _recomputeSettlementsLocal();
+      renderDetails();
+      toast(r.error, 'err');
     }
-  });
+  } else {
+    var tempId = '_tmp' + Date.now() + Math.random().toString(36).slice(2);
+    DETAILS = DETAILS.concat(_buildLocalDetailRows(tempId, pay, friendIds, totalAmount, desc, customAmounts, new Date().toISOString()));
+    _recomputeSettlementsLocal();
+    renderDetails();
+    var r = await (IS_SHARE
+      ? gsc('addDetailViaShare', SHARE_TOKEN, pay, friendIds, totalAmount, desc, customAmounts)
+      : gsc('addDetail', TK, CUR_EV.id, pay, friendIds, totalAmount, desc, customAmounts)
+    ).catch(function (e) { return { success: false, error: '' + e } });
+    if (r.success) {
+      toast('Transaction added! 💸');
+      // Swap the temp id for the real one so later edit/delete/slip actions target the right row.
+      DETAILS.forEach(function (d) { if (d.transactionId === tempId) { d.transactionId = r.transactionId; d.id = r.transactionId + '_' + d.friendId } });
+      renderDetails();
+      await _saveTxSlipsIfNeeded(r.transactionId, slipsRemoved, slipsNew);
+    } else {
+      DETAILS = DETAILS.filter(function (d) { return d.transactionId !== tempId });
+      _recomputeSettlementsLocal();
+      renderDetails();
+      toast(r.error, 'err');
+    }
+  }
   _editTxId = null;
   _txSlipsExisting = []; _txSlipsRemoved = []; _txSlipsNew = [];
 }
@@ -625,20 +642,36 @@ $(function () {
     if (!_del) return;
     var t = _del.type, id = _del.id; _del = null; closeSheets();
     if (t === 'tx' && IS_SHARE) return; // defense-in-depth - delete is never allowed via a share link
+
+    // Optimistic: remove from the list immediately, save in the background,
+    // put it back + toast only if the delete actually fails.
+    if (t === 'tx') {
+      if (!CUR_EV) return;
+      var removedRows = DETAILS.filter(function (d) { return d.transactionId === id });
+      DETAILS = DETAILS.filter(function (d) { return d.transactionId !== id });
+      _recomputeSettlementsLocal();
+      renderDetails();
+      var r = await gsc('deleteDetail', TK, id).catch(function (e) { return { success: false, error: '' + e } });
+      if (r.success) {
+        toast('Deleted');
+      } else {
+        DETAILS = DETAILS.concat(removedRows);
+        _recomputeSettlementsLocal();
+        renderDetails();
+        toast(r.error, 'err');
+      }
+      return;
+    }
+
     await _tryToast(async function () {
       var r;
       if (t === 'event')        r = await gsc('deleteEvent',   TK, id);
-      else if (t === 'tx')      r = await gsc('deleteDetail',  TK, id);
       else if (t === 'account') r = await gsc('deleteAccount', TK, id);
       if (r && r.success) {
         toast('Deleted');
         if (t === 'event') {
           EVENTS = EVENTS.filter(function (e) { return e.id !== id });
           refreshEventsUI();
-        } else if (t === 'tx' && CUR_EV) {
-          DETAILS = DETAILS.filter(function (d) { return d.transactionId !== id });
-          renderDetails();
-          SETTLEMENTS = null;
         } else if (t === 'account') {
           loadAccounts();
         }

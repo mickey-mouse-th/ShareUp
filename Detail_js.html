@@ -181,6 +181,19 @@ function _carryPaidFlags(oldSettlements, newSettlements) {
   });
   return newSettlements;
 }
+// Recomputes SETTLEMENTS from the current DETAILS array and re-renders the
+// Summary tab + Home's settled badge - shared by every optimistic
+// add/edit/delete transaction path (Sheets_js.html) so none of them need a
+// server round-trip just to reflect the new debt totals.
+function _recomputeSettlementsLocal() {
+  if (!CUR_EV) return;
+  var friendMap = _friendNameMap(FRIENDS);
+  var rows = DETAILS.filter(function (d) { return !d.paid })
+    .map(function (d) { return { payId: d.payId, friendId: d.friendId, amount: d.amount } });
+  SETTLEMENTS = _carryPaidFlags(SETTLEMENTS || [], _computeSettlementsClient(rows, friendMap));
+  renderSummary(SETTLEMENTS);
+  _syncEventSettled(CUR_EV.id, SETTLEMENTS);
+}
 
 function renderDetails() {
   var $el = $('#txList');
@@ -622,13 +635,8 @@ $(function () {
     var tid = $(this).data('tid');
     var paid = $(this).is(':checked');
     DETAILS.forEach(function (d) { if (d.transactionId === tid) d.paid = paid });
-    var friendMap = _friendNameMap(FRIENDS);
-    var rows = DETAILS.filter(function (d) { return !d.paid })
-      .map(function (d) { return { payId: d.payId, friendId: d.friendId, amount: d.amount } });
-    SETTLEMENTS = _carryPaidFlags(SETTLEMENTS, _computeSettlementsClient(rows, friendMap));
+    _recomputeSettlementsLocal();
     renderDetails();
-    renderSummary(SETTLEMENTS);
-    _syncEventSettled(CUR_EV.id, SETTLEMENTS);
     _gscOrToast('markTransactionPaid', TK, CUR_EV.id, tid, paid).then(function (r) {
       if (!r || !r.success) loadDetailData(CUR_EV.id);
     });
