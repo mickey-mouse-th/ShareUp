@@ -9,29 +9,30 @@
    its bottom edge so the two read as one full-screen surface, not a
    floating card on empty space. */
 .auth-top{
-  flex:1 1 auto;background:var(--p-grad);
-  padding:calc(var(--si) + 24px) 24px 40px;
+  flex:0 0 auto;background:var(--p-grad);
+  padding:calc(var(--si) + 20px) 24px 28px;
   display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
 }
-.auth-logo{display:flex;flex-direction:column;align-items:center;gap:12px}
+.auth-logo{display:flex;flex-direction:column;align-items:center;gap:8px}
 .auth-logo-ic{
-  width:64px;height:64px;border-radius:20px;
+  width:44px;height:44px;border-radius:14px;
   background:rgba(255,255,255,.18);
   display:flex;align-items:center;justify-content:center;flex-shrink:0;
 }
-.auth-logo-ic svg{width:32px;height:32px;fill:#fff}
-.auth-logo-name{font-size:22px;font-weight:800;letter-spacing:-.3px;color:#fff;line-height:1.2}
-.auth-logo-sub{font-size:13px;color:rgba(255,255,255,.75);margin-top:2px}
+.auth-logo-ic svg{width:22px;height:22px;fill:#fff}
+.auth-logo-name{font-size:17px;font-weight:800;letter-spacing:-.3px;color:#fff;line-height:1.2}
+.auth-logo-sub{font-size:12px;color:rgba(255,255,255,.75);margin-top:1px}
 
 .auth-sheet{
-  flex:0 0 auto;background:var(--s1);max-height:72dvh;
+  flex:1 1 auto;background:var(--s1);min-height:0;
   border-radius:28px 28px 0 0;margin-top:-24px;position:relative;z-index:1;
   box-shadow:0 -8px 24px rgba(0,0,0,.08);
   padding:32px 24px calc(24px + var(--sb));overflow-y:auto;
+  display:flex;flex-direction:column;justify-content:safe center;
   animation:auth-slide-up .32s ease;
 }
 @keyframes auth-slide-up{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
-.auth-sheet-inner{width:100%;max-width:420px;margin:0 auto}
+.auth-sheet-inner{width:100%;max-width:420px;margin:0 auto;flex:0 0 auto}
 
 .auth-h{font-size:24px;font-weight:800;letter-spacing:-.3px;margin-bottom:6px;color:var(--t1)}
 .auth-s{font-size:14px;color:var(--t2);margin-bottom:26px;line-height:1.5}
