@@ -74,7 +74,7 @@ function initSheets(ss) {
   eventsSheet.appendRow(['id', 'name', 'accountId', 'createdAt', 'active', 'icon']);
 
   var detailsSheet = ss.insertSheet('Details');
-  detailsSheet.appendRow(['id', 'eventId', 'transactionId', 'payId', 'friendId', 'amount', 'totalAmount', 'description', 'createdAt']);
+  detailsSheet.appendRow(['transactionId', 'eventId', 'payId', 'totalAmount', 'description', 'createdAt', 'splits']);
 
   var eventFriendsSheet = ss.insertSheet('EventFriends');
   eventFriendsSheet.appendRow(['id', 'eventId', 'friendId', 'createdAt']);
@@ -764,8 +764,10 @@ function getHomeData(token) {
     var dtData = ss.getSheetByName('Details').getDataRange().getValues();
     var paidTxSet = _paidTransactionSet();
     for (var i = 1; i < dtData.length; i++) {
-      if (rowsByEvent.hasOwnProperty(dtData[i][1]) && !paidTxSet[dtData[i][2]])
-        rowsByEvent[dtData[i][1]].push({ payId: dtData[i][3], friendId: dtData[i][4], amount: dtData[i][5] });
+      if (rowsByEvent.hasOwnProperty(dtData[i][1]) && !paidTxSet[dtData[i][0]]) {
+        var payId = dtData[i][2];
+        _splitsToRows(dtData[i]).forEach(function (s) { rowsByEvent[dtData[i][1]].push({ payId: payId, friendId: s.friendId, amount: s.amount }) });
+      }
     }
     var efData = getEventFriendsSheet().getDataRange().getValues();
     var spData = getSettlementPaymentsSheet().getDataRange().getValues();
@@ -790,12 +792,11 @@ function _buildDetailPayload(ss, eventId, accountId) {
   var details = [], rows = [];
   for (var i = 1; i < dtData.length; i++) {
     if (dtData[i][1] === eventId) {
-      var txPaid = !!paidTxSet[dtData[i][2]];
-      details.push({ id: dtData[i][0], eventId: dtData[i][1], transactionId: dtData[i][2],
-        payId: dtData[i][3], friendId: dtData[i][4], amount: dtData[i][5],
-        totalAmount: dtData[i][6], description: dtData[i][7], createdAt: dtData[i][8], paid: txPaid });
+      var txPaid = !!paidTxSet[dtData[i][0]];
+      var payId = dtData[i][2];
+      _expandDetailRow(dtData[i]).forEach(function (d) { d.paid = txPaid; details.push(d) });
       // Paid transactions are excluded from settlement math - see markTransactionPaid.
-      if (!txPaid) rows.push({ payId: dtData[i][3], friendId: dtData[i][4], amount: dtData[i][5] });
+      if (!txPaid) _splitsToRows(dtData[i]).forEach(function (s) { rows.push({ payId: payId, friendId: s.friendId, amount: s.amount }) });
     }
   }
   var frRawData = ss.getSheetByName('Friends').getDataRange().getValues();
@@ -925,8 +926,8 @@ function _getEventFriends(ss, eventId, accountId, friendMapOpt, efDataOpt, dtDat
     var derived = {};
     for (var i = 1; i < dtData.length; i++) {
       if (dtData[i][1] === eventId) {
-        if (friendMap.hasOwnProperty(dtData[i][3])) derived[dtData[i][3]] = true;
-        if (friendMap.hasOwnProperty(dtData[i][4])) derived[dtData[i][4]] = true;
+        if (friendMap.hasOwnProperty(dtData[i][2])) derived[dtData[i][2]] = true;
+        _splitsToRows(dtData[i]).forEach(function (s) { if (friendMap.hasOwnProperty(s.friendId)) derived[s.friendId] = true });
       }
     }
     var derivedIds = Object.keys(derived);
@@ -1025,10 +1026,13 @@ function setEventFriends(token, eventId, friendIds) {
     var derivedFromDetails = {};
     for (var i = 1; i < dtData.length; i++) {
       if (dtData[i][1] === eventId) {
-        usedInEvent[dtData[i][3]] = true;
-        usedInEvent[dtData[i][4]] = true;
-        if (ownedFriendMap.hasOwnProperty(dtData[i][3])) derivedFromDetails[dtData[i][3]] = true;
-        if (ownedFriendMap.hasOwnProperty(dtData[i][4])) derivedFromDetails[dtData[i][4]] = true;
+        var rowPayId = dtData[i][2];
+        usedInEvent[rowPayId] = true;
+        if (ownedFriendMap.hasOwnProperty(rowPayId)) derivedFromDetails[rowPayId] = true;
+        _splitsToRows(dtData[i]).forEach(function (s) {
+          usedInEvent[s.friendId] = true;
+          if (ownedFriendMap.hasOwnProperty(s.friendId)) derivedFromDetails[s.friendId] = true;
+        });
       }
     }
 
@@ -1166,7 +1170,7 @@ function deleteEvent(token, eventId) {
     var dtData = detailsSheet.getDataRange().getValues();
     var txIds = {};
     for (var i = 1; i < dtData.length; i++) {
-      if (dtData[i][1] === eventId) txIds[dtData[i][2]] = true;
+      if (dtData[i][1] === eventId) txIds[dtData[i][0]] = true;
     }
 
     _trashSlipFilesForTxSet(txIds);
@@ -1301,22 +1305,52 @@ function getSharedEventView(shareToken) {
 // Details (Transactions)
 // ----------------------------------------------------------------
 
-// friendIds -> one Details row each, sharing totalAmount/description/createdAt.
-function _buildDetailRows(eventId, transactionId, payId, friendIds, total, description, customAmounts, createdAt) {
-  var perPerson = total / friendIds.length;
-  return friendIds.map(function (fid) {
-    var amount = (customAmounts && customAmounts[fid] !== undefined)
-      ? parseFloat(customAmounts[fid])
-      : perPerson;
-    return [Utilities.getUuid(), eventId, transactionId, payId, fid, amount, total, description, createdAt];
+// splits cell: JSON {friendId: amount}. Tolerant of corrupt/missing data so
+// one bad cell degrades to "zero participants" instead of a thrown error.
+function _parseSplits(json) {
+  try {
+    var o = JSON.parse(json || '{}');
+    return (o && typeof o === 'object') ? o : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+// One Details row -> [{friendId, amount}, ...], the shape _computeSettlements expects.
+function _splitsToRows(dtRow) {
+  var splits = _parseSplits(dtRow[6]);
+  return Object.keys(splits).map(function (fid) { return { friendId: fid, amount: splits[fid] }; });
+}
+
+// One Details row -> flat per-friend objects, matching the old one-row-per-split
+// shape the client already expects (details[] items) - keeps the client
+// contract unchanged even though storage is now one row per transaction.
+function _expandDetailRow(dtRow) {
+  var transactionId = dtRow[0], eventId = dtRow[1], payId = dtRow[2],
+      totalAmount = dtRow[3], description = dtRow[4], createdAt = dtRow[5];
+  return _splitsToRows(dtRow).map(function (s) {
+    return {
+      id: transactionId + '_' + s.friendId, eventId: eventId, transactionId: transactionId,
+      payId: payId, friendId: s.friendId, amount: s.amount, totalAmount: totalAmount,
+      description: description, createdAt: createdAt
+    };
   });
 }
 
-// Builds rows via _buildDetailRows and appends them - the common tail shared
-// by add/update, both authenticated and share-link variants, below.
-function _writeDetailRows(sheet, eventId, transactionId, payId, friendIds, totalAmount, description, customAmounts, createdAt) {
-  var rows = _buildDetailRows(eventId, transactionId, payId, friendIds, parseFloat(totalAmount), description, customAmounts, createdAt);
-  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+// friendIds -> one Details row, splits collapsed into a single JSON cell.
+function _buildDetailRow(eventId, transactionId, payId, friendIds, total, description, customAmounts, createdAt) {
+  var perPerson = total / friendIds.length;
+  var splits = {};
+  friendIds.forEach(function (fid) {
+    splits[fid] = (customAmounts && customAmounts[fid] !== undefined) ? parseFloat(customAmounts[fid]) : perPerson;
+  });
+  return [transactionId, eventId, payId, total, description, createdAt, JSON.stringify(splits)];
+}
+
+// Builds a row via _buildDetailRow and appends it - the common tail shared by
+// add, both authenticated and share-link variants, below.
+function _writeDetailRow(sheet, eventId, transactionId, payId, friendIds, totalAmount, description, customAmounts, createdAt) {
+  sheet.appendRow(_buildDetailRow(eventId, transactionId, payId, friendIds, parseFloat(totalAmount), description, customAmounts, createdAt));
 }
 
 function addDetail(token, eventId, payId, friendIds, totalAmount, description, customAmounts) {
@@ -1325,7 +1359,7 @@ function addDetail(token, eventId, payId, friendIds, totalAmount, description, c
     if (!friendIds || !friendIds.length) return _fail('At least one person is required');
     var sheet = getSpreadsheet().getSheetByName('Details');
     var transactionId = Utilities.getUuid();
-    _writeDetailRows(sheet, eventId, transactionId, payId, friendIds, totalAmount, description, customAmounts, new Date().toISOString());
+    _writeDetailRow(sheet, eventId, transactionId, payId, friendIds, totalAmount, description, customAmounts, new Date().toISOString());
     return { success: true, transactionId: transactionId };
   } catch (e) {
     return _fail(e);
@@ -1339,14 +1373,14 @@ function updateDetail(token, transactionId, payId, friendIds, totalAmount, descr
     var sheet = ss.getSheetByName('Details');
     var data = sheet.getDataRange().getValues();
 
-    var row = _findRowByCol(data, 2, transactionId);
+    var row = _findRow(data, transactionId);
     if (row === -1) return _fail('Transaction not found');
-    var eventId = data[row][1], createdAt = data[row][8];
+    var eventId = data[row][1], createdAt = data[row][5];
     if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Transaction not found');
     if (!friendIds || !friendIds.length) return _fail('At least one person is required');
 
-    _removeRowsWhere(sheet, 2, transactionId, data);
-    _writeDetailRows(sheet, eventId, transactionId, payId, friendIds, totalAmount, description, customAmounts, createdAt);
+    var newRow = _buildDetailRow(eventId, transactionId, payId, friendIds, parseFloat(totalAmount), description, customAmounts, createdAt);
+    sheet.getRange(row + 1, 1, 1, newRow.length).setValues([newRow]);
     return { success: true, transactionId: transactionId };
   } catch (e) {
     return _fail(e);
@@ -1359,13 +1393,13 @@ function deleteDetail(token, transactionId) {
     var ss = getSpreadsheet();
     var sheet = ss.getSheetByName('Details');
     var data = sheet.getDataRange().getValues();
-    var row = _findRowByCol(data, 2, transactionId);
+    var row = _findRow(data, transactionId);
     if (row === -1) return _fail('Transaction not found');
     var eventId = data[row][1];
     if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Transaction not found');
 
     _trashSlipFilesForTx(transactionId);
-    _removeRowsWhere(sheet, 2, transactionId, data);
+    sheet.deleteRow(row + 1);
     _removeRowsWhere(getTransactionSlipsSheet(), 0, transactionId);
     return { success: true };
   } catch (e) {
@@ -1400,7 +1434,7 @@ function addDetailViaShare(shareToken, payId, friendIds, totalAmount, descriptio
 
     var sheet = getSpreadsheet().getSheetByName('Details');
     var transactionId = Utilities.getUuid();
-    _writeDetailRows(sheet, eventId, transactionId, payId, friendIds, totalAmount, description, customAmounts, new Date().toISOString());
+    _writeDetailRow(sheet, eventId, transactionId, payId, friendIds, totalAmount, description, customAmounts, new Date().toISOString());
     return { success: true, transactionId: transactionId };
   } catch (e) {
     return _fail(e);
@@ -1415,12 +1449,12 @@ function updateDetailViaShare(shareToken, transactionId, payId, friendIds, total
 
     var sheet = getSpreadsheet().getSheetByName('Details');
     var data = sheet.getDataRange().getValues();
-    var row = _findRowByCol(data, 2, transactionId);
+    var row = _findRow(data, transactionId);
     if (row === -1 || data[row][1] !== eventId) return _fail('Transaction not found');
-    var createdAt = data[row][8];
+    var createdAt = data[row][5];
 
-    _removeRowsWhere(sheet, 2, transactionId, data);
-    _writeDetailRows(sheet, eventId, transactionId, payId, friendIds, totalAmount, description, customAmounts, createdAt);
+    var newRow = _buildDetailRow(eventId, transactionId, payId, friendIds, parseFloat(totalAmount), description, customAmounts, createdAt);
+    sheet.getRange(row + 1, 1, 1, newRow.length).setValues([newRow]);
     return { success: true, transactionId: transactionId };
   } catch (e) {
     return _fail(e);
@@ -1455,10 +1489,8 @@ function uploadTransactionSlipViaShare(shareToken, transactionId, slip) {
 }
 
 function _transactionEventId(dtData, transactionId) {
-  for (var i = 1; i < dtData.length; i++) {
-    if (dtData[i][2] === transactionId) return dtData[i][1];
-  }
-  return null;
+  var row = _findRow(dtData, transactionId);
+  return row === -1 ? null : dtData[row][1];
 }
 
 // Always adds a new photo (a transaction can have several) - returns its id
@@ -1639,8 +1671,9 @@ function getSummary(token, eventId) {
     var paidTxSet = _paidTransactionSet();
     var rows = [];
     for (var i = 1; i < detailsData.length; i++) {
-      if (detailsData[i][1] === eventId && !paidTxSet[detailsData[i][2]]) {
-        rows.push({ payId: detailsData[i][3], friendId: detailsData[i][4], amount: detailsData[i][5] });
+      if (detailsData[i][1] === eventId && !paidTxSet[detailsData[i][0]]) {
+        var payId = detailsData[i][2];
+        _splitsToRows(detailsData[i]).forEach(function (s) { rows.push({ payId: payId, friendId: s.friendId, amount: s.amount }) });
       }
     }
 
@@ -1723,4 +1756,120 @@ function deleteAccount(token, accountId) {
   } catch (e) {
     return _fail(e);
   }
+}
+
+// ----------------------------------------------------------------
+// ONE-TIME MIGRATION: Details sheet, old shape (one row per friend-split) ->
+// new shape (one row per transaction, splits as JSON). Not client-callable -
+// run manually from the Apps Script editor, once, then verify before
+// redeploying the rest of this file. Never deletes the old data - the
+// original sheet is renamed aside, not overwritten.
+// ----------------------------------------------------------------
+
+function migrateDetailsToV2() {
+  var ss = getSpreadsheet();
+  var old = ss.getSheetByName('Details');
+  var oldData = old.getDataRange().getValues();
+
+  if (oldData[0][0] === 'transactionId') {
+    Logger.log('Already migrated - Details header is already the new shape. Nothing to do.');
+    return { success: true, alreadyMigrated: true };
+  }
+
+  // Old shape: id0, eventId1, transactionId2, payId3, friendId4, amount5, totalAmount6, description7, createdAt8
+  var groups = {}; // transactionId -> { eventId, payId, totalAmount, description, createdAt, splits: {friendId: amount} }
+  for (var i = 1; i < oldData.length; i++) {
+    var r = oldData[i];
+    var tid = r[2];
+    if (!groups[tid]) {
+      groups[tid] = { eventId: r[1], payId: r[3], totalAmount: r[6], description: r[7], createdAt: r[8], splits: {} };
+    }
+    groups[tid].splits[r[4]] = r[5];
+  }
+
+  var newRows = Object.keys(groups).map(function (tid) {
+    var g = groups[tid];
+    return [tid, g.eventId, g.payId, g.totalAmount, g.description, g.createdAt, JSON.stringify(g.splits)];
+  });
+
+  // Sanity check before touching anything: every old split row must be
+  // accounted for in the regrouped splits.
+  var totalSplits = 0;
+  Object.keys(groups).forEach(function (tid) { totalSplits += Object.keys(groups[tid].splits).length });
+  if (totalSplits !== oldData.length - 1) {
+    throw new Error('Migration aborted: split count mismatch (old rows=' + (oldData.length - 1) + ', regrouped splits=' + totalSplits + '). Nothing was changed.');
+  }
+
+  var backupName = 'Details_v1_backup_' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmmss');
+  old.setName(backupName);
+
+  var fresh = ss.insertSheet('Details');
+  fresh.appendRow(['transactionId', 'eventId', 'payId', 'totalAmount', 'description', 'createdAt', 'splits']);
+  if (newRows.length) fresh.getRange(2, 1, newRows.length, 7).setValues(newRows);
+
+  Logger.log('Migrated ' + newRows.length + ' transactions from ' + (oldData.length - 1) + ' split rows. Backup: ' + backupName);
+
+  // Verify immediately so running this ONE function from the editor is enough
+  // - no need to separately look up and pass the backup sheet name.
+  var verify = verifyDetailsMigration(backupName);
+  Logger.log(verify.problems.length ? 'MIGRATION HAS PROBLEMS - see above. Old data is untouched in ' + backupName + '.' : 'VERIFIED OK - safe to redeploy.');
+
+  return { success: true, transactions: newRows.length, oldRows: oldData.length - 1, backupSheetName: backupName, verify: verify };
+}
+
+// Read-only cross-check: every transaction in the backup must appear exactly
+// once in the new Details sheet with identical eventId/payId/totalAmount/
+// description/createdAt/splits. Safe to re-run anytime. No arg = auto-picks
+// the most recently created Details_v1_backup_* sheet.
+function verifyDetailsMigration(backupSheetName) {
+  var ss = getSpreadsheet();
+  if (!backupSheetName) {
+    var candidates = ss.getSheets().map(function (s) { return s.getName() }).filter(function (n) { return n.indexOf('Details_v1_backup_') === 0 }).sort();
+    backupSheetName = candidates[candidates.length - 1];
+    if (!backupSheetName) { Logger.log('No Details_v1_backup_* sheet found - run migrateDetailsToV2 first.'); return { success: false, error: 'No backup sheet found' }; }
+  }
+  var backup = ss.getSheetByName(backupSheetName);
+  if (!backup) { Logger.log('Backup sheet not found: ' + backupSheetName); return { success: false, error: 'Backup sheet not found' }; }
+  var fresh = ss.getSheetByName('Details');
+  if (!fresh) { Logger.log('Details sheet not found'); return { success: false, error: 'Details sheet not found' }; }
+
+  var oldData = backup.getDataRange().getValues();
+  var groups = {};
+  for (var i = 1; i < oldData.length; i++) {
+    var r = oldData[i];
+    var tid = r[2];
+    if (!groups[tid]) groups[tid] = { eventId: r[1], payId: r[3], totalAmount: r[6], description: r[7], createdAt: r[8], splits: {} };
+    groups[tid].splits[r[4]] = r[5];
+  }
+
+  var newData = fresh.getDataRange().getValues();
+  var newMap = {};
+  for (var i = 1; i < newData.length; i++) newMap[newData[i][0]] = newData[i];
+
+  var problems = [];
+  var numsMatch = function (a, b) { return Math.abs(parseFloat(a) - parseFloat(b)) < 1e-9 };
+
+  Object.keys(groups).forEach(function (tid) {
+    var g = groups[tid], row = newMap[tid];
+    if (!row) { problems.push('missing transaction: ' + tid); return; }
+    if (row[1] !== g.eventId) problems.push(tid + ': eventId mismatch');
+    if (row[2] !== g.payId) problems.push(tid + ': payId mismatch');
+    if (!numsMatch(row[3], g.totalAmount)) problems.push(tid + ': totalAmount mismatch');
+    if (row[4] !== g.description) problems.push(tid + ': description mismatch');
+    if (row[5] !== g.createdAt) problems.push(tid + ': createdAt mismatch');
+    var newSplits = _parseSplits(row[6]);
+    var oldKeys = Object.keys(g.splits), newKeys = Object.keys(newSplits);
+    if (oldKeys.length !== newKeys.length) problems.push(tid + ': split participant count mismatch');
+    oldKeys.forEach(function (fid) {
+      if (!newSplits.hasOwnProperty(fid)) problems.push(tid + ': missing friend ' + fid + ' in splits');
+      else if (!numsMatch(newSplits[fid], g.splits[fid])) problems.push(tid + ': amount mismatch for friend ' + fid);
+    });
+  });
+
+  Object.keys(newMap).forEach(function (tid) {
+    if (!groups[tid]) problems.push('extra transaction not present in backup: ' + tid);
+  });
+
+  Logger.log(problems.length ? ('PROBLEMS FOUND:\n' + problems.join('\n')) : ('OK - ' + Object.keys(groups).length + ' transactions verified, zero problems.'));
+  return { success: true, problems: problems, transactionsChecked: Object.keys(groups).length };
 }
