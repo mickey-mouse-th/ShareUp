@@ -128,54 +128,56 @@ var THEME_CSS_VAR = {
   t1: '--t1', t2: '--t2', t3: '--t3', g: '--g', r: '--r', o: '--o', b: '--b',
   hdrBg: '--hdr-bg', navBg: '--nav-bg', overlayBg: '--overlay-bg'
 };
-// Drives both the reference table and the editable rows below it. `kind`
-// picks which mini contextual preview markup/update logic to use for that
-// token (see _tpvHtml/_tpvUpdate) so "Card Surface" shows an actual card
-// swatch, "Primary" shows a sample button, etc.
+// Drives the editable rows below. `kind` picks which real, self-labeled
+// component markup to render for that token (see _componentHtml) - "Card
+// Surface" shows an actual card, "Primary" shows a real button, "Modal
+// Overlay" shows an actual popup-over-scrim, etc. No abstract swatches.
 var THEME_TOKENS = [
-  { token: 'p',         group: 'Brand',              label: 'Primary',                kind: 'btn' },
-  { token: 'pLt',       group: 'Brand',              label: 'Primary Dark / Accent',   kind: 'btn' },
-  { token: 'bg',        group: 'Page',                label: 'Page Background',        kind: 'swatch' },
+  { token: 'p',         group: 'Brand',              label: 'Primary (Buttons)',       kind: 'button' },
+  { token: 'pLt',       group: 'Brand',              label: 'Accent / Highlight',      kind: 'accent' },
+  { token: 'bg',        group: 'Page',                label: 'Page Background',        kind: 'pagebg' },
   { token: 's1',        group: 'Page',                label: 'Card Surface',           kind: 'card' },
-  { token: 's2',        group: 'Page',                label: 'Secondary Surface',      kind: 'swatch' },
+  { token: 's2',        group: 'Page',                label: 'Secondary Surface',      kind: 'input' },
   { token: 'bd',        group: 'Page',                label: 'Border',                 kind: 'border' },
-  { token: 't1',        group: 'Text',                label: 'Primary Text',           kind: 'text' },
-  { token: 't2',        group: 'Text',                label: 'Muted Text',             kind: 'text' },
-  { token: 't3',        group: 'Text',                label: 'Faint Text',             kind: 'text' },
-  { token: 'g',         group: 'Status',              label: 'Success',                kind: 'badge' },
-  { token: 'r',         group: 'Status',              label: 'Danger',                 kind: 'badge' },
-  { token: 'o',         group: 'Status',              label: 'Warning',                kind: 'badge' },
-  { token: 'b',         group: 'Status',              label: 'Info',                   kind: 'badge' },
-  { token: 'hdrBg',     group: 'Header & Navigation', label: 'Header Background',      kind: 'bar' },
-  { token: 'navBg',     group: 'Header & Navigation', label: 'Bottom Nav Background',  kind: 'bar' },
-  { token: 'overlayBg', group: 'Header & Navigation', label: 'Modal Overlay',          kind: 'overlay' }
+  { token: 't1',        group: 'Text',                label: 'Primary Text',           kind: 'text1' },
+  { token: 't2',        group: 'Text',                label: 'Muted Text',             kind: 'text2' },
+  { token: 't3',        group: 'Text',                label: 'Faint Text',             kind: 'text3' },
+  { token: 'g',         group: 'Status',              label: 'Success',                kind: 'badge-g' },
+  { token: 'r',         group: 'Status',              label: 'Danger',                 kind: 'badge-r' },
+  { token: 'o',         group: 'Status',              label: 'Warning',                kind: 'badge-o' },
+  { token: 'b',         group: 'Status',              label: 'Info',                   kind: 'badge-b' },
+  { token: 'hdrBg',     group: 'Header & Navigation', label: 'Header Background',      kind: 'header' },
+  { token: 'navBg',     group: 'Header & Navigation', label: 'Bottom Nav Background',  kind: 'nav' },
+  { token: 'overlayBg', group: 'Header & Navigation', label: 'Popup / Modal Overlay',  kind: 'popup' }
 ];
 
-// Big tile preview markup per token "kind" - no color codes anywhere, the
-// tile itself looks like the thing it controls and IS the color picker
-// trigger (a <label> wrapping a visually-hidden <input type=color>).
-function _tpvHtml(t) {
-  var id = 'tpv-' + t.token;
-  if (t.kind === 'btn')     return '<div class="tpv-lg tpv-btn" id="' + id + '">Aa</div>';
-  if (t.kind === 'card')    return '<div class="tpv-lg tpv-swatch" id="' + id + '"></div>';
-  if (t.kind === 'border')  return '<div class="tpv-lg tpv-swatch" id="' + id + '" style="background:var(--s1)"></div>';
-  if (t.kind === 'text')    return '<div class="tpv-lg tpv-text" id="' + id + '">Aa</div>';
-  if (t.kind === 'badge')   return '<div class="tpv-lg tpv-badge" id="' + id + '">Label</div>';
-  if (t.kind === 'bar')     return '<div class="tpv-lg tpv-bar" id="' + id + '"></div>';
-  if (t.kind === 'overlay') return '<div class="tpv-lg tpv-overlay"><div class="tpv-overlay-fill" id="' + id + '"></div></div>';
-  return '<div class="tpv-lg tpv-swatch" id="' + id + '"></div>';
-}
-
-function _tpvUpdate(t, v) {
-  var $el = $('#tpv-' + t.token);
-  if (!$el.length) return;
-  if (t.kind === 'btn')      $el.css({ background: v, color: '#fff' });
-  else if (t.kind === 'card' || t.kind === 'swatch') $el.css('background', v);
-  else if (t.kind === 'border') $el.css('border-color', v);
-  else if (t.kind === 'text')  $el.css('color', v);
-  else if (t.kind === 'badge') $el.css({ color: v, background: v + '26' });
-  else if (t.kind === 'bar')   $el.css('background', v);
-  else if (t.kind === 'overlay') $el.css({ background: v, opacity: .45 });
+// Real, labeled component markup per token "kind" - every color reads its
+// var(--x) straight off the cascade (from #themeLiveScope's own inline
+// style, see _seedLiveVars/_previewThemeToken - it wraps both the top
+// all-in-one preview frame and #themeGroups, so BOTH update live together),
+// so a row updates live not only from its own edits but from any OTHER
+// token it depends on (e.g. Card reacts to both Card Surface and
+// Primary/Muted Text changes) with zero extra JS.
+function _componentHtml(t) {
+  switch (t.kind) {
+    case 'button': return '<button type="button" class="cpv-btn">Button</button>';
+    case 'accent': return '<div class="cpv-accent-row"><span class="cpv-accent-chip">Accent</span><span class="cpv-accent-link">Link / Highlight</span></div>';
+    case 'pagebg': return '<div class="cpv-page">Page Background</div>';
+    case 'card':   return '<div class="cpv-card"><div class="cpv-card-title">Card</div><div class="cpv-card-sub">Card Surface + Shadow</div></div>';
+    case 'input':  return '<div class="cpv-input">Secondary Surface / Search…</div>';
+    case 'border': return '<div class="cpv-border">Border</div>';
+    case 'text1':  return '<div class="cpv-text cpv-text-1">Aa Primary Text</div>';
+    case 'text2':  return '<div class="cpv-text cpv-text-2">Aa Muted Text</div>';
+    case 'text3':  return '<div class="cpv-text cpv-text-3">Aa Faint Text</div>';
+    case 'badge-g': return '<span class="cpv-badge cpv-badge-g">Success</span>';
+    case 'badge-r': return '<span class="cpv-badge cpv-badge-r">Danger</span>';
+    case 'badge-o': return '<span class="cpv-badge cpv-badge-o">Warning</span>';
+    case 'badge-b': return '<span class="cpv-badge cpv-badge-b">Info</span>';
+    case 'header': return '<div class="cpv-header"><span class="cpv-header-back">‹</span><b>Header</b></div>';
+    case 'nav':    return '<div class="cpv-nav"><i class="on"></i><i></i><i></i><span>Bottom Nav</span></div>';
+    case 'popup':  return '<div class="cpv-popup"><div class="cpv-popup-card">Popup / Modal</div></div>';
+    default:       return '<div class="cpv-card"></div>';
+  }
 }
 
 function _renderThemeGroups(theme) {
@@ -187,25 +189,44 @@ function _renderThemeGroups(theme) {
   var html = groups.map(function (g) {
     return '<div class="theme-group">' +
       '<label class="inp-lbl theme-group-lbl">' + esc(g) + '</label>' +
-      '<div class="theme-tile-grid">' +
+      '<div class="theme-row-list">' +
       byGroup[g].map(function (t) {
-        return '<label class="theme-tile" title="' + esc(t.label) + '">' +
-          '<input type="color" class="theme-inp" data-token="' + t.token + '" value="' + theme[t.token] + '"/>' +
-          _tpvHtml(t) +
-          '<span class="theme-tile-lbl">' + esc(t.label) + '</span>' +
-          '</label>';
+        return '<div class="theme-row">' +
+          '<div class="theme-row-preview">' + _componentHtml(t) + '</div>' +
+          '<div class="theme-row-meta">' +
+            '<span class="theme-row-lbl">' + esc(t.label) + '</span>' +
+            '<label class="theme-row-swatch">' +
+              '<input type="color" class="theme-inp" data-token="' + t.token + '" value="' + theme[t.token] + '"/>' +
+              '<span class="theme-row-dot" id="dot-' + t.token + '" style="background:' + theme[t.token] + '"></span>' +
+              '<span class="theme-row-hex" data-hex="' + t.token + '">' + esc(theme[t.token].toUpperCase()) + '</span>' +
+            '</label>' +
+          '</div></div>';
       }).join('') +
       '</div></div>';
   }).join('');
   $('#themeGroups').html(html);
-  THEME_TOKENS.forEach(function (t) { _tpvUpdate(t, theme[t.token]) });
+  _seedLiveVars(theme);
 }
 
-// Local-only preview: updates just this tile's own preview - never touches
-// the live app until Save is pressed.
+// Sets every theme CSS var directly on #themeLiveScope (not :root), so both
+// the top all-in-one preview frame and every row's own component preview
+// reflect the full draft palette live while editing, without touching the
+// real app until Save is pressed.
+function _seedLiveVars(theme) {
+  var el = document.getElementById('themeLiveScope');
+  if (!el) return;
+  for (var k in THEME_CSS_VAR) if (theme[k]) el.style.setProperty(THEME_CSS_VAR[k], theme[k]);
+}
+
+// Local-only preview: updates the live var (cascades to the top preview
+// frame + every row that reads it) plus this row's own swatch dot/hex text -
+// never touches the real app until Save is pressed.
 function _previewThemeToken(token, value) {
-  var t = THEME_TOKENS.filter(function (x) { return x.token === token })[0];
-  if (t) _tpvUpdate(t, value);
+  $('#dot-' + token).css('background', value);
+  $('.theme-row-hex[data-hex="' + token + '"]').text(value.toUpperCase());
+  var cssVar = THEME_CSS_VAR[token];
+  var el = document.getElementById('themeLiveScope');
+  if (cssVar && el) el.style.setProperty(cssVar, value);
 }
 
 function _applyThemeLive(theme) {

@@ -381,8 +381,18 @@ function doGet(e) {
     .setTitle(shareToken ? 'ShareUp - Shared Event' : 'ShareUp - Expense Splitting');
 }
 
+// createHtmlOutputFromFile() returns a file's RAW content - it does not run
+// <?...?> scriptlets. That was invisible for every other included file since
+// none of them contain scriptlets, but it silently broke ThemeOverride.html's
+// <?!= buildThemeCss() ?>: the saved theme was written to Script Properties
+// correctly, but the override <style> block was never actually evaluated on
+// page load, so a fresh load always re-served the untouched default palette
+// (the admin-panel "Save" button only looked like it worked because it also
+// pokes the CSS vars directly into the *current* tab's DOM via JS).
+// createTemplateFromFile().evaluate() runs scriptlets and is a safe drop-in
+// for plain files too (a file with no <?...?> just passes through unchanged).
 function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+  return HtmlService.createTemplateFromFile(filename).evaluate().getContent();
 }
 
 // ----------------------------------------------------------------

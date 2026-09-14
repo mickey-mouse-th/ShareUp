@@ -86,31 +86,109 @@ select.inp option{background:var(--s1);color:var(--t1)}
   font-size:13px;color:var(--t2);background:var(--s2);border:1px solid var(--bd);
   border-radius:var(--rad-sm);padding:10px 14px;margin-bottom:16px;line-height:1.5;
 }
-.theme-group{margin-bottom:22px}
-.theme-group-lbl{display:block;margin-bottom:10px}
-.theme-tile-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:12px}
-.theme-tile{
-  display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;
-}
+.theme-group{margin-bottom:26px}
+.theme-group-lbl{display:block;margin-bottom:12px}
 .theme-inp{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
-.theme-tile-lbl{font-size:11px;color:var(--t2);text-align:center;line-height:1.25;font-weight:500}
-.theme-tile:hover .tpv-lg{transform:scale(1.04)}
 
-/* Per-token contextual preview - the tile itself IS the color picker trigger,
-   sized big enough to actually look like the thing it controls. */
-.tpv-lg{
-  width:100%;aspect-ratio:1;border-radius:var(--rad-sm);
-  display:flex;align-items:center;justify-content:center;
-  font-size:13px;font-weight:700;transition:transform var(--ease);
-  box-shadow:0 0 0 1px var(--bd);
+/* Each row's preview IS a real, labeled instance of the thing it controls
+   (an actual button, card, badge, popup...) rendered with var(--token) - so
+   #themeGroups itself carries the live (unsaved) draft values as inline CSS
+   var overrides (see _seedLiveVars/_previewThemeToken in Admin_js.html),
+   meaning every row reacts live to every other row's edits (e.g. the Card
+   preview's title updates when Primary Text changes) with zero extra JS. */
+/* Sized close to the real app's own measurements (60px buttons, 64px header,
+   82px nav...) rather than shrunk-down icons, so it reads as an actual
+   screen rather than a diagram. Scoped under .theme-preview-frame only -
+   the compact per-row previews further down keep their original size. */
+.theme-preview-frame{
+  border-radius:var(--rad);border:1px solid var(--bd);overflow:hidden;
+  background:var(--bg);box-shadow:var(--shadow-lg);margin-bottom:28px;
+  max-width:420px;margin-left:auto;margin-right:auto;
 }
-.tpv-swatch{box-shadow:0 0 0 1px var(--bd),var(--shadow)}
-.tpv-text{background:#fff;color:#000}
-.tpv-btn{color:#fff}
-.tpv-badge{font-size:11px}
-.tpv-bar{aspect-ratio:auto;height:24px}
-.tpv-overlay{position:relative;overflow:hidden;background:var(--s2)}
-.tpv-overlay-fill{position:absolute;inset:0}
+.theme-preview-frame .cpv-header{height:64px;font-size:17px;padding:0 20px}
+.theme-preview-frame .cpv-header-back{font-size:24px}
+.theme-preview-body{padding:22px 20px;display:flex;flex-direction:column;gap:20px}
+.theme-preview-frame .cpv-accent-chip{padding:8px 18px;font-size:14px}
+.theme-preview-frame .cpv-accent-link{font-size:15px}
+.theme-preview-frame .cpv-card{padding:20px 22px;border-radius:var(--rad)}
+.theme-preview-frame .cpv-card-title{font-size:18px}
+.theme-preview-frame .cpv-card-sub{font-size:14px;margin-top:5px}
+.theme-preview-frame .cpv-text{font-size:17px}
+.theme-preview-badges{display:flex;flex-wrap:wrap;gap:10px}
+.theme-preview-frame .cpv-badge{padding:8px 18px;font-size:14px}
+.theme-preview-frame .cpv-input{height:52px;font-size:15px;padding:0 18px;border-radius:var(--rad-sm)}
+.theme-preview-frame .cpv-border{padding:18px;font-size:14px;border-radius:var(--rad-sm)}
+.theme-preview-frame .cpv-btn{height:56px;font-size:17px;border-radius:var(--rad-sm)}
+.theme-preview-frame .cpv-nav{height:64px;font-size:14px}
+.theme-preview-frame .cpv-nav i{width:12px;height:12px}
+.theme-preview-popup-wrap{padding:22px 20px;border-top:1px dashed var(--bd)}
+.theme-preview-frame .cpv-popup{height:110px;border-radius:var(--rad)}
+.theme-preview-frame .cpv-popup-card{padding:16px 32px;font-size:15px;border-radius:var(--rad-sm)}
+.theme-row-list{display:flex;flex-direction:column;gap:18px}
+.theme-row-preview{margin-bottom:9px;display:flex}
+.theme-row-meta{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.theme-row-lbl{font-size:13px;font-weight:600;color:var(--t1)}
+.theme-row-swatch{display:flex;align-items:center;gap:9px;cursor:pointer;padding:4px;margin:-4px}
+.theme-row-dot{width:28px;height:28px;border-radius:8px;box-shadow:0 0 0 1px var(--bd);flex-shrink:0}
+.theme-row-hex{font-size:12px;font-family:ui-monospace,'SF Mono',monospace;color:var(--t2);min-width:66px;text-align:right}
+
+/* Component previews - real, self-labeled instances, not abstract shapes */
+.cpv-btn{
+  height:40px;padding:0 20px;border:none;border-radius:var(--rad-sm);
+  background:var(--p);color:#fff;font-size:14px;font-weight:700;
+}
+.cpv-accent-row{display:flex;align-items:center;gap:12px}
+.cpv-accent-chip{padding:6px 14px;border-radius:99px;background:var(--p-lt);color:#fff;font-size:12px;font-weight:700}
+.cpv-accent-link{font-size:13px;font-weight:700;color:var(--p-lt)}
+.cpv-page{
+  width:100%;padding:14px;border-radius:var(--rad-sm);background:var(--bg);
+  border:1px dashed var(--bd2);font-size:12px;font-weight:600;color:var(--t2);text-align:center;
+}
+.cpv-card{
+  width:100%;padding:14px 16px;border-radius:var(--rad-sm);background:var(--s1);
+  border:1px solid var(--bd);box-shadow:var(--shadow);
+}
+.cpv-card-title{font-size:14px;font-weight:700;color:var(--t1)}
+.cpv-card-sub{font-size:12px;color:var(--t2);margin-top:3px}
+.cpv-input{
+  width:100%;height:38px;border-radius:var(--rad-sm);background:var(--s2);
+  border:1px solid var(--bd);display:flex;align-items:center;padding:0 14px;
+  font-size:12px;color:var(--t3);
+}
+.cpv-border{
+  width:100%;padding:12px;border-radius:var(--rad-sm);background:var(--s1);
+  border:2px solid var(--bd);font-size:12px;font-weight:600;color:var(--t2);text-align:center;
+}
+.cpv-text{font-size:15px;font-weight:600}
+.cpv-text-1{color:var(--t1)}
+.cpv-text-2{color:var(--t2)}
+.cpv-text-3{color:var(--t3)}
+.cpv-badge{display:inline-block;padding:6px 14px;border-radius:99px;font-size:12px;font-weight:700;color:#fff}
+.cpv-badge-g{background:var(--g)}
+.cpv-badge-r{background:var(--r)}
+.cpv-badge-o{background:var(--o)}
+.cpv-badge-b{background:var(--b)}
+.cpv-header{
+  width:100%;height:40px;border-radius:var(--rad-sm);background:var(--hdr-bg);
+  border:1px solid var(--bd);display:flex;align-items:center;gap:10px;padding:0 14px;
+  font-size:14px;font-weight:700;color:var(--t1);
+}
+.cpv-header-back{font-size:18px;color:var(--t2)}
+.cpv-nav{
+  width:100%;height:44px;border-radius:var(--rad-sm);background:var(--nav-bg);
+  border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;gap:10px;
+  font-size:12px;font-weight:600;color:var(--t2);
+}
+.cpv-nav i{width:9px;height:9px;border-radius:50%;background:var(--t3);display:block;font-style:normal}
+.cpv-nav i.on{background:var(--p)}
+.cpv-popup{
+  width:100%;height:74px;border-radius:var(--rad-sm);background:var(--overlay-bg);
+  opacity:.92;display:flex;align-items:center;justify-content:center;
+}
+.cpv-popup-card{
+  background:var(--s1);color:var(--t1);border-radius:var(--rad-sm);padding:10px 22px;
+  font-size:12px;font-weight:700;box-shadow:var(--shadow-lg);
+}
 .cf-icon{
   width:72px;height:72px;border-radius:var(--rad-sm);background:var(--r-dim);
   border:1px solid var(--r);display:flex;align-items:center;

@@ -34,8 +34,33 @@
 
     <div id="panelAdminTheme" style="display:none">
       <div class="sec-row"><button type="button" class="hdr-back" style="display:flex" id="btnAdminThemeBack"><svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg></button><span class="sec-lbl">Theme</span><div class="sec-line"></div></div>
-      <div class="theme-hint">Tap any tile to change its color. Nothing on the live app changes until you press Save.</div>
-      <div id="themeGroups"></div>
+      <div class="theme-hint">The preview below shows every element together, live. Each row further down previews just its own piece - change any color, watch both update. Nothing on the live app changes until you press Save.</div>
+      <div id="themeLiveScope">
+        <div class="theme-preview-frame">
+          <div class="cpv-header"><span class="cpv-header-back">‹</span><b>Header</b></div>
+          <div class="theme-preview-body">
+            <div class="cpv-accent-row"><span class="cpv-accent-chip">Accent</span><span class="cpv-accent-link">Link / Highlight</span></div>
+            <div class="cpv-card"><div class="cpv-card-title">Card</div><div class="cpv-card-sub">Card Surface + Shadow</div></div>
+            <div class="cpv-text cpv-text-1">Aa Primary Text</div>
+            <div class="cpv-text cpv-text-2">Aa Muted Text</div>
+            <div class="cpv-text cpv-text-3">Aa Faint Text</div>
+            <div class="theme-preview-badges">
+              <span class="cpv-badge cpv-badge-g">Success</span>
+              <span class="cpv-badge cpv-badge-r">Danger</span>
+              <span class="cpv-badge cpv-badge-o">Warning</span>
+              <span class="cpv-badge cpv-badge-b">Info</span>
+            </div>
+            <div class="cpv-input">Secondary Surface / Search…</div>
+            <div class="cpv-border">Border</div>
+            <button type="button" class="cpv-btn">Button</button>
+          </div>
+          <div class="cpv-nav"><i class="on"></i><i></i><i></i><span>Bottom Nav</span></div>
+          <div class="theme-preview-popup-wrap">
+            <div class="cpv-popup"><div class="cpv-popup-card">Popup / Modal</div></div>
+          </div>
+        </div>
+        <div id="themeGroups"></div>
+      </div>
       <button class="sh-btn" id="btnThemeSave" style="margin-top:8px">Save Theme</button>
       <button class="sh-btn sh-btn-ghost" id="btnThemeReset" style="margin-top:8px">Reset to Default</button>
     </div>
