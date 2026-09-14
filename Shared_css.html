@@ -2,6 +2,10 @@
 /* ── Reset & Tokens ─────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
+  /* Light-only app, no dark variant - without this, some Android/Chrome
+     builds "auto-dark" pages that don't declare it, repainting light pastel
+     colors (like --bg below) into jarring, unrelated hues. */
+  color-scheme:light;
   /* -dim/-glow/-grad are DERIVED from their base color via color-mix(), not
      fixed hex - buildThemeCss() only overrides p/pLt/g/r/o/etc, so a
      hardcoded tint here would silently stop tracking a saved theme edit
