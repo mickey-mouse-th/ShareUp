@@ -173,6 +173,28 @@ function getSettlementPaymentsSheet() {
   return sheet;
 }
 
+// A transaction marked paid here is excluded from settlement math entirely
+// (as if it never happened) - separate from SettlementPayments above, which
+// marks a net aggregated debt as paid rather than a single expense.
+function getTransactionPaymentsSheet() {
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName('TransactionPayments');
+  if (!sheet) {
+    sheet = ss.insertSheet('TransactionPayments');
+    sheet.appendRow(['transactionId', 'eventId', 'paidAt']);
+  }
+  return sheet;
+}
+
+// transactionId is a UUID unique across all events, so a flat set (no event
+// scoping needed) is enough to check "is this transaction paid".
+function _paidTransactionSet(dataOpt) {
+  var data = dataOpt || getTransactionPaymentsSheet().getDataRange().getValues();
+  var set = {};
+  for (var i = 1; i < data.length; i++) set[data[i][0]] = true;
+  return set;
+}
+
 // One row per PHOTO, not a column on Details (a transaction fans out into
 // one Details row per participant, so a column would duplicate each image N
 // times). Pre-Drive rows have a blank 'fileId' and keep their original
@@ -740,8 +762,9 @@ function getHomeData(token) {
     var rowsByEvent = {};
     events.forEach(function (ev) { rowsByEvent[ev.id] = [] });
     var dtData = ss.getSheetByName('Details').getDataRange().getValues();
+    var paidTxSet = _paidTransactionSet();
     for (var i = 1; i < dtData.length; i++) {
-      if (rowsByEvent.hasOwnProperty(dtData[i][1]))
+      if (rowsByEvent.hasOwnProperty(dtData[i][1]) && !paidTxSet[dtData[i][2]])
         rowsByEvent[dtData[i][1]].push({ payId: dtData[i][3], friendId: dtData[i][4], amount: dtData[i][5] });
     }
     var efData = getEventFriendsSheet().getDataRange().getValues();
@@ -763,13 +786,16 @@ function getHomeData(token) {
 // identically instead of maintaining two parallel implementations.
 function _buildDetailPayload(ss, eventId, accountId) {
   var dtData = ss.getSheetByName('Details').getDataRange().getValues();
+  var paidTxSet = _paidTransactionSet();
   var details = [], rows = [];
   for (var i = 1; i < dtData.length; i++) {
     if (dtData[i][1] === eventId) {
+      var txPaid = !!paidTxSet[dtData[i][2]];
       details.push({ id: dtData[i][0], eventId: dtData[i][1], transactionId: dtData[i][2],
         payId: dtData[i][3], friendId: dtData[i][4], amount: dtData[i][5],
-        totalAmount: dtData[i][6], description: dtData[i][7], createdAt: dtData[i][8] });
-      rows.push({ payId: dtData[i][3], friendId: dtData[i][4], amount: dtData[i][5] });
+        totalAmount: dtData[i][6], description: dtData[i][7], createdAt: dtData[i][8], paid: txPaid });
+      // Paid transactions are excluded from settlement math - see markTransactionPaid.
+      if (!txPaid) rows.push({ payId: dtData[i][3], friendId: dtData[i][4], amount: dtData[i][5] });
     }
   }
   var frRawData = ss.getSheetByName('Friends').getDataRange().getValues();
@@ -1582,6 +1608,22 @@ function markSettlementPaid(token, eventId, fromId, toId, amount, paid) {
   }
 }
 
+// Marks a single transaction as already settled - it's then excluded from
+// settlement math app-wide (see the paidTxSet filters in getHomeData,
+// _buildDetailPayload, getSummary) instead of just noting a net debt as paid.
+function markTransactionPaid(token, eventId, transactionId, paid) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
+    _removeRowsWhere(getTransactionPaymentsSheet(), 0, transactionId);
+    if (paid) getTransactionPaymentsSheet().appendRow([transactionId, eventId, new Date().toISOString()]);
+    return { success: true };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
 function getSummary(token, eventId) {
   try {
     var user = requireAuth(token);
@@ -1594,9 +1636,10 @@ function getSummary(token, eventId) {
     }
 
     var detailsData = ss.getSheetByName('Details').getDataRange().getValues();
+    var paidTxSet = _paidTransactionSet();
     var rows = [];
     for (var i = 1; i < detailsData.length; i++) {
-      if (detailsData[i][1] === eventId) {
+      if (detailsData[i][1] === eventId && !paidTxSet[detailsData[i][2]]) {
         rows.push({ payId: detailsData[i][3], friendId: detailsData[i][4], amount: detailsData[i][5] });
       }
     }
