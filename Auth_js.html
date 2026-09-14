@@ -1,13 +1,13 @@
 <script>
 function authPg(p) {
-  if (p === 'login') {
-    $('#loginPanel').show();
-    $('#regPanel').hide();
-  } else {
-    $('#loginPanel').hide();
-    $('#regPanel').show();
-  }
+  var isLogin = p === 'login';
+  $('#loginPanel').toggle(isLogin);
+  $('#regPanel').toggle(!isLogin);
 }
+
+function valTrim(sel) { return $(sel).val().trim(); }
+function reportError(e) { toast('' + e, 'err'); }
+function toastErr(r, fallback) { toast(r.error || fallback, 'err'); }
 
 var _regPwPolicy = null;
 
@@ -24,48 +24,39 @@ $(function () {
   $('#goRegister').on('click', function (e) { e.preventDefault(); authPg('reg') });
   $('#goLogin').on('click', function (e) { e.preventDefault(); authPg('login') });
 
-  // Toggle password visibility
   $(document).on('click', '.pw-btn', function () {
-    var id = $(this).data('target');
-    var inp = $('#' + id);
+    var inp = $('#' + $(this).data('target'));
     inp.attr('type', inp.attr('type') === 'password' ? 'text' : 'password');
   });
 
-  // Login
   $('#loginForm').on('submit', async function (e) {
     e.preventDefault();
-    var u = $('#loginUser').val().trim();
+    var u = valTrim('#loginUser');
     var p = $('#loginPass').val();
     try {
       var r = await gsc('loginUser', u, p);
       if (r.success) {
         TK = r.token; ME = r.user;
         var remember = $('#loginRemember').is(':checked');
-        // Remember me checked: persists in localStorage across app closes
-        // (until the configured session length expires). Unchecked: kept in
-        // sessionStorage only, gone as soon as this tab/window closes.
+        // Remember me: persist in localStorage (survives app close); else sessionStorage only.
         var store = remember ? localStorage : sessionStorage;
         store.setItem('su_tk', TK);
         store.setItem('su_me', JSON.stringify(ME));
-        // Silently carry the token in the URL too when remembering - Safari
-        // wipes localStorage for Apps Script's sandboxed frame on a real app
-        // close, but keeps a closed tab's last URL, so reopening still logs
-        // back in from here with no extra step from the user. Best-effort:
-        // the sandboxed frame can block top-level navigation outright, in
-        // which case this silently no-ops and the app still starts normally.
+        // Safari wipes the sandboxed frame's localStorage on close but keeps the tab's last URL,
+        // so also carrying the token there logs us back in on reopen. Best-effort: navigation can
+        // be blocked by the sandbox, in which case this silently no-ops.
         if (remember && r.url) { try { top.location.href = r.url } catch (e) {} }
         startApp();
       } else {
-        toast(r.error || 'Login failed', 'err');
+        toastErr(r, 'Login failed');
       }
-    } catch (e) { toast('' + e, 'err') }
+    } catch (e) { reportError(e) }
   });
 
-  // Register
   $('#regForm').on('submit', async function (e) {
     e.preventDefault();
-    var n = $('#regName').val().trim();
-    var u = $('#regUser').val().trim();
+    var n = valTrim('#regName');
+    var u = valTrim('#regUser');
     var p = $('#regPass').val();
     try {
       var r = await gsc('registerUser', n, u, p);
@@ -74,9 +65,9 @@ $(function () {
         $('#regForm')[0].reset();
         authPg('login');
       } else {
-        toast(r.error || 'Failed', 'err');
+        toastErr(r, 'Failed');
       }
-    } catch (e) { toast('' + e, 'err') }
+    } catch (e) { reportError(e) }
   });
 });
 </script>

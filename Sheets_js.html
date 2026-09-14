@@ -3,11 +3,11 @@ var splitMode = 'equal';
 var _del = null;
 var _evMode = 'create';   // 'create' | 'rename'
 var _evEditId = null;
-var _efEventId = null;    // 'create' | 'manage'
-var _efMode = 'manage';
+var _efEventId = null;
+var _efMode = 'manage';   // 'create' | 'manage'
 var _pendingNewEvent = null;
-var _editTxId = null;     // set while editing an existing transaction, else null
-var _txSlipsExisting = []; // [{id, slip, slipHi}] already saved on the server (only when editing)
+var _editTxId = null;      // null unless editing an existing transaction
+var _txSlipsExisting = []; // [{id, slip, slipHi}] already saved on the server
 var _txSlipsRemoved  = []; // ids of existing photos marked for deletion on save
 var _txSlipsNew       = []; // [{slip, slipHi}] picked but not yet uploaded
 
@@ -15,9 +15,7 @@ var _SLIP_ADD_ICON = '<div class="tx-slip-add" id="btnTxSlipAdd"><svg viewBox="0
 var _SLIP_REMOVE_ICON = '<svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
 
 function _renderTxSlipGallery() {
-  // Removing an already-saved photo is a delete, never allowed via a share
-  // link (even an editable one) - only newly-picked, not-yet-uploaded photos
-  // stay removable in share mode.
+  // Removing an already-saved photo is a delete - never allowed via a share link, even an editable one.
   var canRemoveExisting = !IS_SHARE;
   var html = _txSlipsExisting.map(function (s, idx) {
     return '<div class="tx-slip-item"><img src="' + s.slip + '"/>' +
@@ -29,10 +27,7 @@ function _renderTxSlipGallery() {
   $('#txSlipGallery').html(html);
 }
 
-// Slips upload to Drive now (no more ~50k-character Sheets cell cap), so a
-// single reasonably high-quality copy is enough - step down only if the
-// photo is still large after the first attempt. Target ~670,000 base64
-// characters (~500KB of actual image data once decoded).
+// Slips upload to Drive (no Sheets cell cap), so step down quality only if still too large. Target ~670,000 base64 chars (~500KB decoded).
 function _compressSlipForUpload(file) {
   var attempts = [[1920, 0.85], [1600, 0.8], [1280, 0.72], [1024, 0.65], [800, 0.55]];
   var i = 0;
@@ -46,23 +41,25 @@ function _compressSlipForUpload(file) {
   return tryNext();
 }
 
+// Shared catch-and-toast wrapper for the many gsc() call sites below.
+async function _tryToast(fn) {
+  try { await fn() } catch (e) { toast('' + e, 'err') }
+}
+
 async function _saveTxSlipsIfNeeded(transactionId, removedIds, newSlips) {
-  if (IS_SHARE) removedIds = []; // slip deletion is never allowed via a share link (server function no longer exists either)
+  if (IS_SHARE) removedIds = []; // slip deletion is never allowed via a share link
   if (!removedIds.length && !newSlips.length) return;
-  try {
+  await _tryToast(async function () {
     if (removedIds.length) await Promise.all(removedIds.map(function (id) { return gsc('deleteTransactionSlip', TK, transactionId, id) }));
     var results = await Promise.all(newSlips.map(function (s) {
       return IS_SHARE
         ? gsc('uploadTransactionSlipViaShare', SHARE_TOKEN, transactionId, s.slip)
         : gsc('uploadTransactionSlip', TK, transactionId, s.slip);
     }));
-    // Use the URLs the server/Drive actually stored, not the client's
-    // pre-upload copy, so the gallery matches what's really saved.
+    // Use the URLs Drive actually stored, not the client's pre-upload copy.
     var added = results.map(function (r) {
       return r.success ? { id: r.id, slip: r.slip, slipHi: r.slipHi } : null;
     }).filter(Boolean);
-    // Failed uploads (expired session, or still-too-large after compression)
-    // used to be dropped silently here - surface them instead.
     var failures = results.filter(function (r) { return !r.success });
     if (failures.length) toast(failures[0].error || 'Could not upload one or more photos', 'err');
     var current = (SLIPS[transactionId] || [])
@@ -70,7 +67,7 @@ async function _saveTxSlipsIfNeeded(transactionId, removedIds, newSlips) {
       .concat(added);
     if (current.length) SLIPS[transactionId] = current; else delete SLIPS[transactionId];
     renderDetails();
-  } catch (e) { toast('' + e, 'err') }
+  });
 }
 
 function setSplitMode(m, prefill) {
@@ -154,7 +151,7 @@ async function submitEvent() {
 
   if (_evMode === 'rename') {
     closeSheets();
-    try {
+    await _tryToast(async function () {
       var r = await gsc('renameEvent', TK, _evEditId, n, _evIcon);
       if (r.success) {
         toast('Event saved');
@@ -171,11 +168,11 @@ async function submitEvent() {
           $('#detailBanner').css('background', bannerGrad(r.name));
         }
       } else toast(r.error, 'err');
-    } catch (e) { toast('' + e, 'err') }
+    });
     return;
   }
 
-  try {
+  await _tryToast(async function () {
     var r = await gsc('addEvent', TK, n, _evIcon);
     if (r.success) {
       r.event.settled = true; // brand-new event has no transactions yet
@@ -183,7 +180,7 @@ async function submitEvent() {
       refreshEventsUI();
       openEventFriendsSheet(r.event.id, 'create', r.event);
     } else toast(r.error, 'err');
-  } catch (e) { toast('' + e, 'err') }
+  });
 }
 
 // ── Add / Manage Event Friends ────────────────
@@ -196,13 +193,35 @@ async function openEventFriendsSheet(eventId, mode, pendingEvent) {
   $('#inpEfNew').val('');
   $('#efList').html(skeletonHtml(3, 'fr'));
   openSheet('shEventFriends');
-  try {
+  await _tryToast(async function () {
     var r = await gsc('getEventFriendsData', TK, eventId);
     if (r.success) {
       var linkedIds = r.linkedFriends.map(function (f) { return f.id });
       renderEfList(r.allFriends, linkedIds);
     } else toast(r.error, 'err');
-  } catch (e) { toast('' + e, 'err') }
+  });
+}
+
+// Checkbox-row markup shared by the friend checklists (event-friends list, tx friend picker).
+function _ckRowHtml(id, name, checked) {
+  return '<div class="ck-row' + (checked ? ' checked' : '') + '" data-id="' + esc(id) + '">' +
+    '<input type="checkbox" value="' + esc(id) + '"' + (checked ? ' checked' : '') + '/>' +
+    '<label>' + esc(name) + '</label>' +
+    '</div>';
+}
+
+function _toggleCkRow($row) {
+  var inp = $row.find('input');
+  inp.prop('checked', !inp.prop('checked'));
+  $row.toggleClass('checked', inp.prop('checked'));
+}
+
+function _setAllCk(checked) {
+  $('#inpShared .ck-row').each(function () {
+    $(this).find('input').prop('checked', checked);
+    $(this).toggleClass('checked', checked);
+  });
+  calcPP();
 }
 
 function renderEfList(allFriends, linkedIds) {
@@ -211,11 +230,7 @@ function renderEfList(allFriends, linkedIds) {
     return;
   }
   var html = $.map(allFriends, function (f) {
-    var checked = linkedIds.indexOf(f.id) !== -1;
-    return '<div class="ck-row' + (checked ? ' checked' : '') + '" data-id="' + esc(f.id) + '">' +
-      '<input type="checkbox" value="' + esc(f.id) + '"' + (checked ? ' checked' : '') + '/>' +
-      '<label>' + esc(f.name) + '</label>' +
-      '</div>';
+    return _ckRowHtml(f.id, f.name, linkedIds.indexOf(f.id) !== -1);
   }).join('');
   $('#efList').html(html);
 }
@@ -223,7 +238,7 @@ function renderEfList(allFriends, linkedIds) {
 async function submitEfAddNew() {
   var n = $('#inpEfNew').val().trim();
   if (!n) return;
-  try {
+  await _tryToast(async function () {
     var r = await gsc('addFriendToEvent', TK, _efEventId, n);
     if (r.success) {
       $('#inpEfNew').val('');
@@ -232,22 +247,17 @@ async function submitEfAddNew() {
         $existing.addClass('checked').find('input').prop('checked', true);
       } else {
         $('#efList .empty').remove();
-        $('#efList').append(
-          '<div class="ck-row checked" data-id="' + esc(r.friend.id) + '">' +
-          '<input type="checkbox" value="' + esc(r.friend.id) + '" checked/>' +
-          '<label>' + esc(r.friend.name) + '</label>' +
-          '</div>'
-        );
+        $('#efList').append(_ckRowHtml(r.friend.id, r.friend.name, true));
       }
     } else toast(r.error, 'err');
-  } catch (e) { toast('' + e, 'err') }
+  });
 }
 
 async function submitEfDone() {
   var ids = $('#efList .ck-row input:checked').map(function () { return $(this).val() }).get();
   var mode = _efMode, eventId = _efEventId, pendingEvent = _pendingNewEvent;
   closeSheets();
-  try {
+  await _tryToast(async function () {
     var r = await gsc('setEventFriends', TK, eventId, ids);
     if (r.success) {
       if (r.blocked && r.blocked.length) {
@@ -261,7 +271,7 @@ async function submitEfDone() {
         if (typeof renderEventFriends === 'function') renderEventFriends();
       }
     } else toast(r.error, 'err');
-  } catch (e) { toast('' + e, 'err') }
+  });
 }
 
 // ── FAB ────────────────────────────────────────
@@ -277,11 +287,7 @@ function buildTxFriendPickers(checkedIds) {
     width: '100%'
   });
   var ckHtml = $.map(FRIENDS, function (f) {
-    var checked = checkedIds.indexOf(f.id) !== -1;
-    return '<div class="ck-row' + (checked ? ' checked' : '') + '" data-id="' + esc(f.id) + '">' +
-      '<input type="checkbox" value="' + esc(f.id) + '"' + (checked ? ' checked' : '') + '/>' +
-      '<label>' + esc(f.name) + '</label>' +
-      '</div>';
+    return _ckRowHtml(f.id, f.name, checkedIds.indexOf(f.id) !== -1);
   }).join('');
   $('#inpShared').html(ckHtml);
 }
@@ -343,10 +349,8 @@ function openEditTxSheet(tid) {
   _resolveExistingSlips(tid);
 }
 
-// Existing slips may be a Drive fileId that still needs resolving to a real
-// image (see _resolveSlipSrc) - render immediately with what we have, then
-// swap in real thumbnails once resolved. Guarded by _editTxId in case the
-// user closes/reopens a different transaction before this resolves.
+// Existing slips may be an unresolved Drive fileId (see _resolveSlipSrc); swap in real
+// thumbnails once resolved. Guarded by _editTxId in case the user reopens a different tx first.
 async function _resolveExistingSlips(tid) {
   var resolved = await Promise.all(_txSlipsExisting.map(function (s) {
     return _resolveSlipSrc(s.slip).then(function (src) { return { id: s.id, slip: src, slipHi: s.slipHi } });
@@ -389,7 +393,7 @@ async function submitTx() {
   var slipsRemoved = _txSlipsRemoved.slice();
   var slipsNew = _txSlipsNew.slice();
   closeSheets();
-  try {
+  await _tryToast(async function () {
     if (editId) {
       var r = IS_SHARE
         ? await gsc('updateDetailViaShare', SHARE_TOKEN, editId, pay, friendIds, totalAmount, desc, customAmounts)
@@ -416,7 +420,7 @@ async function submitTx() {
         await _saveTxSlipsIfNeeded(r.transactionId, slipsRemoved, slipsNew);
       } else toast(r.error, 'err');
     }
-  } catch (e) { toast('' + e, 'err') }
+  });
   _editTxId = null;
   _txSlipsExisting = []; _txSlipsRemoved = []; _txSlipsNew = [];
 }
@@ -448,8 +452,7 @@ function _renderPfAvatar(name, photo) {
   else $el.css('background', avCol(name)).text(initials(name));
 }
 
-// Downscales to a small square-ish thumbnail and re-encodes as JPEG so the
-// result comfortably fits in a single Sheets cell (well under ~50k chars).
+// Downscales + re-encodes as JPEG so the result fits well under the ~50k-char Sheets cell cap.
 function _resizeImageFile(file, maxSize, quality) {
   return new Promise(function (resolve, reject) {
     var reader = new FileReader();
@@ -482,7 +485,7 @@ async function openProfileSheet() {
     _pfPwPolicy = p;
     renderPwChecklist('pfPwChecklist', p);
   }).catch(function () {});
-  try {
+  await _tryToast(async function () {
     var r = await gsc('getMyProfile', TK);
     if (r.success) {
       $('#inpPfName').val(r.displayName);
@@ -490,13 +493,13 @@ async function openProfileSheet() {
       _renderPfAvatar(r.displayName, r.photo);
       $('#pfRemovePhotoRow').toggle(!!r.photo);
     } else toast(r.error, 'err');
-  } catch (e) { toast('' + e, 'err') }
+  });
 }
 
 async function submitProfile() {
   var name = $('#inpPfName').val().trim();
   if (!name) { toast('Please enter a name', 'warn'); return }
-  try {
+  await _tryToast(async function () {
     var r = await gsc('updateProfile', TK, name, _pfPhotoPending);
     if (r.success) {
       ME = r.user;
@@ -506,28 +509,26 @@ async function submitProfile() {
       toast('Profile updated');
       closeSheets();
     } else toast(r.error, 'err');
-  } catch (e) { toast('' + e, 'err') }
+  });
 }
 
 async function submitChangePassword() {
   var cur = $('#inpPfCurPw').val();
   var next = $('#inpPfNewPw').val();
   if (!cur || !next) { toast('Please fill in both password fields', 'warn'); return }
-  try {
+  await _tryToast(async function () {
     var r = await gsc('changePassword', TK, cur, next);
     if (r.success) {
       toast('Password changed');
       $('#inpPfCurPw, #inpPfNewPw').val('');
     } else toast(r.error, 'err');
-  } catch (e) { toast('' + e, 'err') }
+  });
 }
 
 $(function () {
   // Close buttons
-  $('#shEventClose, #shEfClose, #shTxClose, #shShareClose').on('click', closeSheets);
-  $('#cfCancel, #logoutCancel').on('click', closeSheets);
-  $('#shAccountClose, #shProfileClose, #shUserEditClose').on('click', closeSheets);
-  $('#shSlipViewClose').on('click', closeSheets);
+  $('#shEventClose, #shEfClose, #shTxClose, #shShareClose, #cfCancel, #logoutCancel, ' +
+    '#shAccountClose, #shProfileClose, #shUserEditClose, #shSlipViewClose').on('click', closeSheets);
 
   // Transaction slip
   $('#txSlipGallery').on('click', '#btnTxSlipAdd', function () { $('#inpTxSlip').trigger('click') });
@@ -603,19 +604,10 @@ $(function () {
   $('#modeCus').on('click', function () { setSplitMode('custom') });
 
   // Equal mode: checkbox toggle
-  $('#inpShared').on('click', '.ck-row', function () {
-    var inp = $(this).find('input');
-    inp.prop('checked', !inp.prop('checked'));
-    $(this).toggleClass('checked', inp.prop('checked'));
-    calcPP();
-  });
+  $('#inpShared').on('click', '.ck-row', function () { _toggleCkRow($(this)); calcPP() });
 
   // Event-friends checklist: local toggle only, submitted in one batch by Done
-  $('#efList').on('click', '.ck-row', function () {
-    var inp = $(this).find('input');
-    inp.prop('checked', !inp.prop('checked'));
-    $(this).toggleClass('checked', inp.prop('checked'));
-  });
+  $('#efList').on('click', '.ck-row', function () { _toggleCkRow($(this)) });
 
   // Equal mode: amount input
   $('#inpAmt').on('input', calcPP);
@@ -625,27 +617,15 @@ $(function () {
   $('#cusRows').on('input', '.ca-inp', calcCustomTotal);
 
   // Select all / clear
-  $('#btnCkAll').on('click', function () {
-    $('#inpShared .ck-row').each(function () {
-      $(this).find('input').prop('checked', true);
-      $(this).addClass('checked');
-    });
-    calcPP();
-  });
-  $('#btnCkNone').on('click', function () {
-    $('#inpShared .ck-row').each(function () {
-      $(this).find('input').prop('checked', false);
-      $(this).removeClass('checked');
-    });
-    calcPP();
-  });
+  $('#btnCkAll').on('click', function () { _setAllCk(true) });
+  $('#btnCkNone').on('click', function () { _setAllCk(false) });
 
   // Confirm delete
   $('#cfOk').on('click', async function () {
     if (!_del) return;
     var t = _del.type, id = _del.id; _del = null; closeSheets();
     if (t === 'tx' && IS_SHARE) return; // defense-in-depth - delete is never allowed via a share link
-    try {
+    await _tryToast(async function () {
       var r;
       if (t === 'event')        r = await gsc('deleteEvent',   TK, id);
       else if (t === 'tx')      r = await gsc('deleteDetail',  TK, id);
@@ -663,7 +643,7 @@ $(function () {
           loadAccounts();
         }
       } else if (r) toast(r.error, 'err');
-    } catch (e) { toast('' + e, 'err') }
+    });
   });
 
   // Logout confirm

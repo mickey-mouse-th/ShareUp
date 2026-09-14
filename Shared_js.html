@@ -1,15 +1,10 @@
 <script>
 // ── Global State ──────────────────────────────
-// "Remember me" (Auth_js.html) decides which of these actually gets written
-// to on login - localStorage survives app closes, sessionStorage doesn't.
-// Read both here so either kind of saved session boots normally.
+// "Remember me" decides localStorage vs sessionStorage on login; read both so either boots normally.
 var TK      = localStorage.getItem('su_tk')  || sessionStorage.getItem('su_tk')  || null;
 var ME      = JSON.parse(localStorage.getItem('su_me') || sessionStorage.getItem('su_me') || 'null');
 
-// Whichever storage currently holds the session - localStorage if "remember
-// me" was checked at login, sessionStorage otherwise. Used to keep ME in
-// sync (e.g. after a profile edit) without resurrecting a session in the
-// storage the user didn't choose to persist to.
+// Whichever storage currently holds the session, so ME can be kept in sync without switching stores.
 function _authStore() {
   return localStorage.getItem('su_tk') ? localStorage : sessionStorage;
 }
@@ -24,13 +19,10 @@ var SELF_FRIEND_ID = null; // the open event's friend row that maps back to this
 var SLIPS = {}; // transactionId -> receipt/slip data URI, for the currently open event
 
 // ── Share-link viewer state ───────────────────
-// SHARE_TOKEN/SHARE_PERMISSION are emitted by doGet into Index.html before
-// this script loads - '' when this is a normal logged-in visit.
+// SHARE_TOKEN/SHARE_PERMISSION are emitted by doGet into Index.html - '' for a normal logged-in visit.
 var IS_SHARE = !!SHARE_TOKEN;
 var PERM = { canAdd: true, canEdit: true, canDelete: true, canDownload: true, canSummary: true, canShare: true };
-// Re-derived from the LIVE getSharedEventView response every load (not just
-// the page-load-time SHARE_PERMISSION) so a link whose permission changes
-// while a tab is open is picked up on next refresh - single source of truth.
+// Re-derived from the LIVE getSharedEventView response every load so a permission change is picked up on refresh.
 function _applyPermFromShare(permission) {
   var canEdit = permission === 'edit';
   PERM = { canAdd: canEdit, canEdit: canEdit, canDelete: false, canDownload: true, canSummary: true, canShare: false };
@@ -75,29 +67,30 @@ function evBg(s)       { return EV_BG[_hash(s, EV_BG.length)] }
 function bannerGrad(s) { return BANNER_GRADS[_hash(s, BANNER_GRADS.length)] }
 function initials(s)   { return (s || '?')[0].toUpperCase() }
 
-// Renders this account's own profile photo (set via My Profile) in place of
-// the initials circle for whichever avatar is "you" — friendId is matched
-// against SELF_FRIEND_ID (set per open event by loadDetailData).
-function avatarHtml(cls, name, friendId) {
-  if (friendId && SELF_FRIEND_ID && friendId === SELF_FRIEND_ID && ME_PHOTO) {
-    return '<div class="' + cls + '" style="background:url(' + ME_PHOTO + ') center/cover no-repeat"></div>';
-  }
+function _avatarInitialsHtml(cls, name) {
   return '<div class="' + cls + '" style="background:' + avCol(name) + '">' + initials(name) + '</div>';
 }
+function _avatarPhotoHtml(cls, photo) {
+  return '<div class="' + cls + '" style="background:url(' + photo + ') center/cover no-repeat"></div>';
+}
 
-// Same idea for places that already have a specific account's own photo in
-// hand (e.g. the Admin account list), rather than needing SELF_FRIEND_ID.
+// Shows this account's own profile photo for whichever avatar is "you" (friendId matches SELF_FRIEND_ID).
+function avatarHtml(cls, name, friendId) {
+  if (friendId && SELF_FRIEND_ID && friendId === SELF_FRIEND_ID && ME_PHOTO) return _avatarPhotoHtml(cls, ME_PHOTO);
+  return _avatarInitialsHtml(cls, name);
+}
+
+// Same idea for callers that already have a specific account's photo in hand (e.g. Admin account list).
 function avatarHtmlDirect(cls, name, photo) {
-  if (photo) return '<div class="' + cls + '" style="background:url(' + photo + ') center/cover no-repeat"></div>';
-  return '<div class="' + cls + '" style="background:' + avCol(name) + '">' + initials(name) + '</div>';
+  if (photo) return _avatarPhotoHtml(cls, photo);
+  return _avatarInitialsHtml(cls, name);
 }
 
 // ── Utilities ─────────────────────────────────
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-// Escapes text like esc(), but wraps every case-insensitive match of `q` in
-// a <mark class="search-hl"> - used to highlight search matches in list UIs.
+// Like esc(), but wraps case-insensitive matches of `q` in <mark class="search-hl">.
 function highlightText(text, q) {
   var safe = esc(text);
   q = (q || '').trim();
@@ -114,8 +107,7 @@ function fmtDate(iso) {
   catch (e) { return iso }
 }
 
-// Renders the admin-configured password policy as a human-readable hint,
-// shared by the register form and the change-password form.
+// Human-readable password policy hint, shared by register + change-password forms.
 function pwPolicyText(p) {
   var parts = ['At least ' + p.pwMinLength + ' characters'];
   if (p.pwRequireUpper) parts.push('an uppercase letter');
@@ -151,30 +143,34 @@ function updatePwChecklist(containerId, policy, value) {
 }
 
 // ── Skeleton ─────────────────────────────────
+function _skLines(w1, w2) {
+  return '<div class="sk-lines"><div class="sk-line sk-w' + w1 + ' sk-pulse"></div><div class="sk-line sk-w' + w2 + ' sk-pulse"></div></div>';
+}
+function _skChips(n) {
+  var h = '<div class="sk-chips">';
+  for (var i = 0; i < n; i++) h += '<div class="sk-chip sk-pulse"></div>';
+  return h + '</div>';
+}
 function skeletonHtml(count, type) {
   var card;
   if (type === 'ev') {
     card = '<div class="sk-card"><div class="sk-row">' +
-      '<div class="sk-ic sk-pulse"></div>' +
-      '<div class="sk-lines"><div class="sk-line sk-w60 sk-pulse"></div><div class="sk-line sk-w35 sk-pulse"></div></div>' +
+      '<div class="sk-ic sk-pulse"></div>' + _skLines(60, 35) +
       '<div class="sk-amt sk-pulse"></div></div></div>';
   } else if (type === 'fr') {
     card = '<div class="sk-card"><div class="sk-row">' +
-      '<div class="sk-av sk-pulse"></div>' +
-      '<div class="sk-lines"><div class="sk-line sk-w55 sk-pulse"></div><div class="sk-line sk-w35 sk-pulse"></div></div>' +
+      '<div class="sk-av sk-pulse"></div>' + _skLines(55, 35) +
       '</div></div>';
   } else if (type === 'tx') {
     card = '<div class="sk-card">' +
       '<div class="sk-row" style="margin-bottom:10px">' +
-      '<div class="sk-av sk-pulse"></div>' +
-      '<div class="sk-lines"><div class="sk-line sk-w65 sk-pulse"></div><div class="sk-line sk-w40 sk-pulse"></div></div>' +
+      '<div class="sk-av sk-pulse"></div>' + _skLines(65, 40) +
       '<div class="sk-amt sk-pulse"></div></div>' +
-      '<div class="sk-chips"><div class="sk-chip sk-pulse"></div><div class="sk-chip sk-pulse"></div><div class="sk-chip sk-pulse"></div></div>' +
+      _skChips(3) +
       '</div>';
   } else {
     card = '<div class="sk-card"><div class="sk-row">' +
-      '<div class="sk-av sk-pulse"></div>' +
-      '<div class="sk-lines"><div class="sk-line sk-w60 sk-pulse"></div><div class="sk-line sk-w35 sk-pulse"></div></div>' +
+      '<div class="sk-av sk-pulse"></div>' + _skLines(60, 35) +
       '</div></div>';
   }
   var h = '<div class="sk-wrap">';
@@ -183,13 +179,9 @@ function skeletonHtml(count, type) {
 }
 
 // ── Slip photo resolution ─────────────────────
-// New slips are stored as a Drive fileId (see Code.js _uploadSlipToDrive) -
-// every direct Drive embed URL turned out to be unreliable when hotlinked
-// from inside this app's sandboxed iframe, so the bytes are fetched through
-// the same google.script.run bridge as everything else and turned into a
-// data: URI here. Old slips are still a raw data: URI already (pre-Drive) -
-// those pass through untouched. Cached by fileId so re-rendering the same
-// transaction doesn't refetch it.
+// Slips are Drive fileIds (see Code.js _uploadSlipToDrive) - direct Drive embed URLs are unreliable
+// in this app's sandboxed iframe, so bytes are fetched via gsc and turned into a data: URI here.
+// Old pre-Drive slips are already a raw data: URI and pass through untouched. Cached by fileId.
 var _slipSrcCache = {};
 async function _resolveSlipSrc(val) {
   if (!val) return '';
@@ -257,15 +249,23 @@ function closeSheets() {
 }
 
 // ── Navigation ───────────────────────────────
-function goTab(tab) {
-  CUR_TAB = tab; CUR_EV = null;
-  var titles = { home: 'ShareUp', admin: 'Admin' };
-  $('#hdrTitle').text(titles[tab] || 'ShareUp');
-  $('#appHdr').removeClass('show-back');
-  var pgMap = { home: 'pgHome', admin: 'pgAdmin' };
-  $.each(pgMap, function (t, pgId) {
+var PAGE_MAP = { home: 'pgHome', admin: 'pgAdmin' };
+var TAB_TITLES = { home: 'ShareUp', admin: 'Admin' };
+
+function _hideMainPages() {
+  $.each(PAGE_MAP, function (_, pgId) { $('#' + pgId).addClass('hidden') });
+}
+function _showOnlyMainTab(tab) {
+  $.each(PAGE_MAP, function (t, pgId) {
     $('#' + pgId).toggleClass('hidden', t !== tab).removeClass('behind');
   });
+}
+
+function goTab(tab) {
+  CUR_TAB = tab; CUR_EV = null;
+  $('#hdrTitle').text(TAB_TITLES[tab] || 'ShareUp');
+  $('#appHdr').removeClass('show-back');
+  _showOnlyMainTab(tab);
   $('#pgDetail').addClass('hidden').removeClass('behind');
   $('#fab').toggleClass('hide', tab === 'admin');
   $('.bnav-btn').removeClass('on');
@@ -284,9 +284,8 @@ function openDetail(ev) {
   $('#detailEmoji').text(ev.icon || evEmoji(ev.name));
   $('#detailBannerName').text(ev.name);
   $('#detailBannerDate').text(fmtDate(ev.createdAt));
-  var pgMap = { home: 'pgHome', admin: 'pgAdmin' };
-  var prev = pgMap[CUR_TAB];
-  $.each(pgMap, function (_, pgId) { $('#' + pgId).addClass('hidden') });
+  var prev = PAGE_MAP[CUR_TAB];
+  _hideMainPages();
   if (prev) { $('#' + prev).removeClass('hidden').addClass('behind') }
   $('#pgDetail').removeClass('hidden behind');
   $('#fab').removeClass('hide');
@@ -298,19 +297,13 @@ function goBack() {
   CUR_EV = null;
   $('#pgDetail').addClass('hidden');
   $('#appHdr').removeClass('show-back');
-  var titles = { home: 'ShareUp', admin: 'Admin' };
-  $('#hdrTitle').text(titles[CUR_TAB] || 'ShareUp');
-  var pgMap = { home: 'pgHome', admin: 'pgAdmin' };
-  $.each(pgMap, function (t, pgId) {
-    $('#' + pgId).removeClass('behind').toggleClass('hidden', t !== CUR_TAB);
-  });
+  $('#hdrTitle').text(TAB_TITLES[CUR_TAB] || 'ShareUp');
+  _showOnlyMainTab(CUR_TAB);
   $('#fab').toggleClass('hide', CUR_TAB === 'admin');
   _saveView();
 }
 
-// Opens the Summary sheet - SETTLEMENTS is already bundled into the initial
-// detail load, so this only hits the server again if it was invalidated
-// (e.g. a transaction changed since).
+// SETTLEMENTS is bundled into the initial detail load; only refetched if invalidated since.
 function openSummarySheet() {
   if (!CUR_EV) return;
   openSheet('shSummary');
@@ -319,12 +312,8 @@ function openSummarySheet() {
 }
 
 // ── Reload/reopen persistence ─────────────────
-// Remembers which page (and, for an event, which sub-tab) the user was on so
-// a browser refresh — or just reopening the app later — lands back in the
-// same place. Apps Script serves this app inside a cross-origin sandboxed
-// iframe, so the visible address bar can't be updated per-navigation without
-// a full page reload on every click; localStorage gets the same end result
-// (refresh restores the same view) without that cost.
+// Sandboxed iframe means the address bar can't be updated per-navigation; localStorage gets the
+// same "refresh restores the same view" result without a full page reload on every click.
 function _saveView() {
   var view = CUR_EV ? { tab: 'event', eventId: CUR_EV.id } : { tab: CUR_TAB };
   localStorage.setItem('su_view', JSON.stringify(view));
@@ -370,31 +359,33 @@ function startApp() {
   }).catch(function () {});
 }
 
-function doLogout() {
-  closeSheets();
-  gsc('logoutUser', TK).catch(function () {});
+function _clearAuthStorage(alsoView) {
   TK = null; ME = null;
   localStorage.removeItem('su_tk');
   localStorage.removeItem('su_me');
-  localStorage.removeItem('su_view');
   sessionStorage.removeItem('su_tk');
   sessionStorage.removeItem('su_me');
+  if (alsoView) localStorage.removeItem('su_view');
+}
+
+function doLogout() {
+  closeSheets();
+  gsc('logoutUser', TK).catch(function () {});
+  _clearAuthStorage(true);
   $('#appView').hide();
   $('#authView').css('display', 'flex');
   authPg('login');
 }
 
-// Anonymous share-link visit: jumps straight into the Detail page for the
-// linked event, skipping #authView and the Home/Admin pages entirely (a
-// share link is scoped to one event, there's nowhere else for it to go).
+// Anonymous share-link visit: jumps straight into Detail, skipping #authView and Home/Admin
+// (a share link is scoped to one event, there's nowhere else for it to go).
 function startShareApp() {
   $('#appView').css('display', 'flex');
   $('.bnav').hide();
   $('#btnBack').hide();
   $('#hdrAv').hide();
   $('#navAd').hide();
-  var pgMap = { home: 'pgHome', admin: 'pgAdmin' };
-  $.each(pgMap, function (_, pgId) { $('#' + pgId).addClass('hidden') });
+  _hideMainPages();
   $('#pgDetail').removeClass('hidden behind');
   loadDetailData(null);
 }
@@ -414,16 +405,14 @@ $(function () {
   $('#hdrAv').on('click',  function () { openSheet('shAccount') });
   $('#overlay').on('click', closeSheets);
 
-  // A ?tk= URL (see doGet/Auth_js.html) re-logs in even when localStorage was
-  // wiped - adopt it as the normal session and persist it going forward.
+  // A ?tk= URL re-logs in even when localStorage was wiped - adopt it as the normal session.
   if (!IS_SHARE && BOOT_TOKEN && BOOT_USER) {
     TK = BOOT_TOKEN; ME = BOOT_USER;
     localStorage.setItem('su_tk', TK);
     localStorage.setItem('su_me', JSON.stringify(ME));
   }
 
-  // Boot — optimistic: show app immediately with cached data,
-  // validate session in background to avoid login on every cold start
+  // Optimistic boot: show cached data immediately, validate session in background.
   if (IS_SHARE) {
     hideSplash();
     startShareApp();
@@ -457,11 +446,7 @@ function _handleDataError(msg) {
 }
 
 function _bootFail() {
-  TK = null; ME = null;
-  localStorage.removeItem('su_tk');
-  localStorage.removeItem('su_me');
-  sessionStorage.removeItem('su_tk');
-  sessionStorage.removeItem('su_me');
+  _clearAuthStorage(false);
   hideSplash();
   _showAuth();
 }

@@ -1,7 +1,22 @@
 <script>
 var ACCOUNTS = [];
-var _ueId = null; // account currently open in the Edit User sheet
+var _ueId = null; // account open in the Edit User sheet
 var USER_SEARCH = '';
+
+// Runs a gsc() call; on success passes the result to onSuccess, otherwise
+// toasts the server error or thrown exception. Shared by the mutation
+// handlers below so each one only states its call and its success action.
+async function _runAction(call, onSuccess) {
+  try {
+    var r = await call();
+    if (r.success) onSuccess(r);
+    else toast(r.error, 'err');
+  } catch (e) { toast('' + e, 'err') }
+}
+
+function _findAccount(id) {
+  return ACCOUNTS.filter(function (x) { return x.id === id })[0];
+}
 
 async function loadAccounts() {
   $('#accountsList').html(skeletonHtml(3, 'acc'));
@@ -48,7 +63,7 @@ function _renderUeAvatar(name, photo) {
 }
 
 function openUserEditSheet(id) {
-  var a = ACCOUNTS.filter(function (x) { return x.id === id })[0];
+  var a = _findAccount(id);
   if (!a) return;
   _ueId = a.id;
   var isMe = ME && a.id === ME.id;
@@ -73,8 +88,7 @@ function _tglSet(wrapId, chkId, on) {
   $('#' + chkId).prop('checked', on);
 }
 
-// Picks whichever unit reads most naturally for the given minute count, so
-// someone thinking "3 hours" isn't stuck reading "0.1 days".
+// Picks the unit (minutes/hours/days) that reads most naturally for the count.
 function _sessionHintText(minutes) {
   if (!minutes || minutes < 1) return '';
   if (minutes < 120) return '≈ ' + minutes + ' minutes';
@@ -82,10 +96,8 @@ function _sessionHintText(minutes) {
   return '≈ ' + (minutes / 1440).toFixed(1) + ' days';
 }
 
-async function loadSettingsPanel() {
-  try {
-    var r = await gsc('getSettings', TK);
-    if (!r.success) { toast(r.error, 'err'); return }
+function loadSettingsPanel() {
+  return _runAction(function () { return gsc('getSettings', TK) }, function (r) {
     var s = r.settings;
     $('#asSessionMin').val(s.sessionMinutes);
     $('#asSessionHint').text(_sessionHintText(s.sessionMinutes));
@@ -94,12 +106,11 @@ async function loadSettingsPanel() {
     _tglSet('asPwLowerWrap', 'asPwLower', s.pwRequireLower);
     _tglSet('asPwNumberWrap', 'asPwNumber', s.pwRequireNumber);
     _tglSet('asPwSpecialWrap', 'asPwSpecial', s.pwRequireSpecial);
-  } catch (e) { toast('' + e, 'err') }
+  });
 }
 
 // ── Admin sub-nav (User / Theme / Settings) ────
-// Landing on the Admin tab always shows the 3-item menu first - picking one
-// navigates into that panel; there's no default panel shown up front.
+// No panel is shown by default; the 3-item menu always comes up first.
 var ADMIN_TAB = 'menu';
 var _themeLoaded = false, _settingsLoaded = false;
 
@@ -114,8 +125,8 @@ function switchAdminTab(t) {
 }
 
 // ── Theme Settings ────────────────────────────
-// Mirrors DEFAULT_THEME in Code.js - used only for the client-side "Reset to
-// Default" button and to seed the reference table/previews before load.
+// Mirrors DEFAULT_THEME in Code.js - used for the "Reset to Default" button
+// and to seed the reference table/previews before load.
 var DEFAULT_THEME_CLIENT = {
   p: '#4F46E5', pLt: '#4338CA',
   bg: '#F1F5F9', s1: '#FFFFFF', s2: '#F8FAFC', bd: '#E2E8F0',
@@ -129,9 +140,9 @@ var THEME_CSS_VAR = {
   hdrBg: '--hdr-bg', navBg: '--nav-bg', overlayBg: '--overlay-bg'
 };
 // Drives the editable rows below. `kind` picks which real, self-labeled
-// component markup to render for that token (see _componentHtml) - "Card
-// Surface" shows an actual card, "Primary" shows a real button, "Modal
-// Overlay" shows an actual popup-over-scrim, etc. No abstract swatches.
+// component markup to render for that token (see _componentHtml) - e.g.
+// "Card Surface" shows an actual card, "Primary" a real button. No abstract
+// swatches.
 var THEME_TOKENS = [
   { token: 'p',         group: 'Brand',              label: 'Primary (Buttons)',       kind: 'button' },
   { token: 'pLt',       group: 'Brand',              label: 'Accent / Highlight',      kind: 'accent' },
@@ -152,12 +163,9 @@ var THEME_TOKENS = [
 ];
 
 // Real, labeled component markup per token "kind" - every color reads its
-// var(--x) straight off the cascade (from #themeLiveScope's own inline
-// style, see _seedLiveVars/_previewThemeToken - it wraps both the top
-// all-in-one preview frame and #themeGroups, so BOTH update live together),
-// so a row updates live not only from its own edits but from any OTHER
-// token it depends on (e.g. Card reacts to both Card Surface and
-// Primary/Muted Text changes) with zero extra JS.
+// var(--x) straight off the cascade (see _seedLiveVars/_previewThemeToken),
+// so a row updates live from its own edits AND from any other token it
+// depends on (e.g. Card reacts to Card Surface + Primary/Muted Text).
 function _componentHtml(t) {
   switch (t.kind) {
     case 'button': return '<button type="button" class="cpv-btn">Button</button>';
@@ -208,19 +216,17 @@ function _renderThemeGroups(theme) {
   _seedLiveVars(theme);
 }
 
-// Sets every theme CSS var directly on #themeLiveScope (not :root), so both
-// the top all-in-one preview frame and every row's own component preview
-// reflect the full draft palette live while editing, without touching the
-// real app until Save is pressed.
+// Sets every theme CSS var on #themeLiveScope (not :root) so the top preview
+// frame and every row's preview reflect the draft palette live, without
+// touching the real app until Save.
 function _seedLiveVars(theme) {
   var el = document.getElementById('themeLiveScope');
   if (!el) return;
   for (var k in THEME_CSS_VAR) if (theme[k]) el.style.setProperty(THEME_CSS_VAR[k], theme[k]);
 }
 
-// Local-only preview: updates the live var (cascades to the top preview
-// frame + every row that reads it) plus this row's own swatch dot/hex text -
-// never touches the real app until Save is pressed.
+// Local-only preview: updates the live var plus this row's own swatch
+// dot/hex text - never touches the real app until Save.
 function _previewThemeToken(token, value) {
   $('#dot-' + token).css('background', value);
   $('.theme-row-hex[data-hex="' + token + '"]').text(value.toUpperCase());
@@ -299,7 +305,7 @@ $(function () {
     $(this).closest('.tgl').toggleClass('on', $(this).is(':checked'));
   });
 
-  $('#btnAsSave').on('click', async function () {
+  $('#btnAsSave').on('click', function () {
     var settings = {
       sessionMinutes: $('#asSessionMin').val(),
       pwMinLength: $('#asPwMinLen').val(),
@@ -308,36 +314,30 @@ $(function () {
       pwRequireNumber: $('#asPwNumber').is(':checked'),
       pwRequireSpecial: $('#asPwSpecial').is(':checked')
     };
-    try {
-      var r = await gsc('updateSettings', TK, settings);
-      if (r.success) toast('Settings saved');
-      else toast(r.error, 'err');
-    } catch (e) { toast('' + e, 'err') }
+    _runAction(function () { return gsc('updateSettings', TK, settings) }, function () {
+      toast('Settings saved');
+    });
   });
 
-  $('#ueRoleSel').on('change', async function () {
+  $('#ueRoleSel').on('change', function () {
     var role = $(this).val();
-    try {
-      var r = await gsc('updateAccountRole', TK, _ueId, role);
-      if (r.success) { toast('Role updated'); loadAccounts() }
-      else toast(r.error, 'err');
-    } catch (e) { toast('' + e, 'err') }
+    _runAction(function () { return gsc('updateAccountRole', TK, _ueId, role) }, function () {
+      toast('Role updated'); loadAccounts();
+    });
   });
 
-  $('#ueStatusTgl').on('change', async function () {
+  $('#ueStatusTgl').on('change', function () {
     var enable = $(this).is(':checked');
     $('#ueTglWrap').toggleClass('on', enable);
     $('#ueStatusHint').text(enable ? 'Active — can sign in' : 'Disabled — can\'t sign in');
     var status = enable ? 'active' : 'disabled';
-    try {
-      var r = await gsc('updateAccountStatus', TK, _ueId, status);
-      if (r.success) { toast(enable ? 'Account enabled' : 'Account disabled'); loadAccounts() }
-      else toast(r.error, 'err');
-    } catch (e) { toast('' + e, 'err') }
+    _runAction(function () { return gsc('updateAccountStatus', TK, _ueId, status) }, function () {
+      toast(enable ? 'Account enabled' : 'Account disabled'); loadAccounts();
+    });
   });
 
   $('#btnUeDelete').on('click', function () {
-    var a = ACCOUNTS.filter(function (x) { return x.id === _ueId })[0];
+    var a = _findAccount(_ueId);
     closeSheets();
     askDel('account', _ueId, a ? a.displayName : '');
   });

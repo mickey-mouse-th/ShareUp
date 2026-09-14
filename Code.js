@@ -12,10 +12,9 @@ var DEFAULT_SETTINGS = {
   pwRequireNumber: false,
   pwRequireSpecial: false
 };
-// Mirrors the light indigo palette baked into Shared_css.html's :root, so opening
-// the theme picker for the first time shows accurate starting colors.
-// buildThemeCss() only emits overrides for keys actually saved (see below), so
-// nothing visually changes until an admin explicitly saves via the picker.
+// Mirrors Shared_css.html's :root defaults, so the theme picker starts accurate.
+// buildThemeCss() only overrides keys actually saved, so nothing changes until
+// an admin explicitly saves.
 var DEFAULT_THEME = {
   p: '#4F46E5', pLt: '#4338CA',
   bg: '#F1F5F9', s1: '#FFFFFF', s2: '#F8FAFC', bd: '#E2E8F0',
@@ -106,6 +105,24 @@ function generateToken() {
   return Utilities.getUuid() + '-' + Utilities.getUuid();
 }
 
+// The one error shape every RPC function returns - accepts either a caught
+// exception or a plain string message (both have .toString()).
+function _fail(err) {
+  return { success: false, error: err.toString() };
+}
+
+// Row index of the first row whose column `col` equals val, or -1.
+function _findRowByCol(data, col, val) {
+  for (var i = 1; i < data.length; i++) if (data[i][col] === val) return i;
+  return -1;
+}
+
+// Shorthand for the common case: match against column 0 (most sheets here -
+// Accounts/Sessions/EventShares/... - are keyed by their first column).
+function _findRow(data, id) {
+  return _findRowByCol(data, 0, id);
+}
+
 function getCache() {
   return CacheService.getScriptCache();
 }
@@ -156,13 +173,10 @@ function getSettlementPaymentsSheet() {
   return sheet;
 }
 
-// One row per PHOTO (a transaction can have several), not a column on
-// Details, since a transaction fans out into one Details row per
-// participant - a column there would duplicate every image N times.
-// Column F ('fileId') was added when slips moved to Drive storage (see
-// _uploadSlipToDrive below) - rows written before that have a blank fileId
-// and keep their original base64 data-URI in 'slip'/'slipHi', which still
-// renders fine in an <img>, so no migration of old rows is needed.
+// One row per PHOTO, not a column on Details (a transaction fans out into
+// one Details row per participant, so a column would duplicate each image N
+// times). Pre-Drive rows have a blank 'fileId' and keep their original
+// base64 data-URI in 'slip'/'slipHi' - still renders fine, no migration needed.
 function getTransactionSlipsSheet() {
   var ss = getSpreadsheet();
   var sheet = ss.getSheetByName('TransactionSlips');
@@ -173,10 +187,8 @@ function getTransactionSlipsSheet() {
   return sheet;
 }
 
-// 'id' was added after this sheet already shipped (single-slip-per-transaction
-// model) - rows written before that have a blank id. Backfill it lazily,
-// same self-healing style as _findSelfFriendRow, so old photos stay
-// individually deletable once multi-photo support lands.
+// Pre-multi-photo rows have a blank id - backfill lazily (like
+// _findSelfFriendRow) so old photos stay individually deletable.
 function _backfillSlipIds(sheet, data) {
   var changed = false;
   for (var i = 1; i < data.length; i++) {
@@ -205,16 +217,11 @@ function _getSlipsFolder() {
   return folder;
 }
 
-// dataUri: a "data:<mime>;base64,<data>" string from the client's canvas
-// compression step. The file is kept PRIVATE (no public Drive sharing) - every
-// direct Drive embed URL (lh3.googleusercontent.com/d/, drive.google.com
-// /thumbnail, /uc?export=) turned out to unreliably fail once hotlinked
-// cross-origin from inside this app's sandboxed iframe, and doGet can't
-// stream raw binary either (Apps Script web apps only support returning
-// HtmlOutput/TextOutput). Instead the image bytes are fetched through the
-// same google.script.run bridge every other read in this app already uses
-// (see getSlipImage/getSlipImageViaShare) and turned into a data: URI
-// client-side - the file never needs to be public.
+// dataUri: "data:<mime>;base64,<data>" from the client's canvas compression
+// step. Kept PRIVATE (no public Drive sharing) - direct Drive embed URLs
+// proved unreliable when hotlinked from this app's sandboxed iframe, so
+// bytes are instead fetched back through google.script.run (see
+// getSlipImage/getSlipImageViaShare) and turned into a data: URI client-side.
 function _uploadSlipToDrive(dataUri) {
   var m = /^data:([^;]+);base64,(.*)$/.exec(dataUri || '');
   if (!m) throw new Error('Invalid image data');
@@ -235,25 +242,27 @@ function _slipBase64(fileId) {
   return { mimeType: blob.getContentType(), base64: Utilities.base64Encode(blob.getBytes()) };
 }
 
+function _readSlipImage(fileId) {
+  if (!_isKnownSlipFile(fileId)) return _fail('Photo not found');
+  var d = _slipBase64(fileId);
+  return { success: true, mimeType: d.mimeType, base64: d.base64 };
+}
+
 function getSlipImage(token, fileId) {
   try {
     requireAuth(token);
-    if (!_isKnownSlipFile(fileId)) return { success: false, error: 'Photo not found' };
-    var d = _slipBase64(fileId);
-    return { success: true, mimeType: d.mimeType, base64: d.base64 };
+    return _readSlipImage(fileId);
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
 function getSlipImageViaShare(shareToken, fileId) {
   try {
-    if (!_shareEventId(shareToken, false)) return { success: false, error: 'Invalid link' };
-    if (!_isKnownSlipFile(fileId)) return { success: false, error: 'Photo not found' };
-    var d = _slipBase64(fileId);
-    return { success: true, mimeType: d.mimeType, base64: d.base64 };
+    if (!_shareEventId(shareToken, false)) return _fail('Invalid link');
+    return _readSlipImage(fileId);
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -287,19 +296,12 @@ function _trashSlipFilesForTxSet(txIdSet) {
 function _lookupSession(token) {
   var sheet = getSessionsSheet();
   var data = sheet.getDataRange().getValues();
-  var now = new Date();
-  for (var i = 1; i < data.length; i++) {
-    if (data[i][0] === token) {
-      if (now < new Date(data[i][4])) {
-        var userInfo = JSON.parse(data[i][2]);
-        if (_isAccountDisabled(userInfo.id)) { sheet.deleteRow(i + 1); return null }
-        return { row: i + 1, userInfo: userInfo, expiresAt: data[i][4] };
-      }
-      sheet.deleteRow(i + 1);
-      return null;
-    }
-  }
-  return null;
+  var row = _findRow(data, token);
+  if (row === -1) return null;
+  if (new Date() >= new Date(data[row][4])) { sheet.deleteRow(row + 1); return null }
+  var userInfo = JSON.parse(data[row][2]);
+  if (_isAccountDisabled(userInfo.id)) { sheet.deleteRow(row + 1); return null }
+  return { row: row + 1, userInfo: userInfo, expiresAt: data[row][4] };
 }
 
 // Caps the cache entry so it never outlives the session's real expiry - matters
@@ -353,15 +355,11 @@ function doGet(e) {
   // Strict allowlist so this can be embedded directly into the page's inline script safely.
   var shareToken = (rawToken && /^[a-zA-Z0-9-]{10,100}$/.test(rawToken)) ? rawToken : '';
 
-  // Optional ?tk=<token> - the client silently redirects here right after a
-  // "remember me" login (see Auth_js.html). localStorage/sessionStorage are
-  // both wiped by Safari on every real app close for Apps Script's sandboxed
-  // content frame (treated as a fresh cross-site storage partition each
-  // time), but Safari DOES keep a closed tab's last URL across a full
-  // restart - reopening it re-runs doGet with this param still attached, so
-  // login survives without the user ever bookmarking/saving anything.
-  // Re-validated here at render time so a revoked/expired token silently
-  // falls back to a normal logged-out page instead of erroring.
+  // Optional ?tk=<token> - set by Auth_js.html right after a "remember me"
+  // login. Safari wipes localStorage for this app's sandboxed frame on close
+  // but keeps the tab's last URL, so reopening it re-runs doGet with this
+  // param still attached and login survives. Re-validated here so a
+  // revoked/expired token just falls back to logged-out instead of erroring.
   var bootToken = '', bootUser = null;
   var rawTk = e && e.parameter && e.parameter.tk;
   if (!shareToken && rawTk && /^[a-zA-Z0-9-]{10,100}$/.test(rawTk)) {
@@ -381,16 +379,10 @@ function doGet(e) {
     .setTitle(shareToken ? 'ShareUp - Shared Event' : 'ShareUp - Expense Splitting');
 }
 
-// createHtmlOutputFromFile() returns a file's RAW content - it does not run
-// <?...?> scriptlets. That was invisible for every other included file since
-// none of them contain scriptlets, but it silently broke ThemeOverride.html's
-// <?!= buildThemeCss() ?>: the saved theme was written to Script Properties
-// correctly, but the override <style> block was never actually evaluated on
-// page load, so a fresh load always re-served the untouched default palette
-// (the admin-panel "Save" button only looked like it worked because it also
-// pokes the CSS vars directly into the *current* tab's DOM via JS).
-// createTemplateFromFile().evaluate() runs scriptlets and is a safe drop-in
-// for plain files too (a file with no <?...?> just passes through unchanged).
+// Must use createTemplateFromFile().evaluate(), not createHtmlOutputFromFile()
+// - the latter returns raw content and never runs <?...?> scriptlets, which
+// silently broke ThemeOverride.html's saved-theme CSS injection. Safe for
+// every other included file too (no scriptlets = passes through unchanged).
 function include(filename) {
   return HtmlService.createTemplateFromFile(filename).evaluate().getContent();
 }
@@ -437,21 +429,21 @@ function _validatePassword(pw, settingsOpt) {
 function getSettings(token) {
   try {
     var user = requireAuth(token);
-    if (user.role !== 'admin') return { success: false, error: 'Forbidden' };
+    if (user.role !== 'admin') return _fail('Forbidden');
     return { success: true, settings: getAppSettings() };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
 function updateSettings(token, settings) {
   try {
     var user = requireAuth(token);
-    if (user.role !== 'admin') return { success: false, error: 'Forbidden' };
+    if (user.role !== 'admin') return _fail('Forbidden');
     var minutes = parseInt(settings.sessionMinutes, 10);
     // Floor at 5 minutes - anything shorter makes it easy to accidentally lock
     // yourself (or every user) out via a mistyped value (e.g. minutes vs hours).
-    if (!minutes || minutes < 5) return { success: false, error: 'Session length must be at least 5 minutes' };
+    if (!minutes || minutes < 5) return _fail('Session length must be at least 5 minutes');
     var minLen = parseInt(settings.pwMinLength, 10);
     if (!minLen || minLen < 1) minLen = 1;
     var merged = {
@@ -465,7 +457,7 @@ function updateSettings(token, settings) {
     PropertiesService.getScriptProperties().setProperty('APP_SETTINGS', JSON.stringify(merged));
     return { success: true, settings: merged };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -502,7 +494,7 @@ function getTheme() {
 function saveTheme(token, theme) {
   try {
     var user = requireAuth(token);
-    if (user.role !== 'admin') return { success: false, error: 'Forbidden' };
+    if (user.role !== 'admin') return _fail('Forbidden');
     var saved = _rawTheme();
     var merged = {};
     for (var k in DEFAULT_THEME) merged[k] = saved[k];
@@ -512,14 +504,12 @@ function saveTheme(token, theme) {
     PropertiesService.getScriptProperties().setProperty('APP_THEME', JSON.stringify(merged));
     return { success: true, theme: getAppTheme() };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
-// Builds a :root override CSS string from only the keys an admin has actually
-// saved (raw property, NOT the DEFAULT_THEME-merged view) - included right
-// after Shared_css.html in Index.html's <head> so it wins the cascade with
-// zero client round-trip / zero flash-of-unstyled-color.
+// :root override CSS for only the keys actually saved - included right after
+// Shared_css.html so it wins the cascade with zero flash-of-unstyled-color.
 function buildThemeCss() {
   var saved = _rawTheme();
   var decls = [];
@@ -548,7 +538,7 @@ function loginUser(username, password) {
     for (var i = 1; i < data.length; i++) {
       var row = data[i];
       if (row[2].toLowerCase() === username.toLowerCase() && row[3] === hashed) {
-        if (row[7] === 'disabled') return { success: false, error: 'This account has been disabled' };
+        if (row[7] === 'disabled') return _fail('This account has been disabled');
         // Update lastLogin
         sheet.getRange(i + 1, 6).setValue(new Date().toISOString());
 
@@ -569,9 +559,9 @@ function loginUser(username, password) {
         return { success: true, token: token, user: userInfo, url: ScriptApp.getService().getUrl() + '?tk=' + encodeURIComponent(token) };
       }
     }
-    return { success: false, error: 'Invalid username or password' };
+    return _fail('Invalid username or password');
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -584,12 +574,12 @@ function registerUser(displayName, username, password) {
     // Check username uniqueness
     for (var i = 1; i < data.length; i++) {
       if (data[i][2].toLowerCase() === username.toLowerCase()) {
-        return { success: false, error: 'Username already taken' };
+        return _fail('Username already taken');
       }
     }
 
     var pwErr = _validatePassword(password);
-    if (pwErr) return { success: false, error: pwErr };
+    if (pwErr) return _fail(pwErr);
 
     var now = new Date().toISOString();
     var id = Utilities.getUuid();
@@ -602,7 +592,7 @@ function registerUser(displayName, username, password) {
 
     return { success: true };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -610,13 +600,11 @@ function logoutUser(token) {
   try {
     getCache().remove('token_' + token);
     var sheet = getSessionsSheet();
-    var data = sheet.getDataRange().getValues();
-    for (var i = data.length - 1; i >= 1; i--) {
-      if (data[i][0] === token) { sheet.deleteRow(i + 1); break; }
-    }
+    var row = _findRow(sheet.getDataRange().getValues(), token);
+    if (row !== -1) sheet.deleteRow(row + 1);
     return { success: true };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -625,11 +613,11 @@ function getSessionUser(token) {
     var cached = getCache().get('token_' + token);
     if (cached) return { success: true, user: JSON.parse(cached) };
     var found = _lookupSession(token);
-    if (!found) return { success: false, error: 'Session expired' };
+    if (!found) return _fail('Session expired');
     getCache().put('token_' + token, JSON.stringify(found.userInfo), _cacheTtlFor(found.expiresAt));
     return { success: true, user: found.userInfo };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -650,13 +638,11 @@ function requireAuth(token) {
 function _updateSessionUserInfo(token, userInfo) {
   var sheet = getSessionsSheet();
   var data = sheet.getDataRange().getValues();
+  var row = _findRow(data, token);
   var ttl = CACHE_EXPIRY;
-  for (var i = 1; i < data.length; i++) {
-    if (data[i][0] === token) {
-      sheet.getRange(i + 1, 3).setValue(JSON.stringify(userInfo));
-      ttl = _cacheTtlFor(data[i][4]);
-      break;
-    }
+  if (row !== -1) {
+    sheet.getRange(row + 1, 3).setValue(JSON.stringify(userInfo));
+    ttl = _cacheTtlFor(data[row][4]);
   }
   getCache().put('token_' + token, JSON.stringify(userInfo), ttl);
 }
@@ -669,14 +655,11 @@ function getMyProfile(token) {
   try {
     var user = requireAuth(token);
     var data = getSpreadsheet().getSheetByName('Accounts').getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][0] === user.id) {
-        return { success: true, displayName: data[i][1], username: data[i][2], photo: data[i][9] || '' };
-      }
-    }
-    return { success: false, error: 'Account not found' };
+    var row = _findRow(data, user.id);
+    if (row === -1) return _fail('Account not found');
+    return { success: true, displayName: data[row][1], username: data[row][2], photo: data[row][9] || '' };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -684,17 +667,14 @@ function getMyProfile(token) {
 function updateProfile(token, displayName, photo) {
   try {
     var user = requireAuth(token);
-    if (!displayName || !displayName.trim()) return { success: false, error: 'Name is required' };
+    if (!displayName || !displayName.trim()) return _fail('Name is required');
     var trimmed = displayName.trim();
     var ss = getSpreadsheet();
 
     var acSheet = ss.getSheetByName('Accounts');
     var acData = acSheet.getDataRange().getValues();
-    var acRow = -1;
-    for (var i = 1; i < acData.length; i++) {
-      if (acData[i][0] === user.id) { acRow = i; break; }
-    }
-    if (acRow === -1) return { success: false, error: 'Account not found' };
+    var acRow = _findRow(acData, user.id);
+    if (acRow === -1) return _fail('Account not found');
     acSheet.getRange(acRow + 1, 2).setValue(trimmed);
     if (typeof photo === 'string') acSheet.getRange(acRow + 1, 10).setValue(photo);
 
@@ -711,7 +691,7 @@ function updateProfile(token, displayName, photo) {
     _updateSessionUserInfo(token, userInfo);
     return { success: true, user: userInfo };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -719,19 +699,16 @@ function changePassword(token, currentPassword, newPassword) {
   try {
     var user = requireAuth(token);
     var pwErr = _validatePassword(newPassword);
-    if (pwErr) return { success: false, error: pwErr };
+    if (pwErr) return _fail(pwErr);
     var sheet = getSpreadsheet().getSheetByName('Accounts');
     var data = sheet.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][0] === user.id) {
-        if (data[i][3] !== hashPassword(currentPassword || '')) return { success: false, error: 'Current password is incorrect' };
-        sheet.getRange(i + 1, 4).setValue(hashPassword(newPassword));
-        return { success: true };
-      }
-    }
-    return { success: false, error: 'Account not found' };
+    var row = _findRow(data, user.id);
+    if (row === -1) return _fail('Account not found');
+    if (data[row][3] !== hashPassword(currentPassword || '')) return _fail('Current password is incorrect');
+    sheet.getRange(row + 1, 4).setValue(hashPassword(newPassword));
+    return { success: true };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -758,10 +735,8 @@ function getHomeData(token) {
       }
     }
 
-    // Settlement state per event, for the Home filter tabs — reuses the same
-    // settlement engine as getSummary instead of a separate status field.
-    // Every sheet this needs is read ONCE here (not per event) and shared
-    // across the loop below via the *Opt params on the helpers.
+    // Settlement state per event for the Home filter tabs, via the same
+    // engine as getSummary. Each sheet is read once and shared via *Opt params.
     var rowsByEvent = {};
     events.forEach(function (ev) { rowsByEvent[ev.id] = [] });
     var dtData = ss.getSheetByName('Details').getDataRange().getValues();
@@ -780,7 +755,7 @@ function getHomeData(token) {
     });
 
     return { success: true, events: events, friends: friends };
-  } catch (e) { return { success: false, error: e.toString() } }
+  } catch (e) { return _fail(e) }
 }
 
 // Shared core behind getDetailData (authenticated) and getSharedEventView
@@ -808,15 +783,12 @@ function _buildDetailPayload(ss, eventId, accountId) {
   var friends = _getEventFriends(ss, eventId, accountId, ownedFriendMap, undefined, dtData);
   var friendMap = {};
   friends.forEach(function (f) { friendMap[f.id] = f.name });
-  // Bundled here so opening the Summary tab or exporting a PDF right after
-  // doesn't force a second round-trip that re-reads the same Details rows.
-  // _computeSettlementsWithPaid (not the plain variant) so a share-link
-  // visitor sees the exact same "paid" checkmarks the owner does.
+  // _computeSettlementsWithPaid so share-link visitors see the same "paid"
+  // checkmarks the owner does, bundled here to avoid a second round-trip.
   var settlements = _computeSettlementsWithPaid(rows, friendMap, eventId);
 
-  // Only this event's transactionIds - TransactionSlips isn't keyed by
-  // eventId, so without this filter every event's photos would be shipped
-  // down on every load (slow, and a lot of wasted bandwidth as photos add up).
+  // TransactionSlips isn't keyed by eventId - filter to this event's
+  // transactionIds or every event's photos ship down on every load.
   var eventTxIds = {};
   details.forEach(function (d) { eventTxIds[d.transactionId] = true });
   var slipSheet = getTransactionSlipsSheet();
@@ -830,8 +802,7 @@ function _buildDetailPayload(ss, eventId, accountId) {
     }
   }
 
-  // selfFriendId lets the client show the account's own profile photo (set
-  // via My Profile) for its own avatar instead of the initials circle.
+  // selfFriendId: lets the client show the account's own profile photo.
   return { details: details, friends: friends, settlements: settlements, selfFriendId: selfFriendId, slips: slips };
 }
 
@@ -839,11 +810,11 @@ function getDetailData(token, eventId) {
   try {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
-    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
     var payload = _buildDetailPayload(ss, eventId, user.id);
     payload.success = true;
     return payload;
-  } catch (e) { return { success: false, error: e.toString() } }
+  } catch (e) { return _fail(e) }
 }
 
 // ----------------------------------------------------------------
@@ -858,11 +829,9 @@ function _eventOwnedBy(ss, eventId, accountId) {
   return false;
 }
 
-// Finds the row index (in an already-read Friends data array) of the
-// account's own self-friend — the one auto-created at registration and
-// auto-linked into every new event. Prefers the isSelf marker; falls back
-// to the pre-migration convention (named literally "Me") for rows created
-// before that column existed. Returns -1 if none found.
+// Row index of the account's own self-friend (auto-created at registration,
+// auto-linked into every new event). Prefers the isSelf marker, falls back
+// to the pre-migration "Me" name convention. -1 if none found.
 function _findSelfFriendRow(frData, accountId) {
   for (var i = 1; i < frData.length; i++) {
     if (frData[i][1] === accountId && frData[i][3] === 'true') return i;
@@ -873,11 +842,8 @@ function _findSelfFriendRow(frData, accountId) {
   return -1;
 }
 
-// Removes every row whose column `col` (0-indexed) equals `val` in a single
-// read + single write, instead of one deleteRow() API call per matching row
-// — matters most for sheets that can accumulate many rows per event
-// (Details, EventFriends). Pass dataOpt when the caller already read this
-// sheet this request.
+// Removes every row where column `col` equals `val`, in one read + one write
+// (vs. one deleteRow() per match). Pass dataOpt if already read this request.
 function _removeRowsWhere(sheet, col, val, dataOpt) {
   var data = dataOpt || sheet.getDataRange().getValues();
   if (data.length <= 1) return;
@@ -890,9 +856,8 @@ function _removeRowsWhere(sheet, col, val, dataOpt) {
   sheet.getRange(1, 1, kept.length, kept[0].length).setValues(kept);
 }
 
-// Like _removeRowsWhere but matches against a set of ids (object used as a
-// hash set) - for deleteEvent, which needs to drop TransactionSlips rows for
-// every transactionId under the event, not a single value.
+// Like _removeRowsWhere but matches a set of ids at once (deleteEvent needs
+// to drop TransactionSlips rows for every transactionId under the event).
 function _removeRowsBySet(sheet, col, idSet) {
   var data = sheet.getDataRange().getValues();
   if (data.length <= 1) return;
@@ -905,12 +870,9 @@ function _removeRowsBySet(sheet, col, idSet) {
   sheet.getRange(1, 1, kept.length, kept[0].length).setValues(kept);
 }
 
-// Friends currently linked to an event. Self-healing migration: the first time
-// an event with existing transactions but no EventFriends rows yet is read,
-// membership is derived from who already appears in its Details and persisted.
-// Pass friendMapOpt when the caller already read the Friends sheet this request.
-// Pass efDataOpt/dtDataOpt when the caller already read those sheets this
-// request (e.g. a per-event loop) to avoid re-reading them for every event.
+// Friends linked to an event. Self-healing: an event with transactions but
+// no EventFriends rows yet gets membership derived from Details and persisted.
+// Pass the *Opt params when the caller already read those sheets this request.
 function _getEventFriends(ss, eventId, accountId, friendMapOpt, efDataOpt, dtDataOpt) {
   var friendMap = friendMapOpt;
   if (!friendMap) {
@@ -961,7 +923,7 @@ function getEventFriendsData(token, eventId) {
   try {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
-    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
 
     var frData = ss.getSheetByName('Friends').getDataRange().getValues();
     var friendMap = {};
@@ -976,16 +938,16 @@ function getEventFriendsData(token, eventId) {
     var linkedFriends = _getEventFriends(ss, eventId, user.id, friendMap);
     return { success: true, allFriends: allFriends, linkedFriends: linkedFriends };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
 function addFriendToEvent(token, eventId, name) {
   try {
     var user = requireAuth(token);
-    if (!name || name.trim() === '') return { success: false, error: 'Name is required' };
+    if (!name || name.trim() === '') return _fail('Name is required');
     var ss = getSpreadsheet();
-    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
     var trimmed = name.trim();
 
     var frSheet = ss.getSheetByName('Friends');
@@ -1014,7 +976,7 @@ function addFriendToEvent(token, eventId, name) {
 
     return { success: true, friend: { id: friendId, name: trimmed } };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -1022,7 +984,7 @@ function setEventFriends(token, eventId, friendIds) {
   try {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
-    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
 
     // Read each sheet exactly once for this request.
     var frData = ss.getSheetByName('Friends').getDataRange().getValues();
@@ -1081,10 +1043,8 @@ function setEventFriends(token, eventId, friendIds) {
       currentIdSet[fid] = true;
     });
 
-    // Single read (efData, above) + single write for the whole mutation,
-    // instead of one deleteRow()/appendRow() call per changed row. Rows for
-    // this event that aren't being removed are carried over byte-for-byte
-    // (same id/createdAt) — only genuinely new rows get fresh ones.
+    // Single read + single write for the whole mutation, not one
+    // deleteRow()/appendRow() per changed row.
     if (toRemove.length || newRows.length) {
       var keepRows = efData.filter(function (row, i) {
         return i > 0 && !(row[1] === eventId && toRemove.indexOf(row[2]) !== -1);
@@ -1099,7 +1059,7 @@ function setEventFriends(token, eventId, friendIds) {
     });
     return { success: true, friends: finalFriends, blocked: blocked };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -1110,7 +1070,7 @@ function setEventFriends(token, eventId, friendIds) {
 function addEvent(token, name, icon) {
   try {
     var user = requireAuth(token);
-    if (!name || name.trim() === '') return { success: false, error: 'Event name is required' };
+    if (!name || name.trim() === '') return _fail('Event name is required');
     var ss = getSpreadsheet();
     var sheet = ss.getSheetByName('Events');
     var id = Utilities.getUuid();
@@ -1126,14 +1086,14 @@ function addEvent(token, name, icon) {
 
     return { success: true, event: { id: id, name: name.trim(), accountId: user.id, createdAt: now, icon: icon || '' } };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
 function renameEvent(token, eventId, name, icon) {
   try {
     var user = requireAuth(token);
-    if (!name || name.trim() === '') return { success: false, error: 'Event name is required' };
+    if (!name || name.trim() === '') return _fail('Event name is required');
     var ss = getSpreadsheet();
     var sheet = ss.getSheetByName('Events');
     var data = sheet.getDataRange().getValues();
@@ -1144,9 +1104,9 @@ function renameEvent(token, eventId, name, icon) {
         return { success: true, name: name.trim(), icon: icon || '' };
       }
     }
-    return { success: false, error: 'Event not found' };
+    return _fail('Event not found');
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -1162,9 +1122,9 @@ function setEventActive(token, eventId, active) {
         return { success: true, active: active === true };
       }
     }
-    return { success: false, error: 'Event not found' };
+    return _fail('Event not found');
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -1172,11 +1132,9 @@ function deleteEvent(token, eventId) {
   try {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
-    // Ownership check moved before any deletion (it used to run only against
-    // the final Events-row lookup below, after other users' rows in
-    // Details/EventFriends/EventShares had already been wiped for a
-    // not-yours eventId).
-    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
+    // Check ownership before deleting anything - don't wipe another
+    // account's Details/EventFriends/EventShares rows first.
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
 
     var detailsSheet = ss.getSheetByName('Details');
     var dtData = detailsSheet.getDataRange().getValues();
@@ -1199,9 +1157,9 @@ function deleteEvent(token, eventId) {
         return { success: true };
       }
     }
-    return { success: false, error: 'Event not found' };
+    return _fail('Event not found');
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -1213,19 +1171,16 @@ function getShareLink(token, eventId) {
   try {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
-    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
     var data = getEventSharesSheet().getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][0] === eventId) {
-        return {
-          success: true, shareToken: data[i][1], permission: _sharePermission(data[i]),
-          shareUrl: ScriptApp.getService().getUrl() + '?share=' + data[i][1]
-        };
-      }
-    }
-    return { success: true, shareToken: null };
+    var row = _findRow(data, eventId);
+    if (row === -1) return { success: true, shareToken: null };
+    return {
+      success: true, shareToken: data[row][1], permission: _sharePermission(data[row]),
+      shareUrl: ScriptApp.getService().getUrl() + '?share=' + data[row][1]
+    };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -1235,26 +1190,23 @@ function enableEventShare(token, eventId, permission) {
   try {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
-    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
     var perm = permission === 'edit' ? 'edit' : 'view';
 
     var sheet = getEventSharesSheet();
     var data = sheet.getDataRange().getValues();
-    var shareToken = null;
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][0] === eventId) {
-        shareToken = data[i][1];
-        sheet.getRange(i + 1, 4).setValue(perm);
-        break;
-      }
-    }
-    if (!shareToken) {
+    var row = _findRow(data, eventId);
+    var shareToken;
+    if (row !== -1) {
+      shareToken = data[row][1];
+      sheet.getRange(row + 1, 4).setValue(perm);
+    } else {
       shareToken = Utilities.getUuid();
       sheet.appendRow([eventId, shareToken, new Date().toISOString(), perm]);
     }
     return { success: true, shareToken: shareToken, permission: perm, shareUrl: ScriptApp.getService().getUrl() + '?share=' + shareToken };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -1262,15 +1214,11 @@ function disableEventShare(token, eventId) {
   try {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
-    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
-    var sheet = getEventSharesSheet();
-    var data = sheet.getDataRange().getValues();
-    for (var i = data.length - 1; i >= 1; i--) {
-      if (data[i][0] === eventId) sheet.deleteRow(i + 1);
-    }
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
+    _removeRowsWhere(getEventSharesSheet(), 0, eventId);
     return { success: true };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -1278,7 +1226,7 @@ function disableEventShare(token, eventId) {
 // event a valid, unguessable share token points to; never account data.
 function getSharedEventView(shareToken) {
   try {
-    if (!shareToken) return { success: false, error: 'Invalid link' };
+    if (!shareToken) return _fail('Invalid link');
     var ss = getSpreadsheet();
 
     var shData = getEventSharesSheet().getDataRange().getValues();
@@ -1286,14 +1234,14 @@ function getSharedEventView(shareToken) {
     for (var i = 1; i < shData.length; i++) {
       if (shData[i][1] === shareToken) { eventId = shData[i][0]; permission = _sharePermission(shData[i]); break; }
     }
-    if (!eventId) return { success: false, error: 'This share link is no longer active' };
+    if (!eventId) return _fail('This share link is no longer active');
 
     var evData = ss.getSheetByName('Events').getDataRange().getValues();
     var eventRow = null;
     for (var i = 1; i < evData.length; i++) {
       if (evData[i][0] === eventId) { eventRow = evData[i]; break; }
     }
-    if (!eventRow) return { success: false, error: 'This share link is no longer active' };
+    if (!eventRow) return _fail('This share link is no longer active');
     var accountId = eventRow[2];
 
     var ownerPhoto = '';
@@ -1319,7 +1267,7 @@ function getSharedEventView(shareToken) {
       permission: permission
     };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -1338,20 +1286,23 @@ function _buildDetailRows(eventId, transactionId, payId, friendIds, total, descr
   });
 }
 
+// Builds rows via _buildDetailRows and appends them - the common tail shared
+// by add/update, both authenticated and share-link variants, below.
+function _writeDetailRows(sheet, eventId, transactionId, payId, friendIds, totalAmount, description, customAmounts, createdAt) {
+  var rows = _buildDetailRows(eventId, transactionId, payId, friendIds, parseFloat(totalAmount), description, customAmounts, createdAt);
+  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+}
+
 function addDetail(token, eventId, payId, friendIds, totalAmount, description, customAmounts) {
   try {
     var user = requireAuth(token);
-    if (!friendIds || !friendIds.length) return { success: false, error: 'At least one person is required' };
-    var ss = getSpreadsheet();
-    var sheet = ss.getSheetByName('Details');
+    if (!friendIds || !friendIds.length) return _fail('At least one person is required');
+    var sheet = getSpreadsheet().getSheetByName('Details');
     var transactionId = Utilities.getUuid();
-    var total = parseFloat(totalAmount);
-    var rows = _buildDetailRows(eventId, transactionId, payId, friendIds, total, description, customAmounts, new Date().toISOString());
-    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
-
+    _writeDetailRows(sheet, eventId, transactionId, payId, friendIds, totalAmount, description, customAmounts, new Date().toISOString());
     return { success: true, transactionId: transactionId };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -1362,23 +1313,17 @@ function updateDetail(token, transactionId, payId, friendIds, totalAmount, descr
     var sheet = ss.getSheetByName('Details');
     var data = sheet.getDataRange().getValues();
 
-    var eventId = null, createdAt = null;
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][2] === transactionId) { eventId = data[i][1]; createdAt = data[i][8]; break; }
-    }
-    if (!eventId) return { success: false, error: 'Transaction not found' };
-    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Transaction not found' };
-    if (!friendIds || !friendIds.length) return { success: false, error: 'At least one person is required' };
+    var row = _findRowByCol(data, 2, transactionId);
+    if (row === -1) return _fail('Transaction not found');
+    var eventId = data[row][1], createdAt = data[row][8];
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Transaction not found');
+    if (!friendIds || !friendIds.length) return _fail('At least one person is required');
 
     _removeRowsWhere(sheet, 2, transactionId, data);
-
-    var total = parseFloat(totalAmount);
-    var rows = _buildDetailRows(eventId, transactionId, payId, friendIds, total, description, customAmounts, createdAt);
-    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
-
+    _writeDetailRows(sheet, eventId, transactionId, payId, friendIds, totalAmount, description, customAmounts, createdAt);
     return { success: true, transactionId: transactionId };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -1388,19 +1333,17 @@ function deleteDetail(token, transactionId) {
     var ss = getSpreadsheet();
     var sheet = ss.getSheetByName('Details');
     var data = sheet.getDataRange().getValues();
-    var eventId = null;
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][2] === transactionId) { eventId = data[i][1]; break; }
-    }
-    if (!eventId) return { success: false, error: 'Transaction not found' };
-    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Transaction not found' };
+    var row = _findRowByCol(data, 2, transactionId);
+    if (row === -1) return _fail('Transaction not found');
+    var eventId = data[row][1];
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Transaction not found');
 
     _trashSlipFilesForTx(transactionId);
     _removeRowsWhere(sheet, 2, transactionId, data);
     _removeRowsWhere(getTransactionSlipsSheet(), 0, transactionId);
     return { success: true };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -1426,41 +1369,35 @@ function _shareEventId(shareToken, requireEdit) {
 function addDetailViaShare(shareToken, payId, friendIds, totalAmount, description, customAmounts) {
   try {
     var eventId = _shareEventId(shareToken, true);
-    if (!eventId) return { success: false, error: 'This share link cannot make changes' };
-    if (!friendIds || !friendIds.length) return { success: false, error: 'At least one person is required' };
+    if (!eventId) return _fail('This share link cannot make changes');
+    if (!friendIds || !friendIds.length) return _fail('At least one person is required');
 
     var sheet = getSpreadsheet().getSheetByName('Details');
     var transactionId = Utilities.getUuid();
-    var total = parseFloat(totalAmount);
-    var rows = _buildDetailRows(eventId, transactionId, payId, friendIds, total, description, customAmounts, new Date().toISOString());
-    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+    _writeDetailRows(sheet, eventId, transactionId, payId, friendIds, totalAmount, description, customAmounts, new Date().toISOString());
     return { success: true, transactionId: transactionId };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
 function updateDetailViaShare(shareToken, transactionId, payId, friendIds, totalAmount, description, customAmounts) {
   try {
     var eventId = _shareEventId(shareToken, true);
-    if (!eventId) return { success: false, error: 'This share link cannot make changes' };
-    if (!friendIds || !friendIds.length) return { success: false, error: 'At least one person is required' };
+    if (!eventId) return _fail('This share link cannot make changes');
+    if (!friendIds || !friendIds.length) return _fail('At least one person is required');
 
     var sheet = getSpreadsheet().getSheetByName('Details');
     var data = sheet.getDataRange().getValues();
-    var createdAt = null, txEventId = null;
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][2] === transactionId) { txEventId = data[i][1]; createdAt = data[i][8]; break; }
-    }
-    if (txEventId !== eventId) return { success: false, error: 'Transaction not found' };
+    var row = _findRowByCol(data, 2, transactionId);
+    if (row === -1 || data[row][1] !== eventId) return _fail('Transaction not found');
+    var createdAt = data[row][8];
 
     _removeRowsWhere(sheet, 2, transactionId, data);
-    var total = parseFloat(totalAmount);
-    var rows = _buildDetailRows(eventId, transactionId, payId, friendIds, total, description, customAmounts, createdAt);
-    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+    _writeDetailRows(sheet, eventId, transactionId, payId, friendIds, totalAmount, description, customAmounts, createdAt);
     return { success: true, transactionId: transactionId };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -1468,28 +1405,29 @@ function updateDetailViaShare(shareToken, transactionId, payId, friendIds, total
 // (not merely hidden client-side): no share link, editable or not, may ever
 // delete a transaction or a saved photo. Add/Edit stays available below.
 
+// 'slip'/'slipHi' both hold the Drive fileId (client resolves it to a real
+// image via getSlipImage/getSlipImageViaShare); 'fileId' is its own column
+// too since that's what the delete-cleanup helpers key off of.
+function _saveUploadedSlip(transactionId, slip) {
+  var uploaded = _uploadSlipToDrive(slip);
+  var id = Utilities.getUuid();
+  getTransactionSlipsSheet().appendRow([transactionId, uploaded.fileId, new Date().toISOString(), id, uploaded.fileId, uploaded.fileId]);
+  return { success: true, id: id, slip: uploaded.fileId, slipHi: uploaded.fileId };
+}
+
 function uploadTransactionSlipViaShare(shareToken, transactionId, slip) {
   try {
     var eventId = _shareEventId(shareToken, true);
-    if (!eventId) return { success: false, error: 'This share link cannot make changes' };
-    if (!slip) return { success: false, error: 'No photo provided' };
-
+    if (!eventId) return _fail('This share link cannot make changes');
+    if (!slip) return _fail('No photo provided');
     var dtData = getSpreadsheet().getSheetByName('Details').getDataRange().getValues();
-    if (_transactionEventId(dtData, transactionId) !== eventId) return { success: false, error: 'Transaction not found' };
-
-    var uploaded = _uploadSlipToDrive(slip);
-    var id = Utilities.getUuid();
-    // 'slip'/'slipHi' both hold the fileId now (client resolves it to a real
-    // image via getSlipImage/getSlipImageViaShare) - 'fileId' is kept as its
-    // own column too since that's what the delete-cleanup helpers key off of.
-    getTransactionSlipsSheet().appendRow([transactionId, uploaded.fileId, new Date().toISOString(), id, uploaded.fileId, uploaded.fileId]);
-    return { success: true, id: id, slip: uploaded.fileId, slipHi: uploaded.fileId };
+    if (_transactionEventId(dtData, transactionId) !== eventId) return _fail('Transaction not found');
+    return _saveUploadedSlip(transactionId, slip);
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
-// slip: pass a data-URI string to set it, or '' to remove it.
 function _transactionEventId(dtData, transactionId) {
   for (var i = 1; i < dtData.length; i++) {
     if (dtData[i][2] === transactionId) return dtData[i][1];
@@ -1498,28 +1436,19 @@ function _transactionEventId(dtData, transactionId) {
 }
 
 // Always adds a new photo (a transaction can have several) - returns its id
-// so the client can target it with deleteTransactionSlip later. The photo is
-// stored as a Drive file (see _uploadSlipToDrive); the returned slip/slipHi
-// are the preview/download URLs, not the raw upload the client sent.
+// so the client can target it with deleteTransactionSlip later.
 function uploadTransactionSlip(token, transactionId, slip) {
   try {
     var user = requireAuth(token);
-    if (!slip) return { success: false, error: 'No photo provided' };
+    if (!slip) return _fail('No photo provided');
     var ss = getSpreadsheet();
     var dtData = ss.getSheetByName('Details').getDataRange().getValues();
     var eventId = _transactionEventId(dtData, transactionId);
-    if (!eventId) return { success: false, error: 'Transaction not found' };
-    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Transaction not found' };
-
-    var uploaded = _uploadSlipToDrive(slip);
-    var id = Utilities.getUuid();
-    // 'slip'/'slipHi' both hold the fileId now (client resolves it to a real
-    // image via getSlipImage/getSlipImageViaShare) - 'fileId' is kept as its
-    // own column too since that's what the delete-cleanup helpers key off of.
-    getTransactionSlipsSheet().appendRow([transactionId, uploaded.fileId, new Date().toISOString(), id, uploaded.fileId, uploaded.fileId]);
-    return { success: true, id: id, slip: uploaded.fileId, slipHi: uploaded.fileId };
+    if (!eventId) return _fail('Transaction not found');
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Transaction not found');
+    return _saveUploadedSlip(transactionId, slip);
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -1529,8 +1458,8 @@ function deleteTransactionSlip(token, transactionId, slipId) {
     var ss = getSpreadsheet();
     var dtData = ss.getSheetByName('Details').getDataRange().getValues();
     var eventId = _transactionEventId(dtData, transactionId);
-    if (!eventId) return { success: false, error: 'Transaction not found' };
-    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Transaction not found' };
+    if (!eventId) return _fail('Transaction not found');
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Transaction not found');
 
     var sheet = getTransactionSlipsSheet();
     var data = _backfillSlipIds(sheet, sheet.getDataRange().getValues());
@@ -1541,9 +1470,9 @@ function deleteTransactionSlip(token, transactionId, slipId) {
         return { success: true };
       }
     }
-    return { success: false, error: 'Photo not found' };
+    return _fail('Photo not found');
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -1640,7 +1569,7 @@ function markSettlementPaid(token, eventId, fromId, toId, amount, paid) {
   try {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
-    if (!_eventOwnedBy(ss, eventId, user.id)) return { success: false, error: 'Event not found' };
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
     var sheet = getSettlementPaymentsSheet();
     var data = sheet.getDataRange().getValues();
     for (var i = data.length - 1; i >= 1; i--) {
@@ -1649,7 +1578,7 @@ function markSettlementPaid(token, eventId, fromId, toId, amount, paid) {
     if (paid) sheet.appendRow([Utilities.getUuid(), eventId, fromId, toId, amount, new Date().toISOString()]);
     return { success: true };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -1674,7 +1603,7 @@ function getSummary(token, eventId) {
 
     return { success: true, settlements: _computeSettlementsWithPaid(rows, friendMap, eventId) };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
@@ -1685,7 +1614,7 @@ function getSummary(token, eventId) {
 function getAllAccounts(token) {
   try {
     var user = requireAuth(token);
-    if (user.role !== 'admin') return { success: false, error: 'Forbidden' };
+    if (user.role !== 'admin') return _fail('Forbidden');
     var ss = getSpreadsheet();
     var sheet = ss.getSheetByName('Accounts');
     var data = sheet.getDataRange().getValues();
@@ -1704,66 +1633,51 @@ function getAllAccounts(token) {
     }
     return { success: true, accounts: accounts };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
 function updateAccountStatus(token, accountId, status) {
   try {
     var user = requireAuth(token);
-    if (user.role !== 'admin') return { success: false, error: 'Forbidden' };
-    if (user.id === accountId) return { success: false, error: 'Cannot disable your own account' };
-    var ss = getSpreadsheet();
-    var sheet = ss.getSheetByName('Accounts');
-    var data = sheet.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][0] === accountId) {
-        sheet.getRange(i + 1, 8).setValue(status);
-        return { success: true };
-      }
-    }
-    return { success: false, error: 'Account not found' };
+    if (user.role !== 'admin') return _fail('Forbidden');
+    if (user.id === accountId) return _fail('Cannot disable your own account');
+    var sheet = getSpreadsheet().getSheetByName('Accounts');
+    var row = _findRow(sheet.getDataRange().getValues(), accountId);
+    if (row === -1) return _fail('Account not found');
+    sheet.getRange(row + 1, 8).setValue(status);
+    return { success: true };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
 function updateAccountRole(token, accountId, role) {
   try {
     var user = requireAuth(token);
-    if (user.role !== 'admin') return { success: false, error: 'Forbidden' };
-    if (user.id === accountId) return { success: false, error: 'Cannot change your own role' };
-    var ss = getSpreadsheet();
-    var sheet = ss.getSheetByName('Accounts');
-    var data = sheet.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][0] === accountId) {
-        sheet.getRange(i + 1, 7).setValue(role);
-        return { success: true };
-      }
-    }
-    return { success: false, error: 'Account not found' };
+    if (user.role !== 'admin') return _fail('Forbidden');
+    if (user.id === accountId) return _fail('Cannot change your own role');
+    var sheet = getSpreadsheet().getSheetByName('Accounts');
+    var row = _findRow(sheet.getDataRange().getValues(), accountId);
+    if (row === -1) return _fail('Account not found');
+    sheet.getRange(row + 1, 7).setValue(role);
+    return { success: true };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }
 
 function deleteAccount(token, accountId) {
   try {
     var user = requireAuth(token);
-    if (user.role !== 'admin') return { success: false, error: 'Forbidden' };
-    if (user.id === accountId) return { success: false, error: 'Cannot delete your own account' };
-    var ss = getSpreadsheet();
-    var sheet = ss.getSheetByName('Accounts');
-    var data = sheet.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][0] === accountId) {
-        sheet.deleteRow(i + 1);
-        return { success: true };
-      }
-    }
-    return { success: false, error: 'Account not found' };
+    if (user.role !== 'admin') return _fail('Forbidden');
+    if (user.id === accountId) return _fail('Cannot delete your own account');
+    var sheet = getSpreadsheet().getSheetByName('Accounts');
+    var row = _findRow(sheet.getDataRange().getValues(), accountId);
+    if (row === -1) return _fail('Account not found');
+    sheet.deleteRow(row + 1);
+    return { success: true };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return _fail(e);
   }
 }

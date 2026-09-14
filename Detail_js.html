@@ -3,7 +3,7 @@ var _slipCarouselList = [];
 var _slipCarouselIdx = 0;
 
 function _renderSlipCarousel() {
-  var cur = _slipCarouselList[_slipCarouselIdx];
+  var cur = _curSlip();
   $('#slipCarouselImg').attr('src', (cur && cur.slip) || '');
   $('#slipCounter').text(_slipCarouselList.length > 1 ? (_slipCarouselIdx + 1) + ' / ' + _slipCarouselList.length : '');
   $('#slipPrev, #slipNext').toggle(_slipCarouselList.length > 1);
@@ -16,10 +16,9 @@ function _downloadDataUri(dataUri, filename) {
   a.click();
   document.body.removeChild(a);
 }
+function _curSlip() { return _slipCarouselList[_slipCarouselIdx] }
 
-// slips: [{id, slip, slipHi}] - slip/slipHi are either a data: URI already
-// (old, pre-Drive rows) or a Drive fileId that needs resolving first (see
-// _resolveSlipSrc in Shared_js.html).
+// slip/slipHi: data: URI (old rows) or a Drive fileId to resolve (_resolveSlipSrc, Shared_js.html)
 async function openSlipCarousel(slips) {
   $('#slipDlMenu').removeClass('on');
   _slipCarouselList = slips.map(function (s) { return { id: s.id, slip: '', slipHi: '' } });
@@ -42,7 +41,7 @@ function _slipGoNext() {
   _slipCarouselIdx = (_slipCarouselIdx + 1) % _slipCarouselList.length;
   _renderSlipCarousel();
 }
-// Swipe left/right on the photo itself, in addition to the < > buttons.
+// swipe on the photo, same effect as the < > buttons
 function _bindSlipSwipe(selector) {
   var startX = null, startY = null;
   $(document).on('touchstart', selector, function (e) {
@@ -60,8 +59,7 @@ function _bindSlipSwipe(selector) {
   });
 }
 
-// Keeps Home's filter tabs/list in sync with settlement data fetched here,
-// without a full Home reload — mirrors this app's existing optimistic-UI style.
+// keeps Home's filter tabs/list in sync without a full Home reload
 function _syncEventSettled(id, settlements) {
   var settled = settlements.every(function (s) { return s.paid });
   var idx = EVENTS.findIndex(function (e) { return e.id === id });
@@ -116,6 +114,26 @@ async function loadDetailData(id) {
 
 var TX_SEARCH = '';
 
+function _friendNameMap(friends) {
+  var fm = {};
+  $.each(friends, function (_, f) { fm[f.id] = f.name });
+  return fm;
+}
+// groups DETAILS-shaped rows by transactionId, newest tx first
+function _groupDetailsByTx(details) {
+  var grp = {}, ord = [];
+  $.each(details, function (_, d) {
+    if (!grp[d.transactionId]) { grp[d.transactionId] = []; ord.push(d.transactionId) }
+    grp[d.transactionId].push(d);
+  });
+  ord.reverse();
+  return { grp: grp, ord: ord };
+}
+function _isCustomSplit(rows) {
+  var base = parseFloat(rows[0].amount);
+  return rows.some(function (r) { return Math.abs(parseFloat(r.amount) - base) > 0.01 });
+}
+
 function renderDetails() {
   var $el = $('#txList');
   if (!DETAILS.length) {
@@ -128,14 +146,8 @@ function renderDetails() {
     );
     return;
   }
-  var fm = {};
-  $.each(FRIENDS, function (_, f) { fm[f.id] = f.name });
-  var grp = {}, ord = [];
-  $.each(DETAILS, function (_, d) {
-    if (!grp[d.transactionId]) { grp[d.transactionId] = []; ord.push(d.transactionId) }
-    grp[d.transactionId].push(d);
-  });
-  ord.reverse();
+  var fm = _friendNameMap(FRIENDS);
+  var g = _groupDetailsByTx(DETAILS), grp = g.grp, ord = g.ord;
   var q = TX_SEARCH.trim().toLowerCase();
   if (q) {
     ord = ord.filter(function (tid) {
@@ -154,9 +166,7 @@ function renderDetails() {
     var pn    = fm[f.payId] || f.payId;
     var total = parseFloat(f.totalAmount);
     var desc  = f.description || 'Transaction';
-    var isCustom = $.grep(rows, function (r) {
-      return Math.abs(parseFloat(r.amount) - parseFloat(rows[0].amount)) > 0.01;
-    }).length > 0;
+    var isCustom = _isCustomSplit(rows);
     var chips = $.map(rows, function (r) {
       var name = fm[r.friendId] || r.friendId;
       return '<span class="tx-chip">' + esc(name) + (isCustom ? ' ' + fmtAmt(r.amount) : '') + '</span>';
@@ -194,7 +204,7 @@ function renderDetails() {
   $el.html(html);
 }
 
-// Lazy-loaded on first export so a normal page load never pays for these.
+// lazy-loaded on first export so a normal page load never pays for these
 var _pdfLibsPromise = null;
 function _loadPdfLibs() {
   if (_pdfLibsPromise) return _pdfLibsPromise;
@@ -226,14 +236,8 @@ async function exportExpensesPdf() {
     return;
   }
 
-  var fm = {};
-  $.each(FRIENDS, function (_, f) { fm[f.id] = f.name });
-  var grp = {}, ord = [];
-  $.each(DETAILS, function (_, d) {
-    if (!grp[d.transactionId]) { grp[d.transactionId] = []; ord.push(d.transactionId) }
-    grp[d.transactionId].push(d);
-  });
-  ord.reverse();
+  var fm = _friendNameMap(FRIENDS);
+  var g0 = _groupDetailsByTx(DETAILS), grp = g0.grp, ord = g0.ord;
 
   var grandTotal = 0;
   var txRowsHtml = ord.map(function (tid, idx) {
@@ -241,9 +245,7 @@ async function exportExpensesPdf() {
     var payerName = fm[f.payId] || f.payId;
     var total = parseFloat(f.totalAmount);
     grandTotal += total;
-    var isCustom = group.some(function (g) {
-      return Math.abs(parseFloat(g.amount) - parseFloat(group[0].amount)) > 0.01;
-    });
+    var isCustom = _isCustomSplit(group);
     var paidForHtml = group.map(function (g) {
       var n = esc(fm[g.friendId] || g.friendId);
       return isCustom ? n + ' <span style="color:#D97706">(' + esc(fmtAmt(g.amount)) + ')</span>' : n;
@@ -261,8 +263,7 @@ async function exportExpensesPdf() {
       '</tr>';
   }).join('');
 
-  // Reuse the settlements already loaded for this event; only hit the server
-  // if they were invalidated (e.g. a transaction changed since).
+  // reuse already-loaded settlements; only re-fetch if invalidated
   var settlements = SETTLEMENTS;
   if (settlements === null) {
     try {
@@ -342,9 +343,7 @@ async function exportExpensesPdf() {
 
   var filename = (CUR_EV.name || 'expenses').replace(/[^\w฀-๿ -]/g, '') + '_expenses.pdf';
   try {
-    // Rasterize with html2canvas and place as an image — jsPDF's own .html()
-    // renderer falls back to its built-in Latin-only fonts for text nodes and
-    // garbles Thai, so we bypass it entirely and never hand it real text.
+    // rasterize to an image — jsPDF's own .html() renderer uses Latin-only fonts and garbles Thai
     var canvas = await html2canvas(container, { scale: 2, backgroundColor: '#fff', windowWidth: 760 });
     document.body.removeChild(hideWrap);
 
@@ -376,8 +375,7 @@ async function exportExpensesPdf() {
   }
 }
 
-// Fallback path: only hit when SETTLEMENTS wasn't already bundled/cached
-// (e.g. invalidated after a transaction changed). See switchTab().
+// fallback path: only hit when SETTLEMENTS wasn't already bundled/cached (see switchTab())
 async function loadSummary(id) {
   $('#sumList').html(skeletonHtml(2, 'sum'));
   try {
@@ -436,14 +434,27 @@ function renderSummary(ss) {
 // ── Share Event ────────────────────────────────
 var _sharePermission = 'view';
 
+function _setShareLinkVisible(hasLink) {
+  $('#shareOff').toggle(!hasLink);
+  $('#shareOn').toggle(hasLink);
+}
+// wraps a gsc() call: toasts on failure/exception, returns the result (or null)
+async function _gscOrToast(fn) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  try {
+    var r = await gsc.apply(null, [fn].concat(args));
+    if (!r.success) toast(r.error, 'err');
+    return r;
+  } catch (e) { toast('' + e, 'err'); return null }
+}
+
 async function openShareSheet() {
   if (!CUR_EV) return;
   _sharePermission = 'view';
   _renderSharePerm();
-  $('#shareOff').show();
-  $('#shareOn').hide();
+  _setShareLinkVisible(false);
   openSheet('shShare');
-  try {
+  try { // silent: this is just a background prefetch of an existing link
     var r = await gsc('getShareLink', TK, CUR_EV.id);
     if (r.success && r.shareToken) {
       _sharePermission = r.permission || 'view';
@@ -470,35 +481,25 @@ async function _setSharePermission(perm) {
   _sharePermission = perm;
   _renderSharePerm();
   if (!$('#shareOn').is(':visible')) return; // no link yet - just changes what "Create" will use
-  try {
-    var r = await gsc('enableEventShare', TK, CUR_EV.id, perm);
-    if (!r.success) toast(r.error, 'err');
-  } catch (e) { toast('' + e, 'err') }
+  await _gscOrToast('enableEventShare', TK, CUR_EV.id, perm);
 }
 
 function showShareLink(url) {
   $('#shareLinkInp').val(url);
-  $('#shareOff').hide();
-  $('#shareOn').show();
+  _setShareLinkVisible(true);
 }
 
 async function enableShare() {
-  try {
-    var r = await gsc('enableEventShare', TK, CUR_EV.id, _sharePermission);
-    if (r.success) showShareLink(r.shareUrl);
-    else toast(r.error, 'err');
-  } catch (e) { toast('' + e, 'err') }
+  var r = await _gscOrToast('enableEventShare', TK, CUR_EV.id, _sharePermission);
+  if (r && r.success) showShareLink(r.shareUrl);
 }
 
 async function disableShare() {
-  try {
-    var r = await gsc('disableEventShare', TK, CUR_EV.id);
-    if (r.success) {
-      toast('Sharing turned off');
-      $('#shareOn').hide();
-      $('#shareOff').show();
-    } else toast(r.error, 'err');
-  } catch (e) { toast('' + e, 'err') }
+  var r = await _gscOrToast('disableEventShare', TK, CUR_EV.id);
+  if (r && r.success) {
+    toast('Sharing turned off');
+    _setShareLinkVisible(false);
+  }
 }
 
 function copyShareLink() { copyInputValue('shareLinkInp') }
@@ -541,21 +542,18 @@ $(function () {
   });
   $(document).on('click', function () { $('#slipDlMenu').removeClass('on') });
   $('#slipDlPreview').on('click', function () {
-    var cur = _slipCarouselList[_slipCarouselIdx];
+    var cur = _curSlip();
     if (cur) _downloadDataUri(cur.slip, 'receipt-preview.jpg');
   });
   $('#slipDlOrig').on('click', function () {
-    var cur = _slipCarouselList[_slipCarouselIdx];
+    var cur = _curSlip();
     if (cur) _downloadDataUri(cur.slipHi || cur.slip, 'receipt.jpg');
   });
   $('#sumList').on('change', '.se-paid-cb', async function () {
     if (!CUR_EV) return;
     var from = $(this).data('from'), to = $(this).data('to'), amt = $(this).data('amt');
     var paid = $(this).is(':checked');
-    try {
-      var r = await gsc('markSettlementPaid', TK, CUR_EV.id, from, to, amt, paid);
-      if (!r.success) toast(r.error, 'err');
-    } catch (e) { toast('' + e, 'err') }
+    await _gscOrToast('markSettlementPaid', TK, CUR_EV.id, from, to, amt, paid);
     loadSummary(CUR_EV.id);
   });
   $('#btnShareEvent').on('click', openShareSheet);
