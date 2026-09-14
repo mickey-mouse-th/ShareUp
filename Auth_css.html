@@ -4,92 +4,56 @@
   min-height:100dvh;display:none;flex-direction:column;
   align-items:center;justify-content:center;
   padding:calc(var(--si)+24px) 20px calc(24px + var(--sb));
-  background:#07071a;overflow:hidden;
+  background:var(--bg);
 }
 
-/* ── Floating glow orbs ───────────────────────── */
-.auth-orb{
-  position:absolute;border-radius:50%;filter:blur(72px);pointer-events:none;
-  animation:auth-orb-drift 10s ease-in-out infinite;
-}
-.auth-orb-1{
-  width:680px;height:680px;
-  background:radial-gradient(circle,rgba(79,70,229,.55) 0%,transparent 70%);
-  top:-220px;left:-200px;animation-duration:12s;
-}
-.auth-orb-2{
-  width:560px;height:560px;
-  background:radial-gradient(circle,rgba(124,58,237,.45) 0%,transparent 70%);
-  bottom:-160px;right:-140px;animation-duration:9s;animation-delay:-4s;
-}
-.auth-orb-3{
-  width:400px;height:400px;
-  background:radial-gradient(circle,rgba(219,39,119,.35) 0%,transparent 70%);
-  top:40%;left:55%;animation-duration:14s;animation-delay:-7s;
-}
-.auth-orb-4{
-  width:320px;height:320px;
-  background:radial-gradient(circle,rgba(6,182,212,.3) 0%,transparent 70%);
-  bottom:15%;left:0;animation-duration:11s;animation-delay:-2s;
-}
-@keyframes auth-orb-drift{
-  0%,100%{transform:translate(0,0) scale(1)}
-  33%{transform:translate(28px,-24px) scale(1.06)}
-  66%{transform:translate(-18px,18px) scale(.94)}
-}
-
-.auth-wrap{width:100%;max-width:500px;position:relative;z-index:1}
-.auth-logo{display:flex;align-items:center;gap:18px;margin-bottom:15vh}
+.auth-wrap{width:100%;max-width:400px;position:relative;z-index:1}
+.auth-logo{display:flex;align-items:center;gap:14px;margin-bottom:28px}
 .auth-logo-ic{
-  width:84px;height:84px;border-radius:24px;
+  width:56px;height:56px;border-radius:18px;
   background:var(--p-grad);
   display:flex;align-items:center;justify-content:center;
-  box-shadow:0 0 36px var(--p-glow);flex-shrink:0;
+  box-shadow:0 4px 14px var(--p-glow);flex-shrink:0;
 }
-.auth-logo-ic svg{width:44px;height:44px;fill:#fff}
-.auth-logo-name{font-size:26px;font-weight:800;letter-spacing:-.4px;color:#fff;line-height:1}
-.auth-logo-sub{font-size:15px;color:rgba(255,255,255,.4);margin-top:6px}
+.auth-logo-ic svg{width:28px;height:28px;fill:#fff}
+.auth-logo-name{font-size:20px;font-weight:800;letter-spacing:-.3px;color:var(--t1);line-height:1.2}
+.auth-logo-sub{font-size:13px;color:var(--t2);margin-top:3px}
 .auth-box{
-  background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.11);
-  backdrop-filter:blur(24px) saturate(1.4);-webkit-backdrop-filter:blur(24px) saturate(1.4);
-  border-radius:30px;padding:52px 36px 44px;
-  box-shadow:0 0 0 1px rgba(255,255,255,.06) inset,0 32px 80px rgba(0,0,0,.55);
+  background:var(--s1);border:1px solid var(--bd);
+  border-radius:24px;padding:32px 28px;
+  box-shadow:var(--shadow-lg);
   animation:auth-slide-up .32s ease;
 }
 @keyframes auth-slide-up{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
-.auth-h{font-size:32px;font-weight:800;letter-spacing:-.4px;margin-bottom:9px;color:#fff}
-.auth-s{font-size:16px;color:rgba(255,255,255,.45);margin-bottom:32px;line-height:1.5}
-.fld{margin-bottom:18px}
-.fld-label{display:block;font-size:12px;font-weight:700;color:rgba(255,255,255,.55);letter-spacing:.5px;text-transform:uppercase;margin-bottom:8px}
+.auth-h{font-size:24px;font-weight:800;letter-spacing:-.3px;margin-bottom:6px;color:var(--t1)}
+.auth-s{font-size:14px;color:var(--t2);margin-bottom:26px;line-height:1.5}
+.fld{margin-bottom:16px}
+.fld-label{display:block;font-size:12px;font-weight:700;color:var(--t2);letter-spacing:.3px;text-transform:uppercase;margin-bottom:7px}
 .fld-row{position:relative}
 .fld-inp{
-  width:100%;height:56px;background:rgba(255,255,255,.07);border:1.5px solid rgba(255,255,255,.1);
-  border-radius:14px;padding:0 48px 0 16px;font-size:17px;color:#fff;
+  width:100%;height:50px;background:var(--s2);border:1.5px solid var(--bd);
+  border-radius:var(--rad-sm);padding:0 46px 0 16px;font-size:15px;color:var(--t1);
   outline:none;transition:border-color .2s,background .2s;
 }
-.fld-inp::placeholder{color:rgba(255,255,255,.25)}
-.fld-inp:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2)}
-.fld-inp:focus{border-color:var(--p);background:rgba(255,255,255,.1)}
+.fld-inp::placeholder{color:var(--t3)}
+.fld-inp:hover{border-color:var(--bd2)}
+.fld-inp:focus{border-color:var(--p);background:var(--s1)}
 .pw-btn{
   position:absolute;right:12px;top:50%;transform:translateY(-50%);
-  background:none;border:none;color:rgba(255,255,255,.4);display:flex;align-items:center;padding:6px;cursor:pointer;
+  background:none;border:none;color:var(--t3);display:flex;align-items:center;padding:6px;cursor:pointer;
 }
-.pw-btn svg{width:22px;height:22px;fill:currentColor}
-.pf-hint{font-size:12px;color:rgba(255,255,255,.35);margin-top:7px;line-height:1.5}
+.pw-btn svg{width:20px;height:20px;fill:currentColor}
+.pf-hint{font-size:12px;color:var(--t3);margin-top:7px;line-height:1.5}
 .btn-primary{
-  width:100%;height:58px;margin-top:8px;border:none;border-radius:15px;
+  width:100%;height:52px;margin-top:6px;border:none;border-radius:var(--rad-sm);
   background:var(--p-grad);
-  color:#fff;font-size:17px;font-weight:700;letter-spacing:-.2px;
-  box-shadow:0 4px 22px var(--p-glow);transition:transform .15s,box-shadow .15s;
+  color:#fff;font-size:16px;font-weight:700;letter-spacing:-.1px;
+  box-shadow:0 4px 14px var(--p-glow);transition:transform .15s,box-shadow .15s;
   cursor:pointer;
 }
-.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 30px var(--p-glow)}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 6px 20px var(--p-glow)}
 .btn-primary:active{transform:scale(.98)}
-.auth-box .pw-rule{color:rgba(255,255,255,.4)}
-.auth-box .pw-rule svg{fill:rgba(255,255,255,.4)}
-.auth-box .pw-rule.met{color:#6ee7b7}
-.auth-box .pw-rule.met svg{fill:#6ee7b7}
-.auth-foot{text-align:center;margin-top:22px;font-size:14px;color:rgba(255,255,255,.4)}
-.auth-foot a{color:#A5B4FC;font-weight:600;text-decoration:none;transition:color .15s}
-.auth-foot a:hover{color:#C7D2FE}
+.auth-foot{text-align:center;margin-top:20px;font-size:13px;color:var(--t2)}
+.auth-foot a{color:var(--p);font-weight:600;text-decoration:none;transition:color .15s}
+.auth-foot a:hover{color:var(--p-lt)}
 </style>
