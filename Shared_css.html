@@ -61,7 +61,7 @@ button,input,select,textarea{font:inherit;-webkit-appearance:none}
 
 /* ── Toast ───────────────────────────────────── */
 #toastWrap{
-  position:fixed;top:calc(var(--si)+14px);left:14px;right:14px;
+  position:fixed;top:calc(var(--si) + 14px);left:14px;right:14px;
   z-index:8000;display:flex;flex-direction:column;gap:8px;pointer-events:none;
 }
 .toast{
@@ -80,7 +80,7 @@ button,input,select,textarea{font:inherit;-webkit-appearance:none}
 /* ── App Shell ───────────────────────────────── */
 #appView{display:none;flex-direction:column;height:100dvh;overflow:hidden}
 .hdr{
-  padding:calc(var(--si)+10px) 16px 10px;min-height:calc(var(--si)+var(--hh));
+  padding:calc(var(--si) + 10px) 16px 10px;min-height:calc(var(--si) + var(--hh));
   background:color-mix(in srgb,var(--hdr-bg) 85%,transparent);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
   border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:12px;flex-shrink:0;z-index:20;
 }

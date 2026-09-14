@@ -2,29 +2,37 @@
 #authView{
   position:fixed;inset:0;z-index:1000;
   min-height:100dvh;display:none;flex-direction:column;
-  align-items:center;justify-content:center;
-  padding:calc(var(--si)+24px) 20px calc(24px + var(--sb));
-  background:var(--bg);
+  background:var(--bg);overflow:hidden;
 }
 
-.auth-wrap{width:100%;max-width:400px;position:relative;z-index:1}
-.auth-logo{display:flex;align-items:center;gap:14px;margin-bottom:28px}
-.auth-logo-ic{
-  width:56px;height:56px;border-radius:18px;
-  background:var(--p-grad);
-  display:flex;align-items:center;justify-content:center;
-  box-shadow:0 4px 14px var(--p-glow);flex-shrink:0;
+/* Colored hero panel - the "background" - with the sheet below overlapping
+   its bottom edge so the two read as one full-screen surface, not a
+   floating card on empty space. */
+.auth-top{
+  flex:1 1 auto;background:var(--p-grad);
+  padding:calc(var(--si) + 24px) 24px 40px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
 }
-.auth-logo-ic svg{width:28px;height:28px;fill:#fff}
-.auth-logo-name{font-size:20px;font-weight:800;letter-spacing:-.3px;color:var(--t1);line-height:1.2}
-.auth-logo-sub{font-size:13px;color:var(--t2);margin-top:3px}
-.auth-box{
-  background:var(--s1);border:1px solid var(--bd);
-  border-radius:24px;padding:32px 28px;
-  box-shadow:var(--shadow-lg);
+.auth-logo{display:flex;flex-direction:column;align-items:center;gap:12px}
+.auth-logo-ic{
+  width:64px;height:64px;border-radius:20px;
+  background:rgba(255,255,255,.18);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.auth-logo-ic svg{width:32px;height:32px;fill:#fff}
+.auth-logo-name{font-size:22px;font-weight:800;letter-spacing:-.3px;color:#fff;line-height:1.2}
+.auth-logo-sub{font-size:13px;color:rgba(255,255,255,.75);margin-top:2px}
+
+.auth-sheet{
+  flex:0 0 auto;background:var(--s1);max-height:72dvh;
+  border-radius:28px 28px 0 0;margin-top:-24px;position:relative;z-index:1;
+  box-shadow:0 -8px 24px rgba(0,0,0,.08);
+  padding:32px 24px calc(24px + var(--sb));overflow-y:auto;
   animation:auth-slide-up .32s ease;
 }
-@keyframes auth-slide-up{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes auth-slide-up{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+.auth-sheet-inner{width:100%;max-width:420px;margin:0 auto}
+
 .auth-h{font-size:24px;font-weight:800;letter-spacing:-.3px;margin-bottom:6px;color:var(--t1)}
 .auth-s{font-size:14px;color:var(--t2);margin-bottom:26px;line-height:1.5}
 .fld{margin-bottom:16px}

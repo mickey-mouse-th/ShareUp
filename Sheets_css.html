@@ -125,16 +125,17 @@ select.inp option{background:var(--s1);color:var(--t1)}
 .theme-preview-frame .cpv-popup{height:110px;border-radius:var(--rad)}
 .theme-preview-frame .cpv-popup-card{padding:16px 32px;font-size:15px;border-radius:var(--rad-sm)}
 
-/* Login screen preview - mirrors Auth_css.html's real look. Fully
-   theme-reactive now (background/card/text all pull from shared vars, same
-   as the rest of the app), so every element here previews the live edit. */
+/* Login screen preview - mirrors Auth_css.html's real full-bleed hero+sheet
+   look. Fully theme-reactive (background/card/text all pull from shared
+   vars, same as the rest of the app), so every element here previews the
+   live edit. */
 .theme-preview-lbl{font-size:12px;color:var(--t2);margin:18px 0 8px}
-.tlp-wrap{background:var(--bg);border:1px solid var(--bd);border-radius:var(--rad);padding:22px 18px;margin-bottom:26px}
-.tlp-logo{display:flex;align-items:center;gap:10px;margin-bottom:16px}
-.tlp-logo-ic{width:34px;height:34px;border-radius:10px;background:var(--p-grad);box-shadow:0 0 16px var(--p-glow);flex-shrink:0;display:block}
-.tlp-logo b{color:var(--t1);font-size:14px;display:block}
-.tlp-logo small{color:var(--t2);font-size:11px}
-.tlp-box{background:var(--s1);border:1px solid var(--bd);border-radius:16px;padding:18px 16px;box-shadow:var(--shadow-lg)}
+.tlp-wrap{border-radius:var(--rad);overflow:hidden;margin-bottom:26px;box-shadow:var(--shadow-lg)}
+.tlp-top{background:var(--p-grad);padding:26px 16px 34px;text-align:center}
+.tlp-logo-ic{width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.18);display:block;margin:0 auto 10px}
+.tlp-top b{color:#fff;font-size:14px;display:block}
+.tlp-top small{color:rgba(255,255,255,.75);font-size:11px}
+.tlp-box{background:var(--s1);border-radius:16px 16px 0 0;margin-top:-16px;position:relative;padding:18px 16px}
 .tlp-title{color:var(--t1);font-size:16px;font-weight:800;margin-bottom:12px}
 .tlp-field{height:34px;border-radius:9px;background:var(--s2);border:1px solid var(--bd);margin-bottom:10px}
 .tlp-btn{
