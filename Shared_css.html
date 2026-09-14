@@ -2,11 +2,18 @@
 /* ── Reset & Tokens ─────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
-  --p:#4F46E5;--p-lt:#4338CA;--p-dim:#EEF2FF;--p-glow:rgba(79,70,229,.28);
-  --p-grad:linear-gradient(135deg,#4F46E5 0%,#3730A3 100%);
-  --g:#15803D;--g-dim:#F0FDFA;
-  --r:#EF4444;--r-dim:#FEF2F2;
-  --o:#B45309;--o-dim:#FFFBEB;
+  /* -dim/-glow/-grad are DERIVED from their base color via color-mix(), not
+     fixed hex - buildThemeCss() only overrides p/pLt/g/r/o/etc, so a
+     hardcoded tint here would silently stop tracking a saved theme edit
+     (exactly what happened before: the login screen's button/logo use
+     --p-grad/--p-glow directly and never changed color when Primary did). */
+  --p:#4F46E5;--p-lt:#4338CA;
+  --p-dim:color-mix(in srgb,var(--p) 12%,var(--s1));
+  --p-glow:color-mix(in srgb,var(--p) 28%,transparent);
+  --p-grad:linear-gradient(135deg,var(--p) 0%,var(--p-lt) 100%);
+  --g:#15803D;--g-dim:color-mix(in srgb,var(--g) 10%,var(--s1));
+  --r:#EF4444;--r-dim:color-mix(in srgb,var(--r) 10%,var(--s1));
+  --o:#B45309;--o-dim:color-mix(in srgb,var(--o) 10%,var(--s1));
   --b:#0F766E;
   --bg:#F1F5F9;
   --s1:#FFFFFF;--s2:#F8FAFC;--s3:#F1F5F9;
