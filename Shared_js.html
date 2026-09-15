@@ -1,4 +1,13 @@
 <script>
+// ── Disable pinch/gesture zoom ─────────────────
+// The viewport meta's user-scalable=no is ignored by modern iOS Safari for
+// accessibility reasons, so it alone doesn't block pinch-zoom - these two
+// listeners are the actual enforcement (Safari's gesturestart/gesturechange
+// for the pinch gesture itself, touchmove for multi-touch pinch elsewhere).
+document.addEventListener('gesturestart', function (e) { e.preventDefault() });
+document.addEventListener('gesturechange', function (e) { e.preventDefault() });
+document.addEventListener('touchmove', function (e) { if (e.touches.length > 1) e.preventDefault() }, { passive: false });
+
 // ── Global State ──────────────────────────────
 // "Remember me" decides localStorage vs sessionStorage on login; read both so either boots normally.
 var TK      = localStorage.getItem('su_tk')  || sessionStorage.getItem('su_tk')  || null;
