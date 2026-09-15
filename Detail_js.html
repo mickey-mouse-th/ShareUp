@@ -542,12 +542,16 @@ function _renderSharePerm() {
     : 'Anyone with this link can view — but not edit — this event. Turn it off anytime to revoke access.');
 }
 
-async function _setSharePermission(perm) {
+function _setSharePermission(perm) {
   if (_sharePermission === perm) return;
+  var oldPerm = _sharePermission;
   _sharePermission = perm;
   _renderSharePerm();
   if (!$('#shareOn').is(':visible')) return; // no link yet - just changes what "Create" will use
-  await _gscOrToast('enableEventShare', TK, CUR_EV.id, perm);
+  bgSync(
+    function () { return gsc('enableEventShare', TK, CUR_EV.id, perm) },
+    function () { _sharePermission = oldPerm; _renderSharePerm() }
+  );
 }
 
 function showShareLink(url) {
@@ -555,17 +559,32 @@ function showShareLink(url) {
   _setShareLinkVisible(true);
 }
 
-async function enableShare() {
-  var r = await _gscOrToast('enableEventShare', TK, CUR_EV.id, _sharePermission);
-  if (r && r.success) showShareLink(r.shareUrl);
+// The share token is server-generated - can't be predicted client-side, so
+// the link section reveals with a placeholder immediately and fills in the
+// real URL once the background call resolves.
+function enableShare() {
+  if (!CUR_EV) return;
+  var eventId = CUR_EV.id, perm = _sharePermission;
+  $('#shareLinkInp').val('Generating link…');
+  _setShareLinkVisible(true);
+  toast('Sharing turned on');
+  bgSync(
+    function () { return gsc('enableEventShare', TK, eventId, perm) },
+    function () { _setShareLinkVisible(false) },
+    function (r) { showShareLink(r.shareUrl) }
+  );
 }
 
-async function disableShare() {
-  var r = await _gscOrToast('disableEventShare', TK, CUR_EV.id);
-  if (r && r.success) {
-    toast('Sharing turned off');
-    _setShareLinkVisible(false);
-  }
+function disableShare() {
+  if (!CUR_EV) return;
+  var eventId = CUR_EV.id;
+  var oldUrl = $('#shareLinkInp').val();
+  _setShareLinkVisible(false);
+  toast('Sharing turned off');
+  bgSync(
+    function () { return gsc('disableEventShare', TK, eventId) },
+    function () { $('#shareLinkInp').val(oldUrl); _setShareLinkVisible(true) }
+  );
 }
 
 function copyShareLink() { copyInputValue('shareLinkInp') }

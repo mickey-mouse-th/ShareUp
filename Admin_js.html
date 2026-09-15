@@ -283,14 +283,22 @@ $(function () {
     _previewThemeToken($(this).data('token'), $(this).val());
   });
 
-  $('#btnThemeSave').on('click', async function () {
+  $('#btnThemeSave').on('click', function () {
     var theme = {};
     $('.theme-inp').each(function () { theme[$(this).data('token')] = $(this).val() });
-    try {
-      var r = await gsc('saveTheme', TK, theme);
-      if (r.success) { _applyThemeLive(r.theme); toast('Theme saved') }
-      else toast(r.error, 'err');
-    } catch (e) { toast('' + e, 'err') }
+    // No JS global holds "the live theme" - snapshot via computed style so a
+    // failed save can restore exactly what was showing before.
+    var oldTheme = {};
+    THEME_TOKENS.forEach(function (t) {
+      oldTheme[t.token] = getComputedStyle(document.documentElement).getPropertyValue(THEME_CSS_VAR[t.token]).trim();
+    });
+    _applyThemeLive(theme);
+    toast('Theme saved');
+    bgSync(
+      function () { return gsc('saveTheme', TK, theme) },
+      function () { _applyThemeLive(oldTheme) },
+      function (r) { _applyThemeLive(r.theme) }
+    );
   });
 
   $('#btnThemeReset').on('click', function () {
@@ -314,26 +322,48 @@ $(function () {
       pwRequireNumber: $('#asPwNumber').is(':checked'),
       pwRequireSpecial: $('#asPwSpecial').is(':checked')
     };
-    _runAction(function () { return gsc('updateSettings', TK, settings) }, function () {
-      toast('Settings saved');
-    });
+    toast('Settings saved');
+    // No cached global holds settings - on failure, just pull the form back
+    // to the last-saved values instead of leaving rejected input sitting there.
+    bgSync(function () { return gsc('updateSettings', TK, settings) }, loadSettingsPanel);
   });
 
   $('#ueRoleSel').on('change', function () {
-    var role = $(this).val();
-    _runAction(function () { return gsc('updateAccountRole', TK, _ueId, role) }, function () {
-      toast('Role updated'); loadAccounts();
-    });
+    var role = $(this).val(), id = _ueId;
+    var acct = _findAccount(id), oldRole = acct ? acct.role : null;
+    if (acct) acct.role = role;
+    renderAccounts();
+    toast('Role updated');
+    bgSync(
+      function () { return gsc('updateAccountRole', TK, id, role) },
+      function () {
+        if (acct) acct.role = oldRole;
+        renderAccounts();
+        $('#ueRoleSel').val(oldRole).trigger('change.select2');
+      }
+    );
   });
 
   $('#ueStatusTgl').on('change', function () {
-    var enable = $(this).is(':checked');
+    var enable = $(this).is(':checked'), id = _ueId;
+    var acct = _findAccount(id), oldStatus = acct ? acct.status : null;
+    var oldEnabled = oldStatus !== 'disabled';
     $('#ueTglWrap').toggleClass('on', enable);
     $('#ueStatusHint').text(enable ? 'Active — can sign in' : 'Disabled — can\'t sign in');
     var status = enable ? 'active' : 'disabled';
-    _runAction(function () { return gsc('updateAccountStatus', TK, _ueId, status) }, function () {
-      toast(enable ? 'Account enabled' : 'Account disabled'); loadAccounts();
-    });
+    if (acct) acct.status = status;
+    renderAccounts();
+    toast(enable ? 'Account enabled' : 'Account disabled');
+    bgSync(
+      function () { return gsc('updateAccountStatus', TK, id, status) },
+      function () {
+        if (acct) acct.status = oldStatus;
+        renderAccounts();
+        $('#ueStatusTgl').prop('checked', oldEnabled);
+        $('#ueTglWrap').toggleClass('on', oldEnabled);
+        $('#ueStatusHint').text(oldEnabled ? 'Active — can sign in' : 'Disabled — can\'t sign in');
+      }
+    );
   });
 
   $('#btnUeDelete').on('click', function () {

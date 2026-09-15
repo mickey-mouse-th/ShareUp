@@ -207,6 +207,25 @@ function gsc(fn) {
   });
 }
 
+// The caller already applied its optimistic mutation + render + success toast
+// synchronously BEFORE calling this - it only reconciles the background RPC
+// outcome with that assumption: patch in server-assigned data on success
+// (reconcile), or undo the optimistic change and toast an error on failure
+// (rollback). Either callback is optional (e.g. change-password has nothing
+// to reconcile; a plain toast-only action has nothing to roll back).
+async function bgSync(call, rollback, reconcile, errMsg) {
+  try {
+    var r = await call();
+    if (!r || r.success === false) throw new Error((r && r.error) || 'Request failed');
+    if (reconcile) reconcile(r);
+    return r;
+  } catch (e) {
+    if (rollback) rollback();
+    toast(errMsg ? errMsg(e) : (e && e.message ? e.message : ('' + e)), 'err');
+    return null;
+  }
+}
+
 // ── Clipboard ─────────────────────────────────
 function copyInputValue(inputId) {
   var el = document.getElementById(inputId);

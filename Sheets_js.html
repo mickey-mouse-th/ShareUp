@@ -46,26 +46,60 @@ async function _tryToast(fn) {
   try { await fn() } catch (e) { toast('' + e, 'err') }
 }
 
-async function _saveTxSlipsIfNeeded(transactionId, removedIds, newSlips) {
+// Optimistic apply: splice removed photos out and append temp placeholders
+// for new ones (already real, compressed data: URIs - not spinners) so the
+// gallery updates instantly. Returns snapshots the background sync needs to
+// reconcile per-item (a failed upload/delete never affects its siblings).
+function _applyTxSlipsOptimistic(keyId, removedIds, newSlips) {
+  var current = SLIPS[keyId] || [];
+  var removedSnapshot = current.filter(function (s) { return removedIds.indexOf(s.id) !== -1 });
+  var kept = current.filter(function (s) { return removedIds.indexOf(s.id) === -1 });
+  var tempNew = newSlips.map(function (s, i) {
+    return { id: '_tmpSlip' + Date.now() + i + Math.random().toString(36).slice(2), slip: s.slip, slipHi: s.slip };
+  });
+  var merged = kept.concat(tempNew);
+  if (merged.length) SLIPS[keyId] = merged; else delete SLIPS[keyId];
+  return { removedSnapshot: removedSnapshot, tempNew: tempNew };
+}
+
+// Background: fires the real delete/upload RPCs and reconciles per item -
+// one failure only reverts that one photo, never its siblings.
+function _syncTxSlips(keyId, removedIds, removedSnapshot, newSlips, tempNew) {
   if (IS_SHARE) removedIds = []; // slip deletion is never allowed via a share link
-  if (!removedIds.length && !newSlips.length) return;
-  await _tryToast(async function () {
-    if (removedIds.length) await Promise.all(removedIds.map(function (id) { return gsc('deleteTransactionSlip', TK, transactionId, id) }));
-    var results = await Promise.all(newSlips.map(function (s) {
-      return IS_SHARE
-        ? gsc('uploadTransactionSlipViaShare', SHARE_TOKEN, transactionId, s.slip)
-        : gsc('uploadTransactionSlip', TK, transactionId, s.slip);
-    }));
-    // Use the URLs Drive actually stored, not the client's pre-upload copy.
-    var added = results.map(function (r) {
-      return r.success ? { id: r.id, slip: r.slip, slipHi: r.slipHi } : null;
-    }).filter(Boolean);
-    var failures = results.filter(function (r) { return !r.success });
-    if (failures.length) toast(failures[0].error || 'Could not upload one or more photos', 'err');
-    var current = (SLIPS[transactionId] || [])
-      .filter(function (s) { return removedIds.indexOf(s.id) === -1 })
-      .concat(added);
-    if (current.length) SLIPS[transactionId] = current; else delete SLIPS[transactionId];
+  var deletes = removedIds.map(function (id) {
+    return gsc('deleteTransactionSlip', TK, keyId, id)
+      .catch(function (e) { return { success: false, error: '' + e } })
+      .then(function (r) { r._removedId = id; return r });
+  });
+  var uploads = newSlips.map(function (s, i) {
+    var call = IS_SHARE
+      ? gsc('uploadTransactionSlipViaShare', SHARE_TOKEN, keyId, s.slip)
+      : gsc('uploadTransactionSlip', TK, keyId, s.slip);
+    return call.catch(function (e) { return { success: false, error: '' + e } })
+      .then(function (r) { r._tempId = tempNew[i].id; return r });
+  });
+  if (!deletes.length && !uploads.length) return;
+  Promise.all(deletes.concat(uploads)).then(function (results) {
+    var failMsg = null;
+    results.forEach(function (r) {
+      if (r._removedId !== undefined) {
+        if (!r.success) {
+          failMsg = failMsg || r.error;
+          var removedSlip = removedSnapshot.filter(function (s) { return s.id === r._removedId })[0];
+          if (removedSlip) SLIPS[keyId] = (SLIPS[keyId] || []).concat(removedSlip);
+        }
+      } else {
+        var idx = (SLIPS[keyId] || []).findIndex(function (s) { return s.id === r._tempId });
+        if (r.success) {
+          if (idx !== -1) SLIPS[keyId][idx] = { id: r.id, slip: r.slip, slipHi: r.slipHi };
+        } else {
+          failMsg = failMsg || r.error;
+          if (idx !== -1) SLIPS[keyId].splice(idx, 1);
+        }
+      }
+    });
+    if (SLIPS[keyId] && !SLIPS[keyId].length) delete SLIPS[keyId];
+    if (failMsg) toast(failMsg || 'Could not save one or more photos', 'err');
     renderDetails();
   });
 }
@@ -145,42 +179,61 @@ function openRenameEventSheet(ev) {
   openSheet('shEvent');
 }
 
-async function submitEvent() {
+function submitEvent() {
   var n = $('#inpEv').val().trim();
   if (!n) { toast('Please enter an event name', 'warn'); return }
 
   if (_evMode === 'rename') {
+    var editId = _evEditId, icon = _evIcon;
     closeSheets();
-    await _tryToast(async function () {
-      var r = await gsc('renameEvent', TK, _evEditId, n, _evIcon);
-      if (r.success) {
-        toast('Event saved');
-        var idx = -1;
-        for (var i = 0; i < EVENTS.length; i++) { if (EVENTS[i].id === _evEditId) { idx = i; break } }
-        if (idx !== -1) { EVENTS[idx].name = r.name; EVENTS[idx].icon = r.icon }
-        refreshEventsUI();
-        if (CUR_EV && CUR_EV.id === _evEditId) {
-          CUR_EV.name = r.name;
-          CUR_EV.icon = r.icon;
-          $('#hdrTitle').text(r.name);
-          $('#detailBannerName').text(r.name);
-          $('#detailEmoji').text(r.icon || evEmoji(r.name));
-          $('#detailBanner').css('background', bannerGrad(r.name));
-        }
-      } else toast(r.error, 'err');
-    });
+    var idxNow = EVENTS.findIndex(function (e) { return e.id === editId });
+    var oldEv = idxNow !== -1 ? { name: EVENTS[idxNow].name, icon: EVENTS[idxNow].icon } : null;
+
+    function _applyEventRename(name, ic) {
+      var i = EVENTS.findIndex(function (e) { return e.id === editId });
+      if (i !== -1) { EVENTS[i].name = name; EVENTS[i].icon = ic }
+      refreshEventsUI();
+      if (CUR_EV && CUR_EV.id === editId) {
+        CUR_EV.name = name; CUR_EV.icon = ic;
+        $('#hdrTitle').text(name);
+        $('#detailBannerName').text(name);
+        $('#detailEmoji').text(ic || evEmoji(name));
+        $('#detailBanner').css('background', bannerGrad(name));
+      }
+    }
+
+    _applyEventRename(n, icon);
+    toast('Event saved');
+    bgSync(
+      function () { return gsc('renameEvent', TK, editId, n, icon) },
+      function () { if (oldEv) _applyEventRename(oldEv.name, oldEv.icon) },
+      function (r) { _applyEventRename(r.name, r.icon) }
+    );
     return;
   }
 
-  await _tryToast(async function () {
-    var r = await gsc('addEvent', TK, n, _evIcon);
-    if (r.success) {
-      r.event.settled = true; // brand-new event has no transactions yet
-      EVENTS.unshift(r.event);
+  // Create: uses a temp id since the friend-picker sheet that opens next needs
+  // *some* id to reference before the server responds. getEventFriendsData
+  // enforces server-side event ownership, so it can't be opened against a
+  // temp id - that sheet's open is deferred until the real id resolves
+  // (the only non-instant part of this flow; the Home card itself is instant).
+  var tempEventId = '_tmp' + Date.now() + Math.random().toString(36).slice(2);
+  var tempEvent = { id: tempEventId, name: n, icon: icon, accountId: ME.id, createdAt: new Date().toISOString(), settled: true };
+  EVENTS.unshift(tempEvent);
+  refreshEventsUI();
+  toast('Event created! 🎉');
+  bgSync(
+    function () { return gsc('addEvent', TK, n, icon) },
+    function () {
+      EVENTS = EVENTS.filter(function (e) { return e.id !== tempEventId });
       refreshEventsUI();
+    },
+    function (r) {
+      var i = EVENTS.findIndex(function (e) { return e.id === tempEventId });
+      if (i !== -1) { r.event.settled = true; EVENTS[i] = r.event }
       openEventFriendsSheet(r.event.id, 'create', r.event);
-    } else toast(r.error, 'err');
-  });
+    }
+  );
 }
 
 // ── Add / Manage Event Friends ────────────────
@@ -235,43 +288,83 @@ function renderEfList(allFriends, linkedIds) {
   $('#efList').html(html);
 }
 
-async function submitEfAddNew() {
+// Redraws whatever currently depends on FRIENDS after a change - the
+// transaction list's payer/chip names, and the Add/Edit Transaction picker
+// if it happens to be open concurrently.
+function _onFriendsChanged() {
+  renderDetails();
+  if ($('#shTx').hasClass('on')) buildTxFriendPickers(FRIENDS.map(function (f) { return f.id }));
+}
+
+// In-flight submitEfAddNew() calls, keyed by their temp id's row. submitEfDone()
+// awaits these first so a fast "add then Done" never submits a temp id that
+// the server would silently drop (setEventFriends filters unknown ids).
+var _efPendingAdds = [];
+
+function submitEfAddNew() {
   var n = $('#inpEfNew').val().trim();
   if (!n) return;
-  await _tryToast(async function () {
-    var r = await gsc('addFriendToEvent', TK, _efEventId, n);
-    if (r.success) {
-      $('#inpEfNew').val('');
-      var $existing = $('#efList .ck-row[data-id="' + r.friend.id + '"]');
-      if ($existing.length) {
-        $existing.addClass('checked').find('input').prop('checked', true);
-      } else {
-        $('#efList .empty').remove();
-        $('#efList').append(_ckRowHtml(r.friend.id, r.friend.name, true));
+  $('#inpEfNew').val('');
+  var eventId = _efEventId;
+  var tempId = '_tmpFriend' + Date.now() + Math.random().toString(36).slice(2);
+  var $existing = $('#efList .ck-row').filter(function () {
+    return $(this).find('label').text().toLowerCase() === n.toLowerCase();
+  }).first();
+  var matchedExisting = $existing.length > 0;
+  var wasChecked = matchedExisting && $existing.hasClass('checked');
+  if (matchedExisting) {
+    $existing.addClass('checked').find('input').prop('checked', true);
+  } else {
+    $('#efList .empty').remove();
+    $('#efList').append(_ckRowHtml(tempId, n, true));
+  }
+
+  var p = bgSync(
+    function () { return gsc('addFriendToEvent', TK, eventId, n) },
+    function () {
+      if (matchedExisting) { if (!wasChecked) { $existing.removeClass('checked').find('input').prop('checked', false) } }
+      else { $('#efList .ck-row[data-id="' + tempId + '"]').remove() }
+    },
+    function (r) {
+      if (!matchedExisting) {
+        var $row = $('#efList .ck-row[data-id="' + tempId + '"]');
+        $row.attr('data-id', r.friend.id).find('input').val(r.friend.id);
       }
-    } else toast(r.error, 'err');
-  });
+    }
+  );
+  _efPendingAdds.push(p);
+  p.then(function () { _efPendingAdds.splice(_efPendingAdds.indexOf(p), 1) });
 }
 
 async function submitEfDone() {
+  if (_efPendingAdds.length) await Promise.all(_efPendingAdds);
   var ids = $('#efList .ck-row input:checked').map(function () { return $(this).val() }).get();
   var mode = _efMode, eventId = _efEventId, pendingEvent = _pendingNewEvent;
+  var isOpenEvent = CUR_EV && CUR_EV.id === eventId;
   closeSheets();
-  await _tryToast(async function () {
-    var r = await gsc('setEventFriends', TK, eventId, ids);
-    if (r.success) {
+
+  var oldFriends = FRIENDS.slice();
+  var predicted = $('#efList .ck-row.checked').map(function () {
+    return { id: $(this).attr('data-id'), name: $(this).find('label').text() };
+  }).get();
+  if (mode === 'create' || isOpenEvent) { FRIENDS = predicted; _onFriendsChanged() }
+
+  bgSync(
+    function () { return gsc('setEventFriends', TK, eventId, ids) },
+    function () { if (mode === 'create' || isOpenEvent) { FRIENDS = oldFriends; _onFriendsChanged() } },
+    function (r) {
       if (r.blocked && r.blocked.length) {
         toast(r.blocked.map(function (b) { return b.name }).join(', ') + ' has transactions here and can\'t be removed', 'warn');
       }
       if (mode === 'create') {
-        toast('Event created! 🎉');
-        if (pendingEvent) { FRIENDS = r.friends; openDetail(pendingEvent) }
-      } else if (CUR_EV && CUR_EV.id === eventId) {
         FRIENDS = r.friends;
-        if (typeof renderEventFriends === 'function') renderEventFriends();
+        if (pendingEvent) openDetail(pendingEvent);
+      } else if (isOpenEvent) {
+        FRIENDS = r.friends;
+        _onFriendsChanged();
       }
-    } else toast(r.error, 'err');
-  });
+    }
+  );
 }
 
 // ── FAB ────────────────────────────────────────
@@ -367,7 +460,7 @@ function _buildLocalDetailRows(transactionId, payId, friendIds, totalAmount, des
   });
 }
 
-async function submitTx() {
+function submitTx() {
   var desc = $('#inpDesc').val().trim();
   var pay  = $('#inpPayer').val();
   if (!desc) { toast('Please enter a description', 'warn'); return }
@@ -402,41 +495,52 @@ async function submitTx() {
     DETAILS = DETAILS.filter(function (d) { return d.transactionId !== editId })
       .concat(_buildLocalDetailRows(editId, pay, friendIds, totalAmount, desc, customAmounts, createdAt));
     _recomputeSettlementsLocal();
+    var slipSnap = _applyTxSlipsOptimistic(editId, slipsRemoved, slipsNew);
     renderDetails();
-    var r = await (IS_SHARE
-      ? gsc('updateDetailViaShare', SHARE_TOKEN, editId, pay, friendIds, totalAmount, desc, customAmounts)
-      : gsc('updateDetail', TK, editId, pay, friendIds, totalAmount, desc, customAmounts)
-    ).catch(function (e) { return { success: false, error: '' + e } });
-    if (r.success) {
-      toast('Transaction updated');
-      await _saveTxSlipsIfNeeded(editId, slipsRemoved, slipsNew);
-    } else {
-      DETAILS = DETAILS.filter(function (d) { return d.transactionId !== editId }).concat(oldRows);
-      _recomputeSettlementsLocal();
-      renderDetails();
-      toast(r.error, 'err');
-    }
+    toast('Transaction updated');
+    // Slips are a separate server resource from the tx edit - fired
+    // independently, not rolled back if the tx-level edit below fails.
+    _syncTxSlips(editId, slipsRemoved, slipSnap.removedSnapshot, slipsNew, slipSnap.tempNew);
+    bgSync(
+      function () {
+        return IS_SHARE
+          ? gsc('updateDetailViaShare', SHARE_TOKEN, editId, pay, friendIds, totalAmount, desc, customAmounts)
+          : gsc('updateDetail', TK, editId, pay, friendIds, totalAmount, desc, customAmounts);
+      },
+      function () {
+        DETAILS = DETAILS.filter(function (d) { return d.transactionId !== editId }).concat(oldRows);
+        _recomputeSettlementsLocal();
+        renderDetails();
+      }
+    );
   } else {
     var tempId = '_tmp' + Date.now() + Math.random().toString(36).slice(2);
     DETAILS = DETAILS.concat(_buildLocalDetailRows(tempId, pay, friendIds, totalAmount, desc, customAmounts, new Date().toISOString()));
     _recomputeSettlementsLocal();
+    var createSlipSnap = _applyTxSlipsOptimistic(tempId, [], slipsNew);
     renderDetails();
-    var r = await (IS_SHARE
-      ? gsc('addDetailViaShare', SHARE_TOKEN, pay, friendIds, totalAmount, desc, customAmounts)
-      : gsc('addDetail', TK, CUR_EV.id, pay, friendIds, totalAmount, desc, customAmounts)
-    ).catch(function (e) { return { success: false, error: '' + e } });
-    if (r.success) {
-      toast('Transaction added! 💸');
-      // Swap the temp id for the real one so later edit/delete/slip actions target the right row.
-      DETAILS.forEach(function (d) { if (d.transactionId === tempId) { d.transactionId = r.transactionId; d.id = r.transactionId + '_' + d.friendId } });
-      renderDetails();
-      await _saveTxSlipsIfNeeded(r.transactionId, slipsRemoved, slipsNew);
-    } else {
-      DETAILS = DETAILS.filter(function (d) { return d.transactionId !== tempId });
-      _recomputeSettlementsLocal();
-      renderDetails();
-      toast(r.error, 'err');
-    }
+    toast('Transaction added! 💸');
+    bgSync(
+      function () {
+        return IS_SHARE
+          ? gsc('addDetailViaShare', SHARE_TOKEN, pay, friendIds, totalAmount, desc, customAmounts)
+          : gsc('addDetail', TK, CUR_EV.id, pay, friendIds, totalAmount, desc, customAmounts);
+      },
+      function () {
+        DETAILS = DETAILS.filter(function (d) { return d.transactionId !== tempId });
+        _recomputeSettlementsLocal();
+        delete SLIPS[tempId];
+        renderDetails();
+      },
+      function (r) {
+        // Swap the temp id for the real one so later edit/delete/slip actions target the right row.
+        DETAILS.forEach(function (d) { if (d.transactionId === tempId) { d.transactionId = r.transactionId; d.id = r.transactionId + '_' + d.friendId } });
+        if (SLIPS[tempId]) { SLIPS[r.transactionId] = SLIPS[tempId]; delete SLIPS[tempId] }
+        renderDetails();
+        // The real transactionId only exists now - the actual upload RPCs were deferred until this point.
+        _syncTxSlips(r.transactionId, [], [], slipsNew, createSlipSnap.tempNew);
+      }
+    );
   }
   _editTxId = null;
   _txSlipsExisting = []; _txSlipsRemoved = []; _txSlipsNew = [];
@@ -513,33 +617,45 @@ async function openProfileSheet() {
   });
 }
 
-async function submitProfile() {
+function submitProfile() {
   var name = $('#inpPfName').val().trim();
   if (!name) { toast('Please enter a name', 'warn'); return }
-  await _tryToast(async function () {
-    var r = await gsc('updateProfile', TK, name, _pfPhotoPending);
-    if (r.success) {
+  var photoPending = _pfPhotoPending;
+  var oldME = ME, oldMePhoto = ME_PHOTO, oldStorageVal = _authStore().getItem('su_me');
+  var oldHeroName = $('#heroName').text();
+
+  ME = Object.assign({}, ME, { displayName: name });
+  _authStore().setItem('su_me', JSON.stringify(ME));
+  $('#heroName').text(name);
+  _renderHdrAvatar(name, photoPending !== undefined ? photoPending : ME_PHOTO);
+  toast('Profile updated');
+  closeSheets();
+
+  bgSync(
+    function () { return gsc('updateProfile', TK, name, photoPending) },
+    function () {
+      ME = oldME;
+      _authStore().setItem('su_me', oldStorageVal);
+      $('#heroName').text(oldHeroName);
+      _renderHdrAvatar(oldME.displayName || oldME.username, oldMePhoto);
+    },
+    function (r) {
       ME = r.user;
       _authStore().setItem('su_me', JSON.stringify(ME));
-      $('#heroName').text(ME.displayName);
-      _renderHdrAvatar(ME.displayName, _pfPhotoPending !== undefined ? _pfPhotoPending : ME_PHOTO);
-      toast('Profile updated');
-      closeSheets();
-    } else toast(r.error, 'err');
-  });
+    }
+  );
 }
 
-async function submitChangePassword() {
+function submitChangePassword() {
   var cur = $('#inpPfCurPw').val();
   var next = $('#inpPfNewPw').val();
   if (!cur || !next) { toast('Please fill in both password fields', 'warn'); return }
-  await _tryToast(async function () {
-    var r = await gsc('changePassword', TK, cur, next);
-    if (r.success) {
-      toast('Password changed');
-      $('#inpPfCurPw, #inpPfNewPw').val('');
-    } else toast(r.error, 'err');
-  });
+  $('#inpPfCurPw, #inpPfNewPw').val('');
+  toast('Password changed');
+  bgSync(
+    function () { return gsc('changePassword', TK, cur, next) },
+    function () { $('#inpPfCurPw').val(cur); $('#inpPfNewPw').val(next) }
+  );
 }
 
 $(function () {
@@ -663,20 +779,42 @@ $(function () {
       return;
     }
 
-    await _tryToast(async function () {
-      var r;
-      if (t === 'event')        r = await gsc('deleteEvent',   TK, id);
-      else if (t === 'account') r = await gsc('deleteAccount', TK, id);
-      if (r && r.success) {
-        toast('Deleted');
-        if (t === 'event') {
-          EVENTS = EVENTS.filter(function (e) { return e.id !== id });
+    if (t === 'event') {
+      var evIdx = EVENTS.findIndex(function (e) { return e.id === id });
+      var removedEvent = evIdx !== -1 ? EVENTS[evIdx] : null;
+      var wasCur = CUR_EV && CUR_EV.id === id;
+      var savedDetails, savedSlips, savedSettlements;
+      if (wasCur) { savedDetails = DETAILS; savedSlips = SLIPS; savedSettlements = SETTLEMENTS }
+      if (evIdx !== -1) EVENTS.splice(evIdx, 1);
+      refreshEventsUI();
+      toast('Deleted');
+      if (wasCur) { goBack(); DETAILS = []; SLIPS = {}; SETTLEMENTS = null }
+      bgSync(
+        function () { return gsc('deleteEvent', TK, id) },
+        function () {
+          if (removedEvent && !EVENTS.some(function (e) { return e.id === id })) {
+            EVENTS.splice(Math.min(evIdx, EVENTS.length), 0, removedEvent);
+          }
           refreshEventsUI();
-        } else if (t === 'account') {
-          loadAccounts();
+          if (wasCur) { DETAILS = savedDetails; SLIPS = savedSlips; SETTLEMENTS = savedSettlements; openDetail(removedEvent) }
         }
-      } else if (r) toast(r.error, 'err');
-    });
+      );
+    } else if (t === 'account') {
+      var acctIdx = ACCOUNTS.findIndex(function (a) { return a.id === id });
+      var removedAcct = acctIdx !== -1 ? ACCOUNTS[acctIdx] : null;
+      if (acctIdx !== -1) ACCOUNTS.splice(acctIdx, 1);
+      renderAccounts();
+      toast('Deleted');
+      bgSync(
+        function () { return gsc('deleteAccount', TK, id) },
+        function () {
+          if (removedAcct && !ACCOUNTS.some(function (a) { return a.id === id })) {
+            ACCOUNTS.splice(Math.min(acctIdx, ACCOUNTS.length), 0, removedAcct);
+          }
+          renderAccounts();
+        }
+      );
+    }
   });
 
   // Logout confirm
