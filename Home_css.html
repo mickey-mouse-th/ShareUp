@@ -1,6 +1,6 @@
 <style>
 .hero{
-  border-radius:26px;overflow:hidden;margin-bottom:16px;
+  border-radius:var(--rad-lg);overflow:hidden;margin-bottom:16px;
   background:var(--p-grad);
   border:1px solid var(--p-lt);padding:28px 24px 26px;position:relative;
 }
@@ -13,7 +13,7 @@
 
 .stat-row{display:flex;gap:12px;margin-bottom:8px}
 .stat-card{
-  flex:1;background:var(--s1);border:1px solid var(--bd);border-radius:22px;
+  flex:1;background:var(--s1);border:1px solid var(--bd);border-radius:var(--rad-lg);
   padding:20px 18px;display:flex;align-items:center;gap:14px;
 }
 .stat-ic{
@@ -116,13 +116,13 @@
 }
 .ev-banner-name mark.search-hl{background:rgba(255,255,255,.9);color:#1e293b}
 .ev-banner-edit{
-  flex-shrink:0;width:30px;height:30px;border-radius:50%;position:relative;z-index:1;
+  flex-shrink:0;width:36px;height:36px;border-radius:50%;position:relative;z-index:1;
   border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.16);
   display:flex;align-items:center;justify-content:center;cursor:pointer;
   transition:background var(--ease);
 }
 .ev-banner-edit:hover{background:rgba(255,255,255,.28)}
-.ev-banner-edit svg{width:15px;height:15px;fill:#fff}
+.ev-banner-edit svg{width:17px;height:17px;fill:#fff}
 .ev-card-body{padding:10px 16px 12px;min-width:0}
 .ev-date{font-size:13px;color:var(--t2);font-weight:500}
 

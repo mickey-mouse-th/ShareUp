@@ -910,8 +910,10 @@ function _getEventFriends(ss, eventId, accountId, friendMapOpt, efDataOpt, dtDat
     }
   }
 
-  var efSheet = getEventFriendsSheet();
-  var efData = efDataOpt || efSheet.getDataRange().getValues();
+  // Only opens the sheet when actually needed - the common case (efDataOpt
+  // already read by the caller, e.g. getHomeData's per-event loop) never
+  // touches SpreadsheetApp.openById() at all.
+  var efData = efDataOpt || getEventFriendsSheet().getDataRange().getValues();
   var hasAnyLink = false;
   var linkedIds = [];
   for (var i = 1; i < efData.length; i++) {
@@ -934,6 +936,7 @@ function _getEventFriends(ss, eventId, accountId, friendMapOpt, efDataOpt, dtDat
     if (derivedIds.length) {
       var now = new Date().toISOString();
       var newRows = derivedIds.map(function (fid) { return [Utilities.getUuid(), eventId, fid, now]; });
+      var efSheet = getEventFriendsSheet();
       efSheet.getRange(efSheet.getLastRow() + 1, 1, newRows.length, 4).setValues(newRows);
       linkedIds = derivedIds;
     }

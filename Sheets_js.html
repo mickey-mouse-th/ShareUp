@@ -28,17 +28,20 @@ function _renderTxSlipGallery() {
 }
 
 // Slips upload to Drive (no Sheets cell cap), so step down quality only if still too large. Target ~670,000 base64 chars (~500KB decoded).
+// Decodes the file once and reuses the bitmap across every downscale attempt
+// - only the (cheap) canvas draw+encode step repeats, not the file read/decode.
 function _compressSlipForUpload(file) {
   var attempts = [[1920, 0.85], [1600, 0.8], [1280, 0.72], [1024, 0.65], [800, 0.55]];
-  var i = 0;
-  function tryNext() {
-    return _resizeImageFile(file, attempts[i][0], attempts[i][1]).then(function (dataUrl) {
+  return _loadImageFromFile(file).then(function (img) {
+    var i = 0;
+    function tryNext() {
+      var dataUrl = _drawImageToDataUrl(img, attempts[i][0], attempts[i][1]);
       if (dataUrl.length < 670000 || i === attempts.length - 1) return dataUrl;
       i++;
       return tryNext();
-    });
-  }
-  return tryNext();
+    }
+    return tryNext();
+  });
 }
 
 // Shared catch-and-toast wrapper for the many gsc() call sites below.
@@ -573,27 +576,38 @@ function _renderPfAvatar(name, photo) {
   else $el.css('background', avCol(name)).text(initials(name));
 }
 
-// Downscales + re-encodes as JPEG so the result fits well under the ~50k-char Sheets cell cap.
-function _resizeImageFile(file, maxSize, quality) {
+// Reads + decodes a file into an <img> once, so repeated resize attempts
+// (see _compressSlipForUpload) don't pay for a fresh FileReader+decode each time.
+function _loadImageFromFile(file) {
   return new Promise(function (resolve, reject) {
     var reader = new FileReader();
     reader.onload = function (e) {
       var img = new Image();
-      img.onload = function () {
-        var scale = Math.min(1, maxSize / Math.max(img.width, img.height));
-        var w = Math.max(1, Math.round(img.width * scale));
-        var h = Math.max(1, Math.round(img.height * scale));
-        var canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
+      img.onload = function () { resolve(img) };
       img.onerror = function () { reject(new Error('Could not read image')) };
       img.src = e.target.result;
     };
     reader.onerror = function () { reject(new Error('Could not read file')) };
     reader.readAsDataURL(file);
   });
+}
+
+// Synchronous: draws an already-decoded image to a canvas at the given max
+// dimension and re-encodes as JPEG so the result fits well under the ~50k-char
+// Sheets cell cap.
+function _drawImageToDataUrl(img, maxSize, quality) {
+  var scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+  var w = Math.max(1, Math.round(img.width * scale));
+  var h = Math.max(1, Math.round(img.height * scale));
+  var canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
+// Single-shot convenience wrapper (profile photo picker - no retry loop needed).
+function _resizeImageFile(file, maxSize, quality) {
+  return _loadImageFromFile(file).then(function (img) { return _drawImageToDataUrl(img, maxSize, quality) });
 }
 
 var _pfPwPolicy = null;

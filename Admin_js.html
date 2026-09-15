@@ -34,19 +34,23 @@ function renderAccounts() {
     return a.displayName.toLowerCase().indexOf(q) !== -1 || a.username.toLowerCase().indexOf(q) !== -1;
   });
   if (!list.length) {
-    $el.html('<div class="empty"><div class="empty-t">No accounts found</div></div>');
+    $el.html(
+      '<div class="empty">' +
+      '<div class="empty-icon"><svg viewBox="0 0 24 24"><path d="M12 12c2.7 0 8 1.34 8 4v2H4v-2c0-2.66 5.3-4 8-4zm0-2a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg></div>' +
+      '<div class="empty-t">' + (ACCOUNTS.length ? 'No accounts found' : 'No accounts yet') + '</div>' +
+      '<div class="empty-s">' + (ACCOUNTS.length ? 'Try a different search' : 'Accounts will show up here once someone registers') + '</div>' +
+      '</div>'
+    );
     return;
   }
   var html = $.map(list, function (a) {
     var isMe = ME && a.id === ME.id;
-    var youBadge = isMe
-      ? ' <small style="font-size:11px;color:var(--p-lt);background:var(--p-dim);border-radius:6px;padding:2px 8px;border:1px solid var(--p-glow)">You</small>'
-      : '';
+    var youBadge = isMe ? ' <small class="badge-you">You</small>' : '';
     var enabled = a.status !== 'disabled';
     return '<div class="acc-card acc-tap" data-id="' + esc(a.id) + '"><div class="acc-row">' +
       avatarHtmlDirect('acc-av', a.displayName, a.photo) +
       '<div class="acc-info">' +
-      '<div class="acc-name">' + highlightText(a.displayName, q) + youBadge + (enabled ? '' : ' <small style="font-size:11px;color:var(--r);background:var(--r-dim);border-radius:6px;padding:2px 8px;border:1px solid rgba(244,63,94,.25)">Disabled</small>') + '</div>' +
+      '<div class="acc-name">' + highlightText(a.displayName, q) + youBadge + (enabled ? '' : ' <small class="badge-disabled">Disabled</small>') + '</div>' +
       '<div class="acc-user">@' + highlightText(a.username, q) + '</div>' +
       '</div>' +
       '<span class="acc-role-badge">' + esc(a.role[0].toUpperCase() + a.role.slice(1)) + '</span>' +
