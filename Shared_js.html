@@ -8,6 +8,22 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault() });
 document.addEventListener('gesturechange', function (e) { e.preventDefault() });
 document.addEventListener('touchmove', function (e) { if (e.touches.length > 1) e.preventDefault() }, { passive: false });
 
+// iOS "Add to Home Screen" standalone mode has a known WebKit bug: after the
+// on-screen keyboard closes, the page can stay zoomed in even with
+// font-size>=16px and maximum-scale=1 already set - the static viewport meta
+// alone isn't enough to force a rescale in that mode. Toggling the meta
+// tag's own content on every blur forces WebKit to recompute and snap the
+// scale back to 1.
+(function () {
+  var meta = document.querySelector('meta[name="viewport"]');
+  if (!meta) return;
+  var base = meta.getAttribute('content');
+  document.addEventListener('focusout', function () {
+    meta.setAttribute('content', base + ',maximum-scale=1');
+    setTimeout(function () { meta.setAttribute('content', base) }, 50);
+  }, true);
+})();
+
 // ── Global State ──────────────────────────────
 // "Remember me" decides localStorage vs sessionStorage on login; read both so either boots normally.
 var TK      = localStorage.getItem('su_tk')  || sessionStorage.getItem('su_tk')  || null;
