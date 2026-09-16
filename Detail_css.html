@@ -29,6 +29,14 @@
 }
 .ev-detail-edit svg{width:17px;height:17px;fill:#fff}
 .ev-detail-date{font-size:13px;color:rgba(255,255,255,.7);margin-top:6px;font-weight:500}
+.ev-detail-emoji.sk-pulse,.ev-detail-name.sk-pulse,.ev-detail-date.sk-pulse{
+  color:transparent;filter:none;border-radius:7px;
+  background:linear-gradient(90deg,rgba(255,255,255,.18) 25%,rgba(255,255,255,.34) 50%,rgba(255,255,255,.18) 75%);
+  background-size:200% 100%;animation:sk-shimmer 1.5s ease-in-out infinite;
+}
+.ev-detail-emoji.sk-pulse{width:54px;height:54px;border-radius:50%}
+.ev-detail-name.sk-pulse{display:inline-block;width:150px;height:22px}
+.ev-detail-date.sk-pulse{display:inline-block;width:90px;height:13px}
 
 .tab-bar{
   display:flex;background:var(--s1);border:1px solid var(--bd);

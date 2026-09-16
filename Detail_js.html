@@ -82,9 +82,9 @@ async function loadDetailData(id) {
         CUR_EV = { id: null, name: r.event.name, createdAt: r.event.createdAt, icon: r.event.icon };
         $('#hdrTitle').text(CUR_EV.name);
         $('#detailBanner').css('background', bannerGrad(CUR_EV.name));
-        $('#detailEmoji').text(CUR_EV.icon || evEmoji(CUR_EV.name));
-        $('#detailBannerName').text(CUR_EV.name);
-        $('#detailBannerDate').text(fmtDate(CUR_EV.createdAt));
+        $('#detailEmoji').removeClass('sk-pulse').text(CUR_EV.icon || evEmoji(CUR_EV.name));
+        $('#detailBannerName').removeClass('sk-pulse').text(CUR_EV.name);
+        $('#detailBannerDate').removeClass('sk-pulse').text(fmtDate(CUR_EV.createdAt));
         $('#fab').toggleClass('hide', !PERM.canAdd);
         $('#btnShareEvent').toggle(!!PERM.canShare);
         DETAILS = r.details || [];
@@ -95,6 +95,9 @@ async function loadDetailData(id) {
         ME_PHOTO = r.ownerPhoto || '';
         renderDetails();
       } else {
+        $('#detailEmoji').removeClass('sk-pulse');
+        $('#detailBannerName').removeClass('sk-pulse').text('ShareUp');
+        $('#detailBannerDate').removeClass('sk-pulse').text('');
         $('#txList').html('<div class="empty"><div class="empty-t">Link unavailable</div><div class="empty-s">' + esc(r.error || 'This share link is no longer active') + '</div></div>');
       }
       return;
@@ -109,7 +112,10 @@ async function loadDetailData(id) {
       renderDetails();
       _syncEventSettled(id, SETTLEMENTS);
     } else _handleDataError(r.error);
-  } catch (e) { _handleDataError('' + e) }
+  } catch (e) {
+    $('#detailEmoji, #detailBannerName, #detailBannerDate').removeClass('sk-pulse');
+    _handleDataError('' + e);
+  }
 }
 
 var TX_SEARCH = '';

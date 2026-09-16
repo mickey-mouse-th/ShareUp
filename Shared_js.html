@@ -300,9 +300,9 @@ function openDetail(ev) {
   $('#hdrTitle').text(ev.name);
   $('#appHdr').addClass('show-back');
   $('#detailBanner').css('background', bannerGrad(ev.name));
-  $('#detailEmoji').text(ev.icon || evEmoji(ev.name));
-  $('#detailBannerName').text(ev.name);
-  $('#detailBannerDate').text(fmtDate(ev.createdAt));
+  $('#detailEmoji').removeClass('sk-pulse').text(ev.icon || evEmoji(ev.name));
+  $('#detailBannerName').removeClass('sk-pulse').text(ev.name);
+  $('#detailBannerDate').removeClass('sk-pulse').text(fmtDate(ev.createdAt));
   var prev = PAGE_MAP[CUR_TAB];
   _hideMainPages();
   if (prev) { $('#' + prev).removeClass('hidden').addClass('behind') }
