@@ -240,11 +240,15 @@ function renderDetails() {
         '<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>' : '') +
       (PERM.canDelete ? '<button class="sched-act-btn del tx-del" data-tid="' + esc(tid) + '" data-desc="' + esc(desc) + '" title="Delete">' +
         '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>' : '');
-    var paidCheck =
-      '<label class="se-check tx-paid-check" title="Exclude this expense from settlement calculations">' +
-      '<input type="checkbox" class="tx-paid-cb" data-tid="' + esc(tid) + '"' + (f.paid ? ' checked' : '') + ((IS_SHARE && !PERM.canEdit) ? ' disabled' : '') + '>' +
-      '<span class="se-check-box"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></span>' +
-      '</label><span class="tx-paid-lbl">Paid</span>';
+    var canTogglePaid = !IS_SHARE || PERM.canEdit;
+    var paidCheck = canTogglePaid
+      ? '<label class="se-check tx-paid-check" title="Exclude this expense from settlement calculations">' +
+        '<input type="checkbox" class="tx-paid-cb" data-tid="' + esc(tid) + '"' + (f.paid ? ' checked' : '') + '>' +
+        '<span class="se-check-box"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></span>' +
+        '</label><span class="tx-paid-lbl">Paid</span>'
+      : '<span class="se-check tx-paid-check is-static" title="' + (f.paid ? 'Paid' : 'Not paid') + '">' +
+        '<span class="se-check-box' + (f.paid ? ' checked' : '') + '"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></span>' +
+        '</span><span class="tx-paid-lbl">' + (f.paid ? 'Paid' : 'Not paid') + '</span>';
     var footerHtml = '<div class="sched-card-footer">' + paidCheck + '<span class="tx-paid-spacer"></span>' + footerBtns + '</div>';
     return '<div class="sched-item">' +
       '<div class="sched-time-col"><div class="sched-time">' + esc(timeStr) + '</div><div class="sched-date">' + fmtDate(f.createdAt) + '</div></div>' +
@@ -583,10 +587,14 @@ function renderSummary(ss) {
       avatarHtml('se-av', x.toName, x.to) +
       '<div class="se-name">' + esc(x.toName) + '</div>' +
       '</div>' +
-      '<label class="se-check">' +
-      '<input type="checkbox" class="se-paid-cb" data-from="' + esc(x.from) + '" data-to="' + esc(x.to) + '" data-amt="' + x.amount + '"' + (x.paid ? ' checked' : '') + ((IS_SHARE && !PERM.canEdit) ? ' disabled' : '') + '>' +
-      '<span class="se-check-box"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></span>' +
-      '</label>' +
+      ((!IS_SHARE || PERM.canEdit)
+        ? '<label class="se-check">' +
+          '<input type="checkbox" class="se-paid-cb" data-from="' + esc(x.from) + '" data-to="' + esc(x.to) + '" data-amt="' + x.amount + '"' + (x.paid ? ' checked' : '') + '>' +
+          '<span class="se-check-box"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></span>' +
+          '</label>'
+        : '<span class="se-check is-static" title="' + (x.paid ? 'Paid' : 'Not paid') + '">' +
+          '<span class="se-check-box' + (x.paid ? ' checked' : '') + '"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></span>' +
+          '</span>') +
       '</div>';
   }).join('');
   $el.html(html);
