@@ -242,7 +242,7 @@ function renderDetails() {
         '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>' : '');
     var paidCheck =
       '<label class="se-check tx-paid-check" title="Exclude this expense from settlement calculations">' +
-      '<input type="checkbox" class="tx-paid-cb" data-tid="' + esc(tid) + '"' + (f.paid ? ' checked' : '') + (IS_SHARE ? ' disabled' : '') + '>' +
+      '<input type="checkbox" class="tx-paid-cb" data-tid="' + esc(tid) + '"' + (f.paid ? ' checked' : '') + ((IS_SHARE && !PERM.canEdit) ? ' disabled' : '') + '>' +
       '<span class="se-check-box"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></span>' +
       '</label><span class="tx-paid-lbl">Paid</span>';
     var footerHtml = '<div class="sched-card-footer">' + paidCheck + '<span class="tx-paid-spacer"></span>' + footerBtns + '</div>';
@@ -584,7 +584,7 @@ function renderSummary(ss) {
       '<div class="se-name">' + esc(x.toName) + '</div>' +
       '</div>' +
       '<label class="se-check">' +
-      '<input type="checkbox" class="se-paid-cb" data-from="' + esc(x.from) + '" data-to="' + esc(x.to) + '" data-amt="' + x.amount + '"' + (x.paid ? ' checked' : '') + (IS_SHARE ? ' disabled' : '') + '>' +
+      '<input type="checkbox" class="se-paid-cb" data-from="' + esc(x.from) + '" data-to="' + esc(x.to) + '" data-amt="' + x.amount + '"' + (x.paid ? ' checked' : '') + ((IS_SHARE && !PERM.canEdit) ? ' disabled' : '') + '>' +
       '<span class="se-check-box"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></span>' +
       '</label>' +
       '</div>';
@@ -734,24 +734,32 @@ $(function () {
   // the happy path. On failure, fall back to a full reload to resync.
   $('#sumList').on('change', '.se-paid-cb', function () {
     if (!CUR_EV) return;
+    if (IS_SHARE && !PERM.canEdit) return; // defense-in-depth - checkbox is already disabled in this case
     var from = $(this).data('from'), to = $(this).data('to'), amt = parseFloat($(this).data('amt'));
     var paid = $(this).is(':checked');
     var s = SETTLEMENTS.filter(function (x) { return x.from === from && x.to === to && Math.abs(x.amount - amt) < 0.01 })[0];
     if (s) s.paid = paid;
     renderSummary(SETTLEMENTS);
     _syncEventSettled(CUR_EV.id, SETTLEMENTS);
-    _gscOrToast('markSettlementPaid', TK, CUR_EV.id, from, to, amt, paid).then(function (r) {
+    var call = IS_SHARE
+      ? _gscOrToast('markSettlementPaidViaShare', SHARE_TOKEN, from, to, amt, paid)
+      : _gscOrToast('markSettlementPaid', TK, CUR_EV.id, from, to, amt, paid);
+    call.then(function (r) {
       if (!r || !r.success) loadSummary(CUR_EV.id);
     });
   });
   $('#txList').on('change', '.tx-paid-cb', function () {
-    if (!CUR_EV || IS_SHARE) return;
+    if (!CUR_EV) return;
+    if (IS_SHARE && !PERM.canEdit) return; // defense-in-depth - checkbox is already disabled in this case
     var tid = $(this).data('tid');
     var paid = $(this).is(':checked');
     DETAILS.forEach(function (d) { if (d.transactionId === tid) d.paid = paid });
     _recomputeSettlementsLocal();
     renderDetails();
-    _gscOrToast('markTransactionPaid', TK, CUR_EV.id, tid, paid).then(function (r) {
+    var call = IS_SHARE
+      ? _gscOrToast('markTransactionPaidViaShare', SHARE_TOKEN, tid, paid)
+      : _gscOrToast('markTransactionPaid', TK, CUR_EV.id, tid, paid);
+    call.then(function (r) {
       if (!r || !r.success) loadDetailData(CUR_EV.id);
     });
   });

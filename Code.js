@@ -1626,18 +1626,34 @@ function _computeSettlementsWithPaid(detailRows, friendMap, eventId, spDataOpt) 
   return settlements;
 }
 
+function _markSettlementPaid(eventId, fromId, toId, amount, paid) {
+  var sheet = getSettlementPaymentsSheet();
+  var data = sheet.getDataRange().getValues();
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (data[i][1] === eventId && data[i][2] === fromId && data[i][3] === toId) sheet.deleteRow(i + 1);
+  }
+  if (paid) sheet.appendRow([Utilities.getUuid(), eventId, fromId, toId, amount, new Date().toISOString()]);
+  return { success: true };
+}
+
 function markSettlementPaid(token, eventId, fromId, toId, amount, paid) {
   try {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
     if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
-    var sheet = getSettlementPaymentsSheet();
-    var data = sheet.getDataRange().getValues();
-    for (var i = data.length - 1; i >= 1; i--) {
-      if (data[i][1] === eventId && data[i][2] === fromId && data[i][3] === toId) sheet.deleteRow(i + 1);
-    }
-    if (paid) sheet.appendRow([Utilities.getUuid(), eventId, fromId, toId, amount, new Date().toISOString()]);
-    return { success: true };
+    return _markSettlementPaid(eventId, fromId, toId, amount, paid);
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+// Share-link 'edit' permission covers transaction CRUD already - marking a
+// settlement/transaction paid is the same tier of access, unlike 'view'.
+function markSettlementPaidViaShare(shareToken, fromId, toId, amount, paid) {
+  try {
+    var eventId = _shareEventId(shareToken, true);
+    if (!eventId) return _fail('This share link cannot make changes');
+    return _markSettlementPaid(eventId, fromId, toId, amount, paid);
   } catch (e) {
     return _fail(e);
   }
@@ -1646,14 +1662,28 @@ function markSettlementPaid(token, eventId, fromId, toId, amount, paid) {
 // Marks a single transaction as already settled - it's then excluded from
 // settlement math app-wide (see the paidTxSet filters in getHomeData,
 // _buildDetailPayload, getSummary) instead of just noting a net debt as paid.
+function _markTransactionPaid(eventId, transactionId, paid) {
+  _removeRowsWhere(getTransactionPaymentsSheet(), 0, transactionId);
+  if (paid) getTransactionPaymentsSheet().appendRow([transactionId, eventId, new Date().toISOString()]);
+  return { success: true };
+}
+
 function markTransactionPaid(token, eventId, transactionId, paid) {
   try {
     var user = requireAuth(token);
     var ss = getSpreadsheet();
     if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
-    _removeRowsWhere(getTransactionPaymentsSheet(), 0, transactionId);
-    if (paid) getTransactionPaymentsSheet().appendRow([transactionId, eventId, new Date().toISOString()]);
-    return { success: true };
+    return _markTransactionPaid(eventId, transactionId, paid);
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function markTransactionPaidViaShare(shareToken, transactionId, paid) {
+  try {
+    var eventId = _shareEventId(shareToken, true);
+    if (!eventId) return _fail('This share link cannot make changes');
+    return _markTransactionPaid(eventId, transactionId, paid);
   } catch (e) {
     return _fail(e);
   }
