@@ -86,6 +86,7 @@ async function loadDetailData(id) {
         $('#detailBannerName').removeClass('sk-pulse').text(CUR_EV.name);
         $('#detailBannerDate').removeClass('sk-pulse').text(fmtDate(CUR_EV.createdAt));
         $('#fab').toggleClass('hide', !PERM.canAdd);
+        $('#btnSummary, #btnExportTx').show();
         $('#btnShareEvent').toggle(!!PERM.canShare);
         DETAILS = r.details || [];
         FRIENDS = r.friends || [];
