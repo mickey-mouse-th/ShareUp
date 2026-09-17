@@ -15,7 +15,7 @@ $(function () {
   gsc('getPasswordPolicy').then(function (p) {
     _regPwPolicy = p;
     renderPwChecklist('regPwChecklist', p);
-  }).catch(function () {});
+  }).catch(function () { $('#regPwChecklist').empty() });
 
   $('#regPass').on('input', function () {
     if (_regPwPolicy) updatePwChecklist('regPwChecklist', _regPwPolicy, $(this).val());

@@ -611,6 +611,7 @@ function renderSummary(ss) {
 var _sharePermission = 'view';
 
 function _setShareLinkVisible(hasLink) {
+  $('#shareLoading').hide();
   $('#shareOff').toggle(!hasLink);
   $('#shareOn').toggle(hasLink);
 }
@@ -628,7 +629,8 @@ async function openShareSheet() {
   if (!CUR_EV) return;
   _sharePermission = 'view';
   _renderSharePerm();
-  _setShareLinkVisible(false);
+  $('#shareOff, #shareOn').hide();
+  $('#shareLoading').show();
   openSheet('shShare');
   try { // silent: this is just a background prefetch of an existing link
     var r = await gsc('getShareLink', TK, CUR_EV.id);
@@ -636,8 +638,10 @@ async function openShareSheet() {
       _sharePermission = r.permission || 'view';
       _renderSharePerm();
       showShareLink(r.shareUrl);
+    } else {
+      _setShareLinkVisible(false);
     }
-  } catch (e) {}
+  } catch (e) { _setShareLinkVisible(false) }
 }
 
 function _renderSharePerm() {

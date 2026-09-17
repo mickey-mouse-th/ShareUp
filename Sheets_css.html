@@ -33,6 +33,11 @@
   outline:none;transition:border-color .2s,background .2s;
 }
 .inp::placeholder{color:var(--t3)}
+.inp.sk-pulse{
+  color:transparent;
+  background:linear-gradient(90deg,var(--s2) 25%,var(--s3) 50%,var(--s2) 75%);
+  background-size:200% 100%;animation:sk-shimmer 1.5s ease-in-out infinite;
+}
 .inp:focus{border-color:var(--p);background:var(--s1)}
 select.inp{cursor:pointer}
 select.inp option{background:var(--s1);color:var(--t1)}
@@ -249,6 +254,11 @@ select.inp option{background:var(--s1);color:var(--t1)}
   display:flex;align-items:center;justify-content:center;
   color:#fff;font-weight:700;font-size:32px;
 }
+.pf-avatar.sk-pulse{
+  color:transparent;
+  background:linear-gradient(90deg,var(--s2) 25%,var(--s3) 50%,var(--s2) 75%);
+  background-size:200% 100%;animation:sk-shimmer 1.5s ease-in-out infinite;
+}
 .pf-avatar-edit{
   position:absolute;right:-2px;bottom:-2px;width:34px;height:34px;border-radius:50%;
   background:var(--p);border:3px solid var(--s1);display:flex;align-items:center;justify-content:center;
@@ -260,7 +270,11 @@ select.inp option{background:var(--s1);color:var(--t1)}
 .pf-divider{height:1px;background:var(--bd);margin:28px 0 22px}
 .tx-slip-gallery{display:flex;flex-wrap:wrap;gap:10px}
 .tx-slip-item{position:relative;width:64px;height:64px;border-radius:var(--rad-sm);overflow:hidden;background:var(--s2);border:1px solid var(--bd);flex-shrink:0}
-.tx-slip-item img{width:100%;height:100%;object-fit:cover;display:block}
+.tx-slip-item img{
+  width:100%;height:100%;object-fit:cover;display:block;
+  background:linear-gradient(90deg,var(--s2) 25%,var(--s3) 50%,var(--s2) 75%);
+  background-size:200% 100%;animation:sk-shimmer 1.5s ease-in-out infinite;
+}
 .tx-slip-remove{
   position:absolute;top:0;right:0;width:32px;height:32px;border-radius:50%;
   background:rgba(15,23,42,.6);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;
@@ -272,7 +286,11 @@ select.inp option{background:var(--s1);color:var(--t1)}
 }
 .tx-slip-add svg{width:24px;height:24px;fill:var(--t3)}
 .slip-carousel{position:relative;display:flex;align-items:center;justify-content:center}
-.slip-carousel img{width:100%;border-radius:var(--rad-sm);display:block}
+.slip-carousel img{
+  width:100%;min-height:220px;border-radius:var(--rad-sm);display:block;
+  background:linear-gradient(90deg,var(--s2) 25%,var(--s3) 50%,var(--s2) 75%);
+  background-size:200% 100%;animation:sk-shimmer 1.5s ease-in-out infinite;
+}
 .slip-nav{
   position:absolute;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:50%;
   background:rgba(15,23,42,.55);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;

@@ -9,17 +9,21 @@ async function loadHomeData() {
     if (r.success) {
       EVENTS  = r.events  || [];
       FRIENDS = r.friends || [];
-      $('#stFriends').text(FRIENDS.length);
+      $('#stFriends').removeClass('sk-pulse').text(FRIENDS.length);
       refreshEventsUI();
-    } else _handleDataError(r.error);
-  } catch (e) { _handleDataError('' + e) }
+    } else { _clearHomeStatSkeletons(); _handleDataError(r.error) }
+  } catch (e) { _clearHomeStatSkeletons(); _handleDataError('' + e) }
+}
+
+function _clearHomeStatSkeletons() {
+  $('#stEvents, #stFriends, #fcPending, #fcAll, #fcSettled').removeClass('sk-pulse');
 }
 
 function refreshEventsUI() {
-  $('#stEvents').text(EVENTS.length);
-  $('#fcAll').text(EVENTS.length);
-  $('#fcPending').text(EVENTS.filter(function (e) { return !e.settled }).length);
-  $('#fcSettled').text(EVENTS.filter(function (e) { return e.settled }).length);
+  $('#stEvents').removeClass('sk-pulse').text(EVENTS.length);
+  $('#fcAll').removeClass('sk-pulse').text(EVENTS.length);
+  $('#fcPending').removeClass('sk-pulse').text(EVENTS.filter(function (e) { return !e.settled }).length);
+  $('#fcSettled').removeClass('sk-pulse').text(EVENTS.filter(function (e) { return e.settled }).length);
   renderEvents();
 }
 

@@ -110,7 +110,7 @@ function loadSettingsPanel() {
     _tglSet('asPwLowerWrap', 'asPwLower', s.pwRequireLower);
     _tglSet('asPwNumberWrap', 'asPwNumber', s.pwRequireNumber);
     _tglSet('asPwSpecialWrap', 'asPwSpecial', s.pwRequireSpecial);
-  });
+  }).then(function () { $('#asSessionMin, #asPwMinLen').removeClass('sk-pulse') });
 }
 
 // ── Admin sub-nav (User / Theme / Settings) ────

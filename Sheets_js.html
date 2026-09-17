@@ -612,6 +612,10 @@ function _resizeImageFile(file, maxSize, quality) {
 
 var _pfPwPolicy = null;
 
+function _clearProfileSkeletons() {
+  $('#inpPfName, #inpPfUser, #pfAvatar').removeClass('sk-pulse');
+}
+
 async function openProfileSheet() {
   openSheet('shProfile');
   _pfPhotoPending = undefined;
@@ -619,7 +623,7 @@ async function openProfileSheet() {
   gsc('getPasswordPolicy').then(function (p) {
     _pfPwPolicy = p;
     renderPwChecklist('pfPwChecklist', p);
-  }).catch(function () {});
+  }).catch(function () { $('#pfPwChecklist').empty() });
   await _tryToast(async function () {
     var r = await gsc('getMyProfile', TK);
     if (r.success) {
@@ -629,6 +633,7 @@ async function openProfileSheet() {
       $('#pfRemovePhotoRow').toggle(!!r.photo);
     } else toast(r.error, 'err');
   });
+  _clearProfileSkeletons();
 }
 
 function submitProfile() {
