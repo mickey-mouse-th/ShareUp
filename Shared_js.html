@@ -303,8 +303,7 @@ function openDetail(ev) {
   $('#detailEmoji').removeClass('sk-pulse').text(ev.icon || evEmoji(ev.name));
   $('#detailBannerName').removeClass('sk-pulse').text(ev.name);
   $('#detailBannerDate').removeClass('sk-pulse').text(fmtDate(ev.createdAt));
-  $('#btnSummary, #btnExportTx').show();
-  $('#btnShareEvent').toggle(!!PERM.canShare);
+  $('#btnSummary, #btnExportTx, #btnShareEvent').hide();
   var prev = PAGE_MAP[CUR_TAB];
   _hideMainPages();
   if (prev) { $('#' + prev).removeClass('hidden').addClass('behind') }
