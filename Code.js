@@ -24,20 +24,121 @@ var DEFAULT_THEME = {
 };
 
 // ----------------------------------------------------------------
-// Database Setup
+// Data backend switch - Sheets vs Postgres
 // ----------------------------------------------------------------
 
-// Only used by the one-time migration script below (migrateRestToDb) to read
-// the legacy Events/Details/EventFriends/... sheets - the live app no longer
-// reads or writes this spreadsheet at all once that migration has run.
-function getSpreadsheet() {
-  var ssId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
-  if (!ssId) throw new Error('SPREADSHEET_ID not set - nothing to migrate');
-  return SpreadsheetApp.openById(ssId);
+// The whole app can run against either backend. Google Sheets is the
+// default (matches the original app); Postgres (Neon) is kept fully intact
+// and can be switched on per-deployment. There is no browser localStorage
+// visible to this server-side file (Apps Script functions run remotely, not
+// in the page's JS context), so the switch lives in Script Properties
+// instead - the closest server-side equivalent, shared by every user/device
+// and changeable without a redeploy.
+var _DB_BACKEND_CACHE = null; // memoized per script execution - avoids re-reading Script Properties on every dispatch call within one request
+
+function _dbBackend() {
+  if (_DB_BACKEND_CACHE === null) {
+    var v = PropertiesService.getScriptProperties().getProperty('DB_BACKEND');
+    _DB_BACKEND_CACHE = (v === 'postgres') ? 'postgres' : 'sheet';
+  }
+  return _DB_BACKEND_CACHE;
+}
+
+// Admin-only - flips the switch for every user. Not exposed to the client
+// UI; call it once from the Apps Script editor (or wire an Admin Settings
+// control to it) when you actually want to cut over.
+function setDbBackend(token, backend) {
+  try {
+    var user = requireAuth(token);
+    if (user.role !== 'admin') return _fail('Forbidden');
+    var v = (backend === 'postgres') ? 'postgres' : 'sheet';
+    PropertiesService.getScriptProperties().setProperty('DB_BACKEND', v);
+    _DB_BACKEND_CACHE = v;
+    return { success: true, backend: v };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function getDbBackend(token) {
+  try {
+    var user = requireAuth(token);
+    if (user.role !== 'admin') return _fail('Forbidden');
+    return { success: true, backend: _dbBackend() };
+  } catch (e) {
+    return _fail(e);
+  }
 }
 
 // ----------------------------------------------------------------
-// Utilities
+// Database Setup - Google Sheets (default backend)
+// ----------------------------------------------------------------
+
+function getSpreadsheet() {
+  var props = PropertiesService.getScriptProperties();
+  var ssId = props.getProperty('SPREADSHEET_ID');
+  var ss;
+
+  if (ssId) {
+    try {
+      ss = SpreadsheetApp.openById(ssId);
+    } catch (e) {
+      ssId = null;
+    }
+  }
+
+  if (!ssId) {
+    ss = SpreadsheetApp.create(SPREADSHEET_NAME);
+    props.setProperty('SPREADSHEET_ID', ss.getId());
+    initSheets(ss);
+
+    // Create default admin account
+    var adminPassword = hashPassword('admin123');
+    var adminId = Utilities.getUuid();
+    var now = new Date().toISOString();
+    var accountsSheet = ss.getSheetByName('Accounts');
+    accountsSheet.appendRow([adminId, 'Admin', 'admin', adminPassword, now, now, 'admin', 'active', '', '']);
+
+    // Create "Me" friend for admin
+    var friendsSheet = ss.getSheetByName('Friends');
+    friendsSheet.appendRow([Utilities.getUuid(), adminId, 'Me', 'true']);
+  }
+
+  return ss;
+}
+
+function initSheets(ss) {
+  // Remove default sheet if needed
+  var defaultSheet = ss.getSheetByName('Sheet1');
+
+  var accountsSheet = ss.insertSheet('Accounts');
+  accountsSheet.appendRow(['id', 'displayName', 'username', 'password', 'firstLogin', 'lastLogin', 'role', 'status', 'email', 'photo']);
+
+  var friendsSheet = ss.insertSheet('Friends');
+  friendsSheet.appendRow(['id', 'accountId', 'name', 'isSelf']);
+
+  var eventsSheet = ss.insertSheet('Events');
+  eventsSheet.appendRow(['id', 'name', 'accountId', 'createdAt', 'active', 'icon']);
+
+  var detailsSheet = ss.insertSheet('Details');
+  detailsSheet.appendRow(['transactionId', 'eventId', 'payId', 'totalAmount', 'description', 'createdAt', 'splits']);
+
+  var eventFriendsSheet = ss.insertSheet('EventFriends');
+  eventFriendsSheet.appendRow(['id', 'eventId', 'friendId', 'createdAt']);
+
+  var eventSharesSheet = ss.insertSheet('EventShares');
+  eventSharesSheet.appendRow(['eventId', 'token', 'createdAt', 'permission']);
+
+  var sessionsSheet = ss.insertSheet('Sessions');
+  sessionsSheet.appendRow(['token', 'accountId', 'userInfo', 'createdAt', 'expiresAt']);
+
+  if (defaultSheet) {
+    ss.deleteSheet(defaultSheet);
+  }
+}
+
+// ----------------------------------------------------------------
+// Utilities (shared by both backends)
 // ----------------------------------------------------------------
 
 function hashPassword(pw) {
@@ -57,17 +158,294 @@ function _fail(err) {
   return { success: false, error: err.toString() };
 }
 
+// Row index of the first row whose column `col` equals val, or -1.
+function _findRowByCol(data, col, val) {
+  for (var i = 1; i < data.length; i++) if (data[i][col] === val) return i;
+  return -1;
+}
+
+// Shorthand for the common case: match against column 0 (most sheets here -
+// Accounts/Sessions/EventShares/... - are keyed by their first column).
+function _findRow(data, id) {
+  return _findRowByCol(data, 0, id);
+}
+
+function getCache() {
+  return CacheService.getScriptCache();
+}
+
 // ----------------------------------------------------------------
-// Postgres (Neon) - the entire app lives here now (account, friend, event,
-// transaction, split, participant, settlement, receipt, session). See
-// migrateAccountsFriendsToDb() and migrateRestToDb() near the bottom of this
-// file for the one-time cutovers that populated this from the old sheets.
-//
-// role/status stay numeric ONLY inside Postgres. Every other part of the
-// app - every `user.role !== 'admin'` check in this file, plus the client
-// JS - still expects the original 'admin'/'user' and 'active'/'disabled'
-// strings, so that translation happens right here at the DB boundary and
-// nowhere else in the app has to change.
+// Sheets backend - sheet accessors and row-level helpers
+// ----------------------------------------------------------------
+
+function getEventFriendsSheet() {
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName('EventFriends');
+  if (!sheet) {
+    sheet = ss.insertSheet('EventFriends');
+    sheet.appendRow(['id', 'eventId', 'friendId', 'createdAt']);
+  }
+  return sheet;
+}
+
+function getEventSharesSheet() {
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName('EventShares');
+  if (!sheet) {
+    sheet = ss.insertSheet('EventShares');
+    sheet.appendRow(['eventId', 'token', 'createdAt', 'permission']);
+  }
+  return sheet;
+}
+
+// Rows written before 'permission' existed have a blank 4th cell - treat
+// that the same as 'view' (the original, only behavior), no migration needed.
+function _sharePermission(row) {
+  return row[3] === 'edit' ? 'edit' : 'view';
+}
+
+function getSessionsSheet() {
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName('Sessions');
+  if (!sheet) {
+    sheet = ss.insertSheet('Sessions');
+    sheet.appendRow(['token', 'accountId', 'userInfo', 'createdAt', 'expiresAt']);
+  }
+  return sheet;
+}
+
+function getSettlementPaymentsSheet() {
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName('SettlementPayments');
+  if (!sheet) {
+    sheet = ss.insertSheet('SettlementPayments');
+    sheet.appendRow(['id', 'eventId', 'fromId', 'toId', 'amount', 'markedAt']);
+  }
+  return sheet;
+}
+
+// A transaction marked paid here is excluded from settlement math entirely
+// (as if it never happened) - separate from SettlementPayments above, which
+// marks a net aggregated debt as paid rather than a single expense.
+function getTransactionPaymentsSheet() {
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName('TransactionPayments');
+  if (!sheet) {
+    sheet = ss.insertSheet('TransactionPayments');
+    sheet.appendRow(['transactionId', 'eventId', 'paidAt']);
+  }
+  return sheet;
+}
+
+// transactionId is a UUID unique across all events, so a flat set (no event
+// scoping needed) is enough to check "is this transaction paid".
+function _paidTransactionSet(dataOpt) {
+  var data = dataOpt || getTransactionPaymentsSheet().getDataRange().getValues();
+  var set = {};
+  for (var i = 1; i < data.length; i++) set[data[i][0]] = true;
+  return set;
+}
+
+// One row per PHOTO, not a column on Details (a transaction fans out into
+// one Details row per participant, so a column would duplicate each image N
+// times). Pre-Drive rows have a blank 'fileId' and keep their original
+// base64 data-URI in 'slip'/'slipHi' - still renders fine, no migration needed.
+function getTransactionSlipsSheet() {
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName('TransactionSlips');
+  if (!sheet) {
+    sheet = ss.insertSheet('TransactionSlips');
+    sheet.appendRow(['transactionId', 'slip', 'updatedAt', 'id', 'slipHi', 'fileId']);
+  }
+  return sheet;
+}
+
+// Pre-multi-photo rows have a blank id - backfill lazily (like
+// _findSelfFriendRow) so old photos stay individually deletable.
+function _backfillSlipIds(sheet, data) {
+  var changed = false;
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][3]) { data[i][3] = Utilities.getUuid(); changed = true; }
+  }
+  if (changed) {
+    sheet.getRange(2, 4, data.length - 1, 1).setValues(data.slice(1).map(function (r) { return [r[3]] }));
+  }
+  return data;
+}
+
+// Row index of the account's own self-friend (auto-created at registration,
+// auto-linked into every new event). Prefers the isSelf marker, falls back
+// to the pre-migration "Me" name convention. -1 if none found.
+function _findSelfFriendRow(frData, accountId) {
+  for (var i = 1; i < frData.length; i++) {
+    if (frData[i][1] === accountId && frData[i][3] === 'true') return i;
+  }
+  for (var i = 1; i < frData.length; i++) {
+    if (frData[i][1] === accountId && frData[i][2] === 'Me') return i;
+  }
+  return -1;
+}
+
+// Removes every row where column `col` equals `val`, in one read + one write
+// (vs. one deleteRow() per match). Pass dataOpt if already read this request.
+function _removeRowsWhere(sheet, col, val, dataOpt) {
+  var data = dataOpt || sheet.getDataRange().getValues();
+  if (data.length <= 1) return;
+  var kept = [data[0]];
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][col] !== val) kept.push(data[i]);
+  }
+  if (kept.length === data.length) return; // nothing matched
+  sheet.clearContents();
+  sheet.getRange(1, 1, kept.length, kept[0].length).setValues(kept);
+}
+
+// Like _removeRowsWhere but matches a set of ids at once (deleteEvent needs
+// to drop TransactionSlips rows for every transactionId under the event).
+function _removeRowsBySet(sheet, col, idSet) {
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return;
+  var kept = [data[0]];
+  for (var i = 1; i < data.length; i++) {
+    if (!idSet[data[i][col]]) kept.push(data[i]);
+  }
+  if (kept.length === data.length) return;
+  sheet.clearContents();
+  sheet.getRange(1, 1, kept.length, kept[0].length).setValues(kept);
+}
+
+// Friends linked to an event. Self-healing: an event with transactions but
+// no EventFriends rows yet gets membership derived from Details and persisted.
+// Pass the *Opt params when the caller already read those sheets this request.
+function _getEventFriends(ss, eventId, accountId, friendMapOpt, efDataOpt, dtDataOpt) {
+  var friendMap = friendMapOpt;
+  if (!friendMap) {
+    friendMap = {};
+    var frData = ss.getSheetByName('Friends').getDataRange().getValues();
+    for (var i = 1; i < frData.length; i++) {
+      if (frData[i][1] === accountId) friendMap[frData[i][0]] = frData[i][2];
+    }
+  }
+
+  // Only opens the sheet when actually needed - the common case (efDataOpt
+  // already read by the caller, e.g. getHomeData's per-event loop) never
+  // touches SpreadsheetApp.openById() at all.
+  var efData = efDataOpt || getEventFriendsSheet().getDataRange().getValues();
+  var hasAnyLink = false;
+  var linkedIds = [];
+  for (var i = 1; i < efData.length; i++) {
+    if (efData[i][1] === eventId) {
+      hasAnyLink = true;
+      if (friendMap.hasOwnProperty(efData[i][2])) linkedIds.push(efData[i][2]);
+    }
+  }
+
+  if (!hasAnyLink) {
+    var dtData = dtDataOpt || ss.getSheetByName('Details').getDataRange().getValues();
+    var derived = {};
+    for (var i = 1; i < dtData.length; i++) {
+      if (dtData[i][1] === eventId) {
+        if (friendMap.hasOwnProperty(dtData[i][2])) derived[dtData[i][2]] = true;
+        _splitsToRows(dtData[i]).forEach(function (s) { if (friendMap.hasOwnProperty(s.friendId)) derived[s.friendId] = true });
+      }
+    }
+    var derivedIds = Object.keys(derived);
+    if (derivedIds.length) {
+      var now = new Date().toISOString();
+      var newRows = derivedIds.map(function (fid) { return [Utilities.getUuid(), eventId, fid, now]; });
+      var efSheet = getEventFriendsSheet();
+      efSheet.getRange(efSheet.getLastRow() + 1, 1, newRows.length, 4).setValues(newRows);
+      linkedIds = derivedIds;
+    }
+  }
+
+  return linkedIds.map(function (fid) {
+    return { id: fid, name: friendMap[fid] };
+  });
+}
+
+// splits cell: JSON {friendId: amount}. Tolerant of corrupt/missing data so
+// one bad cell degrades to "zero participants" instead of a thrown error.
+function _parseSplits(json) {
+  try {
+    var o = JSON.parse(json || '{}');
+    return (o && typeof o === 'object') ? o : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+// One Details row -> [{friendId, amount}, ...], the shape _computeSettlements expects.
+function _splitsToRows(dtRow) {
+  var splits = _parseSplits(dtRow[6]);
+  return Object.keys(splits).map(function (fid) { return { friendId: fid, amount: splits[fid] }; });
+}
+
+// One Details row -> flat per-friend objects, matching the old one-row-per-split
+// shape the client already expects (details[] items) - keeps the client
+// contract unchanged even though storage is now one row per transaction.
+function _expandDetailRow(dtRow) {
+  var transactionId = dtRow[0], eventId = dtRow[1], payId = dtRow[2],
+      totalAmount = dtRow[3], description = dtRow[4], createdAt = dtRow[5];
+  return _splitsToRows(dtRow).map(function (s) {
+    return {
+      id: transactionId + '_' + s.friendId, eventId: eventId, transactionId: transactionId,
+      payId: payId, friendId: s.friendId, amount: s.amount, totalAmount: totalAmount,
+      description: description, createdAt: createdAt
+    };
+  });
+}
+
+// friendIds -> one Details row, splits collapsed into a single JSON cell.
+function _buildDetailRow(eventId, transactionId, payId, friendIds, total, description, customAmounts, createdAt) {
+  var perPerson = total / friendIds.length;
+  var splits = {};
+  friendIds.forEach(function (fid) {
+    splits[fid] = (customAmounts && customAmounts[fid] !== undefined) ? parseFloat(customAmounts[fid]) : perPerson;
+  });
+  return [transactionId, eventId, payId, total, description, createdAt, JSON.stringify(splits)];
+}
+
+// Builds a row via _buildDetailRow and appends it - the common tail shared by
+// add, both authenticated and share-link variants, below.
+function _writeDetailRow(sheet, eventId, transactionId, payId, friendIds, totalAmount, description, customAmounts, createdAt) {
+  sheet.appendRow(_buildDetailRow(eventId, transactionId, payId, friendIds, parseFloat(totalAmount), description, customAmounts, createdAt));
+}
+
+function _transactionEventId(dtData, transactionId) {
+  var row = _findRow(dtData, transactionId);
+  return row === -1 ? null : dtData[row][1];
+}
+
+// Pass spDataOpt when the caller already read the SettlementPayments sheet
+// this request (e.g. a per-event loop) to avoid re-reading it for every event.
+function _getPaidSet(eventId, spDataOpt) {
+  var data = spDataOpt || getSettlementPaymentsSheet().getDataRange().getValues();
+  var set = {};
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][1] === eventId) set[_settleKey(data[i][2], data[i][3], data[i][4])] = true;
+  }
+  return set;
+}
+
+// Marks a single transaction as already settled - it's then excluded from
+// settlement math app-wide (see the paidTxSet filters in getHomeData,
+// _buildDetailPayload, getSummary) instead of just noting a net debt as paid.
+function _markTransactionPaid(eventId, transactionId, paid) {
+  _removeRowsWhere(getTransactionPaymentsSheet(), 0, transactionId);
+  if (paid) getTransactionPaymentsSheet().appendRow([transactionId, eventId, new Date().toISOString()]);
+  return { success: true };
+}
+
+function _trashSlipFilesForTxSet(txIdSet) {
+  var data = getTransactionSlipsSheet().getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (txIdSet[data[i][0]] && data[i][5]) _deleteSlipFile(data[i][5]);
+  }
+}
+
+// ----------------------------------------------------------------
+// Postgres (Neon) backend - kept fully intact from the previous cutover
 // ----------------------------------------------------------------
 
 function _dbConn() {
@@ -76,8 +454,11 @@ function _dbConn() {
 }
 
 function _roleToDb(role) { return role === 'admin' ? 2 : 0; } // staff(1) unused externally for now
+
 function _roleFromDb(role) { return role >= 2 ? 'admin' : 'user'; }
+
 function _statusToDb(status) { return status === 'disabled' ? 1 : 3; }
+
 function _statusFromDb(status) { return status === 3 ? 'active' : 'disabled'; } // deleted(0)/pending(2) collapse to 'disabled' until those states have real behavior
 
 function _accountFromRs(rs) {
@@ -324,11 +705,8 @@ function _withConn(connOpt, fn) {
 }
 
 function _sharePermToDb(perm) { return perm === 'edit' ? 1 : 0; }
-function _sharePermFromDb(perm) { return perm === 1 ? 'edit' : 'view'; }
 
-// ----------------------------------------------------------------
-// Postgres: session (replaces the Sessions sheet)
-// ----------------------------------------------------------------
+function _sharePermFromDb(perm) { return perm === 1 ? 'edit' : 'view'; }
 
 function _dbCreateSession(token, accountId, userInfo, expiresAtIso, connOpt) {
   return _withConn(connOpt, function (conn) {
@@ -382,11 +760,6 @@ function _dbCleanExpiredSessions(connOpt) {
     stmt.close();
   });
 }
-
-// ----------------------------------------------------------------
-// Postgres: event (replaces Events + EventShares - share_token/share_perm/
-// share_cre_at live as columns on event now, so there's no separate share table)
-// ----------------------------------------------------------------
 
 var EVENT_SELECT_COLS =
   "id, account_id, name, icon, is_active, share_token, share_perm, " +
@@ -514,11 +887,6 @@ function _dbClearEventShare(eventId, modBy, connOpt) {
     stmt.close();
   });
 }
-
-// ----------------------------------------------------------------
-// Postgres: transaction + split (replaces Details, whose 'splits' column was
-// a JSON blob {friendId: amount} - now real rows, one per participant)
-// ----------------------------------------------------------------
 
 // Returns this event's transactions, each with its splits already attached -
 // the shape _buildDetailPayload/getHomeData/getSummary need, no JSON parsing.
@@ -667,10 +1035,6 @@ function _dbSetTransactionExcluded(transactionId, excluded, modBy, connOpt) {
   });
 }
 
-// ----------------------------------------------------------------
-// Postgres: participant (replaces EventFriends)
-// ----------------------------------------------------------------
-
 function _dbGetParticipantsByEvent(eventId, connOpt) {
   return _withConn(connOpt, function (conn) {
     var stmt = conn.prepareStatement('SELECT p.friend_id, f.name FROM participant p JOIN friend f ON f.id = p.friend_id WHERE p.event_id = ? ORDER BY p.cre_at');
@@ -740,10 +1104,6 @@ function _dbUsedFriendIdsInEvent(eventId, connOpt) {
   });
 }
 
-// ----------------------------------------------------------------
-// Postgres: settlement (replaces SettlementPayments)
-// ----------------------------------------------------------------
-
 // Keyed exactly like _settleKey below - a drop-in replacement for the old
 // sheet-scanned paid set.
 function _dbGetSettlementsByEvent(eventId, connOpt) {
@@ -785,11 +1145,6 @@ function _dbDeleteSettlement(eventId, fromId, toId, connOpt) {
     stmt.close();
   });
 }
-
-// ----------------------------------------------------------------
-// Postgres: receipt (replaces TransactionSlips) - Drive upload/read/trash
-// logic below is unchanged; only the row bookkeeping moves here.
-// ----------------------------------------------------------------
 
 function _dbGetReceiptsByEvent(eventId, connOpt) {
   return _withConn(connOpt, function (conn) {
@@ -872,14 +1227,48 @@ function _dbGetReceiptFileIdsByEvent(eventId, connOpt) {
   });
 }
 
-function getCache() {
-  return CacheService.getScriptCache();
+function _trashSlipFilesForEvent(eventId, connOpt) {
+  _dbGetReceiptFileIdsByEvent(eventId, connOpt).forEach(_deleteSlipFile);
+}
+
+// One connection covers every one of the account's events at once - avoids
+// opening a fresh connection per event the way a naive per-event loop would.
+function _dbGetHomeSettlementInput(accountId, connOpt) {
+  return _withConn(connOpt, function (conn) {
+    var rowsByEvent = {};
+    var txStmt = conn.prepareStatement(
+      'SELECT t.event_id, t.payer_id, s.friend_id, s.amount FROM transaction t ' +
+      'JOIN split s ON s.transaction_id = t.id JOIN event e ON e.id = t.event_id ' +
+      'WHERE e.account_id = ? AND t.excluded_at IS NULL'
+    );
+    txStmt.setLong(1, parseInt(accountId, 10));
+    var txRs = txStmt.executeQuery();
+    while (txRs.next()) {
+      var eid = String(txRs.getLong('event_id'));
+      if (!rowsByEvent[eid]) rowsByEvent[eid] = [];
+      rowsByEvent[eid].push({ payId: String(txRs.getLong('payer_id')), friendId: String(txRs.getLong('friend_id')), amount: txRs.getDouble('amount') });
+    }
+    txRs.close(); txStmt.close();
+
+    var paidSetByEvent = {};
+    var spStmt = conn.prepareStatement(
+      'SELECT s.event_id, s.from_id, s.to_id, s.amount FROM settlement s JOIN event e ON e.id = s.event_id WHERE e.account_id = ?'
+    );
+    spStmt.setLong(1, parseInt(accountId, 10));
+    var spRs = spStmt.executeQuery();
+    while (spRs.next()) {
+      var eid2 = String(spRs.getLong('event_id'));
+      if (!paidSetByEvent[eid2]) paidSetByEvent[eid2] = {};
+      paidSetByEvent[eid2][_settleKey(String(spRs.getLong('from_id')), String(spRs.getLong('to_id')), spRs.getDouble('amount'))] = true;
+    }
+    spRs.close(); spStmt.close();
+
+    return { rowsByEvent: rowsByEvent, paidSetByEvent: paidSetByEvent };
+  });
 }
 
 // ----------------------------------------------------------------
-// Slip photo storage (Google Drive) - a Sheets cell caps out around 50,000
-// characters, far too small for a real photo, so slips are uploaded as Drive
-// files instead and only the resulting URLs/fileId are kept in the sheet.
+// Slip photo storage (Google Drive) - shared by both backends
 // ----------------------------------------------------------------
 
 function _getSlipsFolder() {
@@ -918,22 +1307,206 @@ function _slipBase64(fileId) {
   return { mimeType: blob.getContentType(), base64: Utilities.base64Encode(blob.getBytes()) };
 }
 
-function _readSlipImage(fileId, connOpt) {
+function _deleteSlipFile(fileId) {
+  if (!fileId) return; // legacy rows predating Drive storage have no fileId - nothing to trash
+  try { DriveApp.getFileById(fileId).setTrashed(true) } catch (e) { /* already gone - ignore */ }
+}
+
+// ----------------------------------------------------------------
+// Backend dispatch - one thin wrapper per function that differs between
+// Sheets and Postgres. Each forwards to _shXxx (sheet) or _pgXxx (postgres)
+// based on _dbBackend(). Internal calls throughout this file use the bare
+// (dispatched) name, so every call - direct or nested - always resolves to
+// whichever backend is active for the current request
+// ----------------------------------------------------------------
+
+function _shLookupSession(token) {
+  var sheet = getSessionsSheet();
+  var data = sheet.getDataRange().getValues();
+  var row = _findRow(data, token);
+  if (row === -1) return null;
+  if (new Date() >= new Date(data[row][4])) { sheet.deleteRow(row + 1); return null }
+  var userInfo = JSON.parse(data[row][2]);
+  if (_isAccountDisabled(userInfo.id)) { sheet.deleteRow(row + 1); return null }
+  return { row: row + 1, userInfo: userInfo, expiresAt: data[row][4] };
+}
+
+function _pgLookupSession(token) {
+  var found = _dbGetSession(token);
+  if (!found) return null;
+  if (new Date() >= new Date(found.expiresAt)) { _dbDeleteSession(token); return null }
+  if (_isAccountDisabled(found.userInfo.id)) { _dbDeleteSession(token); return null }
+  return { userInfo: found.userInfo, expiresAt: found.expiresAt };
+}
+
+function _lookupSession() {
+  return (_dbBackend() === 'postgres' ? _pgLookupSession : _shLookupSession).apply(null, arguments);
+}
+
+// Only consulted on session-cache misses (~every CACHE_EXPIRY), so a disabled
+// account is locked out within a few hours without a per-request sheet read.
+function _shIsAccountDisabled(accountId) {
+  var data = getSpreadsheet().getSheetByName('Accounts').getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0] === accountId) return data[i][7] === 'disabled';
+  }
+  return false;
+}
+
+// Only consulted on session-cache misses (~every CACHE_EXPIRY), so a disabled
+// account is locked out within a few hours without a per-request sheet read.
+function _pgIsAccountDisabled(accountId) {
+  return _dbIsAccountDisabled(accountId);
+}
+
+function _isAccountDisabled() {
+  return (_dbBackend() === 'postgres' ? _pgIsAccountDisabled : _shIsAccountDisabled).apply(null, arguments);
+}
+
+function _shCleanExpiredSessions() {
+  try {
+    var sheet = getSessionsSheet();
+    var data = sheet.getDataRange().getValues();
+    var now = new Date();
+    for (var i = data.length - 1; i >= 1; i--) {
+      if (data[i][4] && now > new Date(data[i][4])) {
+        sheet.deleteRow(i + 1);
+      }
+    }
+  } catch (e) {}
+}
+
+function _pgCleanExpiredSessions() {
+  try { _dbCleanExpiredSessions(); } catch (e) {}
+}
+
+function _cleanExpiredSessions() {
+  return (_dbBackend() === 'postgres' ? _pgCleanExpiredSessions : _shCleanExpiredSessions).apply(null, arguments);
+}
+
+// Looked up at render time (not via getSharedEventView) so doGet can skip
+// sending the add/edit/delete transaction markup entirely for the common
+// view-only case, instead of shipping it and hiding it with CSS.
+function _shSharePermissionByToken(shareToken) {
+  if (!shareToken) return 'view';
+  var data = getEventSharesSheet().getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][1] === shareToken) return _sharePermission(data[i]);
+  }
+  return 'view';
+}
+
+// Looked up at render time (not via getSharedEventView) so doGet can skip
+// sending the add/edit/delete transaction markup entirely for the common
+// view-only case, instead of shipping it and hiding it with CSS.
+function _pgSharePermissionByToken(shareToken) {
+  if (!shareToken) return 'view';
+  var event = _dbGetEventByShareToken(shareToken);
+  return event ? event.sharePerm : 'view';
+}
+
+function _sharePermissionByToken() {
+  return (_dbBackend() === 'postgres' ? _pgSharePermissionByToken : _shSharePermissionByToken).apply(null, arguments);
+}
+
+function _shEventOwnedBy(ss, eventId, accountId) {
+  var data = ss.getSheetByName('Events').getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0] === eventId && data[i][2] === accountId) return true;
+  }
+  return false;
+}
+
+function _pgEventOwnedBy(eventId, accountId, connOpt) {
+  var event = _dbGetEventById(eventId, connOpt);
+  return !!event && event.accountId === accountId;
+}
+
+function _eventOwnedBy() {
+  return (_dbBackend() === 'postgres' ? _pgEventOwnedBy : _shEventOwnedBy).apply(null, arguments);
+}
+
+function _shShareEventId(shareToken, requireEdit) {
+  if (!shareToken) return null;
+  var data = getEventSharesSheet().getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][1] === shareToken) {
+      if (requireEdit && _sharePermission(data[i]) !== 'edit') return null;
+      return data[i][0];
+    }
+  }
+  return null;
+}
+
+function _pgShareEventId(shareToken, requireEdit, connOpt) {
+  if (!shareToken) return null;
+  var event = _dbGetEventByShareToken(shareToken, connOpt);
+  if (!event) return null;
+  if (requireEdit && event.sharePerm !== 'edit') return null;
+  return event.id;
+}
+
+function _shareEventId() {
+  return (_dbBackend() === 'postgres' ? _pgShareEventId : _shShareEventId).apply(null, arguments);
+}
+
+function _shReadSlipImage(fileId) {
+  if (!_isKnownSlipFile(fileId)) return _fail('Photo not found');
+  var d = _slipBase64(fileId);
+  return { success: true, mimeType: d.mimeType, base64: d.base64 };
+}
+
+function _pgReadSlipImage(fileId, connOpt) {
   if (!_isKnownSlipFile(fileId, connOpt)) return _fail('Photo not found');
   var d = _slipBase64(fileId);
   return { success: true, mimeType: d.mimeType, base64: d.base64 };
 }
 
-function getSlipImage(token, fileId) {
+function _readSlipImage() {
+  return (_dbBackend() === 'postgres' ? _pgReadSlipImage : _shReadSlipImage).apply(null, arguments);
+}
+
+function _shIsKnownSlipFile(fileId) {
+  var data = getTransactionSlipsSheet().getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][5] === fileId) return true;
+  }
+  return false;
+}
+
+function _pgIsKnownSlipFile(fileId, connOpt) {
+  return _dbIsKnownReceiptFile(fileId, connOpt);
+}
+
+function _isKnownSlipFile() {
+  return (_dbBackend() === 'postgres' ? _pgIsKnownSlipFile : _shIsKnownSlipFile).apply(null, arguments);
+}
+
+function _shTrashSlipFilesForTx(transactionId) {
+  var data = getTransactionSlipsSheet().getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0] === transactionId && data[i][5]) _deleteSlipFile(data[i][5]);
+  }
+}
+
+function _pgTrashSlipFilesForTx(transactionId, connOpt) {
+  _dbGetReceiptFileIdsByTransaction(transactionId, connOpt).forEach(_deleteSlipFile);
+}
+
+function _trashSlipFilesForTx() {
+  return (_dbBackend() === 'postgres' ? _pgTrashSlipFilesForTx : _shTrashSlipFilesForTx).apply(null, arguments);
+}
+
+function _shGetSlipImageViaShare(shareToken, fileId) {
   try {
-    requireAuth(token);
+    if (!_shareEventId(shareToken, false)) return _fail('Invalid link');
     return _readSlipImage(fileId);
   } catch (e) {
     return _fail(e);
   }
 }
 
-function getSlipImageViaShare(shareToken, fileId) {
+function _pgGetSlipImageViaShare(shareToken, fileId) {
   try {
     var conn = _dbConn();
     try {
@@ -945,60 +1518,1824 @@ function getSlipImageViaShare(shareToken, fileId) {
   }
 }
 
-function _isKnownSlipFile(fileId, connOpt) {
-  return _dbIsKnownReceiptFile(fileId, connOpt);
+function getSlipImageViaShare() {
+  return (_dbBackend() === 'postgres' ? _pgGetSlipImageViaShare : _shGetSlipImageViaShare).apply(null, arguments);
 }
 
-function _deleteSlipFile(fileId) {
-  if (!fileId) return; // legacy rows predating Drive storage have no fileId - nothing to trash
-  try { DriveApp.getFileById(fileId).setTrashed(true) } catch (e) { /* already gone - ignore */ }
+// Refreshes the cached userInfo for the CURRENT session/device only (the one
+// that made this request) so a profile edit shows up immediately without
+// re-login. Other devices logged into the same account keep their own
+// cached copy until it naturally expires or they log in again — same
+// limitation that already exists for admin-driven role changes.
+function _shUpdateSessionUserInfo(token, userInfo) {
+  var sheet = getSessionsSheet();
+  var data = sheet.getDataRange().getValues();
+  var row = _findRow(data, token);
+  var ttl = CACHE_EXPIRY;
+  if (row !== -1) {
+    sheet.getRange(row + 1, 3).setValue(JSON.stringify(userInfo));
+    ttl = _cacheTtlFor(data[row][4]);
+  }
+  getCache().put('token_' + token, JSON.stringify(userInfo), ttl);
 }
 
-function _trashSlipFilesForTx(transactionId, connOpt) {
-  _dbGetReceiptFileIdsByTransaction(transactionId, connOpt).forEach(_deleteSlipFile);
-}
-
-function _trashSlipFilesForEvent(eventId, connOpt) {
-  _dbGetReceiptFileIdsByEvent(eventId, connOpt).forEach(_deleteSlipFile);
-}
-
-function _lookupSession(token) {
+// Refreshes the cached userInfo for the CURRENT session/device only (the one
+// that made this request) so a profile edit shows up immediately without
+// re-login. Other devices logged into the same account keep their own
+// cached copy until it naturally expires or they log in again — same
+// limitation that already exists for admin-driven role changes.
+function _pgUpdateSessionUserInfo(token, userInfo) {
   var found = _dbGetSession(token);
-  if (!found) return null;
-  if (new Date() >= new Date(found.expiresAt)) { _dbDeleteSession(token); return null }
-  if (_isAccountDisabled(found.userInfo.id)) { _dbDeleteSession(token); return null }
-  return { userInfo: found.userInfo, expiresAt: found.expiresAt };
+  var ttl = CACHE_EXPIRY;
+  if (found) {
+    _dbUpdateSessionInfo(token, userInfo);
+    ttl = _cacheTtlFor(found.expiresAt);
+  }
+  getCache().put('token_' + token, JSON.stringify(userInfo), ttl);
 }
 
-// Caps the cache entry so it never outlives the session's real expiry - matters
-// when an admin configures a short sessionMinutes value (e.g. for testing).
-function _cacheTtlFor(expiresAtIso) {
-  var remainingSec = Math.floor((new Date(expiresAtIso).getTime() - Date.now()) / 1000);
-  return Math.max(1, Math.min(CACHE_EXPIRY, remainingSec));
+function _updateSessionUserInfo() {
+  return (_dbBackend() === 'postgres' ? _pgUpdateSessionUserInfo : _shUpdateSessionUserInfo).apply(null, arguments);
 }
 
-// Only consulted on session-cache misses (~every CACHE_EXPIRY), so a disabled
-// account is locked out within a few hours without a per-request sheet read.
-function _isAccountDisabled(accountId) {
-  return _dbIsAccountDisabled(accountId);
+function _shLoginUser(username, password) {
+  try {
+    var ss = getSpreadsheet();
+    var sheet = ss.getSheetByName('Accounts');
+    var data = sheet.getDataRange().getValues();
+    var hashed = hashPassword(password);
+
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      if (row[2].toLowerCase() === username.toLowerCase() && row[3] === hashed) {
+        if (row[7] === 'disabled') return _fail('This account has been disabled');
+        // Update lastLogin
+        sheet.getRange(i + 1, 6).setValue(new Date().toISOString());
+
+        var token = generateToken();
+        var userInfo = {
+          id: row[0],
+          displayName: row[1],
+          username: row[2],
+          role: row[6]
+        };
+        var now = new Date();
+        var sessionMinutes = getAppSettings().sessionMinutes;
+        var expires = new Date(now.getTime() + sessionMinutes * 60000);
+        var cacheTtl = Math.max(1, Math.min(CACHE_EXPIRY, sessionMinutes * 60));
+        getCache().put('token_' + token, JSON.stringify(userInfo), cacheTtl);
+        getSessionsSheet().appendRow([token, row[0], JSON.stringify(userInfo), now.toISOString(), expires.toISOString()]);
+        _cleanExpiredSessions();
+        return { success: true, token: token, user: userInfo, url: ScriptApp.getService().getUrl() + '?tk=' + encodeURIComponent(token) };
+      }
+    }
+    return _fail('Invalid username or password');
+  } catch (e) {
+    return _fail(e);
+  }
 }
 
-function _cleanExpiredSessions() {
-  try { _dbCleanExpiredSessions(); } catch (e) {}
+function _pgLoginUser(username, password) {
+  try {
+    var conn = _dbConn();
+    var account, token, userInfo, expires;
+    try {
+      account = _dbGetAccountByUsername(username, conn);
+      var hashed = hashPassword(password);
+      if (!account || account.passwordHash !== hashed) return _fail('Invalid username or password');
+      if (account.status === 'disabled') return _fail('This account has been disabled');
+      _dbUpdateAccountLastLogin(account.id, conn);
+
+      token = generateToken();
+      userInfo = { id: account.id, displayName: account.displayName, username: account.username, role: account.role };
+      var sessionMinutes = getAppSettings().sessionMinutes;
+      expires = new Date(new Date().getTime() + sessionMinutes * 60000);
+      var cacheTtl = Math.max(1, Math.min(CACHE_EXPIRY, sessionMinutes * 60));
+      getCache().put('token_' + token, JSON.stringify(userInfo), cacheTtl);
+      _dbCreateSession(token, account.id, userInfo, expires.toISOString(), conn);
+      _dbCleanExpiredSessions(conn);
+    } finally { conn.close(); }
+    return { success: true, token: token, user: userInfo, url: ScriptApp.getService().getUrl() + '?tk=' + encodeURIComponent(token) };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function loginUser() {
+  return (_dbBackend() === 'postgres' ? _pgLoginUser : _shLoginUser).apply(null, arguments);
+}
+
+function _shRegisterUser(displayName, username, password) {
+  try {
+    var ss = getSpreadsheet();
+    var sheet = ss.getSheetByName('Accounts');
+    var data = sheet.getDataRange().getValues();
+
+    // Check username uniqueness
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][2].toLowerCase() === username.toLowerCase()) {
+        return _fail('Username already taken');
+      }
+    }
+
+    var pwErr = _validatePassword(password);
+    if (pwErr) return _fail(pwErr);
+
+    var now = new Date().toISOString();
+    var id = Utilities.getUuid();
+    var hashed = hashPassword(password);
+    sheet.appendRow([id, displayName, username.toLowerCase(), hashed, now, now, 'user', 'active', '', '']);
+
+    // Create "Me" friend
+    var friendsSheet = ss.getSheetByName('Friends');
+    friendsSheet.appendRow([Utilities.getUuid(), id, 'Me', 'true']);
+
+    return { success: true };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgRegisterUser(displayName, username, password) {
+  try {
+    var pwErr = _validatePassword(password);
+    if (pwErr) return _fail(pwErr);
+
+    var conn = _dbConn();
+    try {
+      if (_dbGetAccountByUsername(username, conn)) return _fail('Username already taken');
+      var hashed = hashPassword(password);
+      var id = _dbInsertAccount(displayName, username.toLowerCase(), hashed, 'user', 'active', conn);
+      _dbInsertFriend(id, 'Me', true, conn);
+      return { success: true };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function registerUser() {
+  return (_dbBackend() === 'postgres' ? _pgRegisterUser : _shRegisterUser).apply(null, arguments);
+}
+
+function _shLogoutUser(token) {
+  try {
+    getCache().remove('token_' + token);
+    var sheet = getSessionsSheet();
+    var row = _findRow(sheet.getDataRange().getValues(), token);
+    if (row !== -1) sheet.deleteRow(row + 1);
+    return { success: true };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgLogoutUser(token) {
+  try {
+    getCache().remove('token_' + token);
+    _dbDeleteSession(token);
+    return { success: true };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function logoutUser() {
+  return (_dbBackend() === 'postgres' ? _pgLogoutUser : _shLogoutUser).apply(null, arguments);
+}
+
+function _shGetMyProfile(token) {
+  try {
+    var user = requireAuth(token);
+    var data = getSpreadsheet().getSheetByName('Accounts').getDataRange().getValues();
+    var row = _findRow(data, user.id);
+    if (row === -1) return _fail('Account not found');
+    return { success: true, displayName: data[row][1], username: data[row][2], photo: data[row][9] || '' };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgGetMyProfile(token) {
+  try {
+    var user = requireAuth(token);
+    var account = _dbGetAccountById(user.id);
+    if (!account) return _fail('Account not found');
+    return { success: true, displayName: account.displayName, username: account.username, photo: account.photo };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function getMyProfile() {
+  return (_dbBackend() === 'postgres' ? _pgGetMyProfile : _shGetMyProfile).apply(null, arguments);
+}
+
+// photo: pass a string to set it ('' clears it); omit/null to leave unchanged.
+function _shUpdateProfile(token, displayName, photo) {
+  try {
+    var user = requireAuth(token);
+    if (!displayName || !displayName.trim()) return _fail('Name is required');
+    var trimmed = displayName.trim();
+    var ss = getSpreadsheet();
+
+    var acSheet = ss.getSheetByName('Accounts');
+    var acData = acSheet.getDataRange().getValues();
+    var acRow = _findRow(acData, user.id);
+    if (acRow === -1) return _fail('Account not found');
+    acSheet.getRange(acRow + 1, 2).setValue(trimmed);
+    if (typeof photo === 'string') acSheet.getRange(acRow + 1, 10).setValue(photo);
+
+    // Keep the self-friend (shown as payer/participant in every event) in sync.
+    var frSheet = ss.getSheetByName('Friends');
+    var frData = frSheet.getDataRange().getValues();
+    var selfRow = _findSelfFriendRow(frData, user.id);
+    if (selfRow !== -1) {
+      frSheet.getRange(selfRow + 1, 3).setValue(trimmed);
+      if (frData[selfRow][3] !== 'true') frSheet.getRange(selfRow + 1, 4).setValue('true'); // backfill pre-migration rows
+    }
+
+    var userInfo = { id: user.id, displayName: trimmed, username: user.username, role: user.role };
+    _updateSessionUserInfo(token, userInfo);
+    return { success: true, user: userInfo };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+// photo: pass a string to set it ('' clears it); omit/null to leave unchanged.
+function _pgUpdateProfile(token, displayName, photo) {
+  try {
+    var user = requireAuth(token);
+    if (!displayName || !displayName.trim()) return _fail('Name is required');
+    var trimmed = displayName.trim();
+
+    var conn = _dbConn();
+    try {
+      var account = _dbGetAccountById(user.id, conn);
+      if (!account) return _fail('Account not found');
+      _dbUpdateAccountProfile(user.id, trimmed, photo, conn);
+
+      // Keep the self-friend (shown as payer/participant in every event) in sync.
+      var selfFriend = _dbFindSelfFriend(user.id, conn);
+      if (selfFriend) _dbUpdateFriendName(selfFriend.id, trimmed, conn);
+    } finally { conn.close(); }
+
+    var userInfo = { id: user.id, displayName: trimmed, username: user.username, role: user.role };
+    _updateSessionUserInfo(token, userInfo);
+    return { success: true, user: userInfo };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function updateProfile() {
+  return (_dbBackend() === 'postgres' ? _pgUpdateProfile : _shUpdateProfile).apply(null, arguments);
+}
+
+function _shChangePassword(token, currentPassword, newPassword) {
+  try {
+    var user = requireAuth(token);
+    var pwErr = _validatePassword(newPassword);
+    if (pwErr) return _fail(pwErr);
+    var sheet = getSpreadsheet().getSheetByName('Accounts');
+    var data = sheet.getDataRange().getValues();
+    var row = _findRow(data, user.id);
+    if (row === -1) return _fail('Account not found');
+    if (data[row][3] !== hashPassword(currentPassword || '')) return _fail('Current password is incorrect');
+    sheet.getRange(row + 1, 4).setValue(hashPassword(newPassword));
+    return { success: true };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgChangePassword(token, currentPassword, newPassword) {
+  try {
+    var user = requireAuth(token);
+    var pwErr = _validatePassword(newPassword);
+    if (pwErr) return _fail(pwErr);
+    var conn = _dbConn();
+    try {
+      var account = _dbGetAccountById(user.id, conn);
+      if (!account) return _fail('Account not found');
+      if (account.passwordHash !== hashPassword(currentPassword || '')) return _fail('Current password is incorrect');
+      _dbUpdateAccountPassword(user.id, hashPassword(newPassword), conn);
+      return { success: true };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function changePassword() {
+  return (_dbBackend() === 'postgres' ? _pgChangePassword : _shChangePassword).apply(null, arguments);
+}
+
+function _shGetHomeData(token) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    var evData = ss.getSheetByName('Events').getDataRange().getValues();
+    var frData = ss.getSheetByName('Friends').getDataRange().getValues();
+    var events = [], friends = [], friendMap = {};
+    for (var i = 1; i < evData.length; i++) {
+      if (evData[i][2] === user.id)
+        events.push({ id: evData[i][0], name: evData[i][1], accountId: evData[i][2], createdAt: evData[i][3], active: evData[i][4] !== false, icon: evData[i][5] || '' });
+    }
+    events.sort(function(a,b){ return b.createdAt > a.createdAt ? 1 : -1 });
+    for (var i = 1; i < frData.length; i++) {
+      if (frData[i][1] === user.id) {
+        friends.push({ id: frData[i][0], accountId: frData[i][1], name: frData[i][2] });
+        friendMap[frData[i][0]] = frData[i][2];
+      }
+    }
+
+    // Settlement state per event for the Home filter tabs, via the same
+    // engine as getSummary. Each sheet is read once and shared via *Opt params.
+    var rowsByEvent = {};
+    events.forEach(function (ev) { rowsByEvent[ev.id] = [] });
+    var dtData = ss.getSheetByName('Details').getDataRange().getValues();
+    var paidTxSet = _paidTransactionSet();
+    for (var i = 1; i < dtData.length; i++) {
+      if (rowsByEvent.hasOwnProperty(dtData[i][1]) && !paidTxSet[dtData[i][0]]) {
+        var payId = dtData[i][2];
+        _splitsToRows(dtData[i]).forEach(function (s) { rowsByEvent[dtData[i][1]].push({ payId: payId, friendId: s.friendId, amount: s.amount }) });
+      }
+    }
+    var efData = getEventFriendsSheet().getDataRange().getValues();
+    var spData = getSettlementPaymentsSheet().getDataRange().getValues();
+    events.forEach(function (ev) {
+      var rows = rowsByEvent[ev.id];
+      if (!rows.length) { ev.settled = true; return }
+      var evFriendMap = {};
+      _getEventFriends(ss, ev.id, user.id, friendMap, efData, dtData).forEach(function (f) { evFriendMap[f.id] = f.name });
+      ev.settled = _computeSettlementsWithPaid(rows, evFriendMap, ev.id, spData).every(function (s) { return s.paid });
+    });
+
+    return { success: true, events: events, friends: friends };
+  } catch (e) { return _fail(e) }
+}
+
+function _pgGetHomeData(token) {
+  try {
+    var user = requireAuth(token);
+    // One shared connection for all three reads below, instead of three
+    // separate round-trips to Neon - this RPC runs on every Home load.
+    var conn = _dbConn();
+    var events, friends, friendMap = {}, input;
+    try {
+      events = _dbGetEventsByAccount(user.id, conn);
+      var dbFriends = _dbGetFriendsByAccount(user.id, conn);
+      friends = [];
+      dbFriends.forEach(function (f) {
+        friends.push({ id: f.id, accountId: user.id, name: f.name });
+        friendMap[f.id] = f.name;
+      });
+      // Settlement state per event for the Home filter tabs, via the same
+      // engine as getSummary.
+      input = _dbGetHomeSettlementInput(user.id, conn);
+    } finally { conn.close(); }
+
+    events.forEach(function (ev) {
+      var rows = input.rowsByEvent[ev.id] || [];
+      if (!rows.length) { ev.settled = true; return }
+      var settlements = _computeSettlements(rows, friendMap);
+      var paidSet = input.paidSetByEvent[ev.id] || {};
+      ev.settled = settlements.every(function (s) { return !!paidSet[_settleKey(s.from, s.to, s.amount)] });
+    });
+
+    return { success: true, events: events, friends: friends };
+  } catch (e) { return _fail(e) }
+}
+
+function getHomeData() {
+  return (_dbBackend() === 'postgres' ? _pgGetHomeData : _shGetHomeData).apply(null, arguments);
+}
+
+// Shared core behind getDetailData (authenticated) and getSharedEventView
+// (public share link) so both paths compute details/friends/settlements/slips
+// identically instead of maintaining two parallel implementations.
+function _shBuildDetailPayload(ss, eventId, accountId) {
+  var dtData = ss.getSheetByName('Details').getDataRange().getValues();
+  var paidTxSet = _paidTransactionSet();
+  var details = [], rows = [];
+  for (var i = 1; i < dtData.length; i++) {
+    if (dtData[i][1] === eventId) {
+      var txPaid = !!paidTxSet[dtData[i][0]];
+      var payId = dtData[i][2];
+      _expandDetailRow(dtData[i]).forEach(function (d) { d.paid = txPaid; details.push(d) });
+      // Paid transactions are excluded from settlement math - see markTransactionPaid.
+      if (!txPaid) _splitsToRows(dtData[i]).forEach(function (s) { rows.push({ payId: payId, friendId: s.friendId, amount: s.amount }) });
+    }
+  }
+  var frRawData = ss.getSheetByName('Friends').getDataRange().getValues();
+  var ownedFriendMap = {};
+  for (var i = 1; i < frRawData.length; i++) {
+    if (frRawData[i][1] === accountId) ownedFriendMap[frRawData[i][0]] = frRawData[i][2];
+  }
+  var selfRow = _findSelfFriendRow(frRawData, accountId);
+  var selfFriendId = selfRow !== -1 ? frRawData[selfRow][0] : null;
+
+  var friends = _getEventFriends(ss, eventId, accountId, ownedFriendMap, undefined, dtData);
+  var friendMap = {};
+  friends.forEach(function (f) { friendMap[f.id] = f.name });
+  // _computeSettlementsWithPaid so share-link visitors see the same "paid"
+  // checkmarks the owner does, bundled here to avoid a second round-trip.
+  var settlements = _computeSettlementsWithPaid(rows, friendMap, eventId);
+
+  // TransactionSlips isn't keyed by eventId - filter to this event's
+  // transactionIds or every event's photos ship down on every load.
+  var eventTxIds = {};
+  details.forEach(function (d) { eventTxIds[d.transactionId] = true });
+  var slipSheet = getTransactionSlipsSheet();
+  var slipData = _backfillSlipIds(slipSheet, slipSheet.getDataRange().getValues());
+  var slips = {};
+  for (var i = 1; i < slipData.length; i++) {
+    if (slipData[i][1] && eventTxIds[slipData[i][0]]) {
+      var stid = slipData[i][0];
+      if (!slips[stid]) slips[stid] = [];
+      slips[stid].push({ id: slipData[i][3], slip: slipData[i][1], slipHi: slipData[i][4] || '' });
+    }
+  }
+
+  // selfFriendId: lets the client show the account's own profile photo.
+  return { details: details, friends: friends, settlements: settlements, selfFriendId: selfFriendId, slips: slips };
+}
+
+// Shared core behind getDetailData (authenticated) and getSharedEventView
+// (public share link) so both paths compute details/friends/settlements/slips
+// identically instead of maintaining two parallel implementations.
+// connOpt: share one connection across every read below (transactions/
+// splits, self-friend, participants, settlements, receipts) instead of
+// opening 5-6 separate ones - this backs the most-loaded page in the app
+// (Detail), both for the owner and for public share-link visitors.
+function _pgBuildDetailPayload(eventId, accountId, connOpt) {
+  return _withConn(connOpt, function (conn) {
+    var transactions = _dbGetTransactionsByEvent(eventId, conn);
+    var details = [], rows = [];
+    transactions.forEach(function (tx) {
+      tx.splits.forEach(function (s) {
+        details.push({
+          id: tx.id + '_' + s.friendId, eventId: eventId, transactionId: tx.id,
+          payId: tx.payId, friendId: s.friendId, amount: s.amount, totalAmount: tx.amount,
+          description: tx.description, createdAt: tx.createdAt, paid: tx.excluded
+        });
+      });
+      // Excluded transactions are left out of settlement math entirely - see markTransactionPaid.
+      if (!tx.excluded) tx.splits.forEach(function (s) { rows.push({ payId: tx.payId, friendId: s.friendId, amount: s.amount }) });
+    });
+
+    var selfFriend = _dbFindSelfFriend(accountId, conn);
+    var selfFriendId = selfFriend ? selfFriend.id : null;
+
+    var friends = _dbGetParticipantsByEvent(eventId, conn);
+    var friendMap = {};
+    friends.forEach(function (f) { friendMap[f.id] = f.name });
+    // _computeSettlementsWithPaid so share-link visitors see the same "paid"
+    // checkmarks the owner does, bundled here to avoid a second round-trip.
+    var settlements = _computeSettlementsWithPaid(rows, friendMap, eventId, conn);
+
+    var slips = _dbGetReceiptsByEvent(eventId, conn);
+
+    // selfFriendId: lets the client show the account's own profile photo.
+    return { details: details, friends: friends, settlements: settlements, selfFriendId: selfFriendId, slips: slips };
+  });
+}
+
+function _buildDetailPayload() {
+  return (_dbBackend() === 'postgres' ? _pgBuildDetailPayload : _shBuildDetailPayload).apply(null, arguments);
+}
+
+function _shGetDetailData(token, eventId) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
+    var payload = _buildDetailPayload(ss, eventId, user.id);
+    payload.success = true;
+    return payload;
+  } catch (e) { return _fail(e) }
+}
+
+function _pgGetDetailData(token, eventId) {
+  try {
+    var user = requireAuth(token);
+    var conn = _dbConn();
+    try {
+      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Event not found');
+      var payload = _buildDetailPayload(eventId, user.id, conn);
+      payload.success = true;
+      return payload;
+    } finally { conn.close(); }
+  } catch (e) { return _fail(e) }
+}
+
+function getDetailData() {
+  return (_dbBackend() === 'postgres' ? _pgGetDetailData : _shGetDetailData).apply(null, arguments);
+}
+
+// Combined fetch for the Add/Manage Friends sheet — one round trip instead of
+// separate getFriends + getEventFriends calls.
+function _shGetEventFriendsData(token, eventId) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
+
+    var frData = ss.getSheetByName('Friends').getDataRange().getValues();
+    var friendMap = {};
+    var allFriends = [];
+    for (var i = 1; i < frData.length; i++) {
+      if (frData[i][1] === user.id) {
+        friendMap[frData[i][0]] = frData[i][2];
+        allFriends.push({ id: frData[i][0], name: frData[i][2] });
+      }
+    }
+
+    var linkedFriends = _getEventFriends(ss, eventId, user.id, friendMap);
+    return { success: true, allFriends: allFriends, linkedFriends: linkedFriends };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+// Combined fetch for the Add/Manage Friends sheet — one round trip instead of
+// separate getFriends + getEventFriends calls.
+function _pgGetEventFriendsData(token, eventId) {
+  try {
+    var user = requireAuth(token);
+    var conn = _dbConn();
+    try {
+      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Event not found');
+      var allFriends = _dbGetFriendsByAccount(user.id, conn).map(function (f) { return { id: f.id, name: f.name }; });
+      var linkedFriends = _dbGetParticipantsByEvent(eventId, conn);
+      return { success: true, allFriends: allFriends, linkedFriends: linkedFriends };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function getEventFriendsData() {
+  return (_dbBackend() === 'postgres' ? _pgGetEventFriendsData : _shGetEventFriendsData).apply(null, arguments);
+}
+
+function _shAddFriendToEvent(token, eventId, name) {
+  try {
+    var user = requireAuth(token);
+    if (!name || name.trim() === '') return _fail('Name is required');
+    var ss = getSpreadsheet();
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
+    var trimmed = name.trim();
+
+    var frSheet = ss.getSheetByName('Friends');
+    var frData = frSheet.getDataRange().getValues();
+    var friendId = null;
+    for (var i = 1; i < frData.length; i++) {
+      if (frData[i][1] === user.id && frData[i][2].toLowerCase() === trimmed.toLowerCase()) {
+        friendId = frData[i][0];
+        break;
+      }
+    }
+    if (!friendId) {
+      friendId = Utilities.getUuid();
+      frSheet.appendRow([friendId, user.id, trimmed]);
+    }
+
+    var efSheet = getEventFriendsSheet();
+    var efData = efSheet.getDataRange().getValues();
+    var alreadyLinked = false;
+    for (var i = 1; i < efData.length; i++) {
+      if (efData[i][1] === eventId && efData[i][2] === friendId) { alreadyLinked = true; break; }
+    }
+    if (!alreadyLinked) {
+      efSheet.appendRow([Utilities.getUuid(), eventId, friendId, new Date().toISOString()]);
+    }
+
+    return { success: true, friend: { id: friendId, name: trimmed } };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgAddFriendToEvent(token, eventId, name) {
+  try {
+    var user = requireAuth(token);
+    if (!name || name.trim() === '') return _fail('Name is required');
+    var trimmed = name.trim();
+    var conn = _dbConn();
+    try {
+      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Event not found');
+      var existing = _dbFindFriendByName(user.id, trimmed, conn);
+      var friendId = existing ? existing.id : _dbInsertFriend(user.id, trimmed, false, conn);
+      _dbAddParticipant(eventId, friendId, user.id, conn);
+      return { success: true, friend: { id: friendId, name: trimmed } };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function addFriendToEvent() {
+  return (_dbBackend() === 'postgres' ? _pgAddFriendToEvent : _shAddFriendToEvent).apply(null, arguments);
+}
+
+function _shSetEventFriends(token, eventId, friendIds) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
+
+    // Read each sheet exactly once for this request.
+    var frData = ss.getSheetByName('Friends').getDataRange().getValues();
+    var ownedFriendMap = {};
+    for (var i = 1; i < frData.length; i++) {
+      if (frData[i][1] === user.id) ownedFriendMap[frData[i][0]] = frData[i][2];
+    }
+    var wantedIds = (friendIds || []).filter(function (fid) { return ownedFriendMap.hasOwnProperty(fid); });
+
+    var dtData = ss.getSheetByName('Details').getDataRange().getValues();
+    var usedInEvent = {};
+    var derivedFromDetails = {};
+    for (var i = 1; i < dtData.length; i++) {
+      if (dtData[i][1] === eventId) {
+        var rowPayId = dtData[i][2];
+        usedInEvent[rowPayId] = true;
+        if (ownedFriendMap.hasOwnProperty(rowPayId)) derivedFromDetails[rowPayId] = true;
+        _splitsToRows(dtData[i]).forEach(function (s) {
+          usedInEvent[s.friendId] = true;
+          if (ownedFriendMap.hasOwnProperty(s.friendId)) derivedFromDetails[s.friendId] = true;
+        });
+      }
+    }
+
+    var efSheet = getEventFriendsSheet();
+    var efData = efSheet.getDataRange().getValues();
+    var hasAnyLink = false;
+    var currentIdSet = {};
+    for (var i = 1; i < efData.length; i++) {
+      if (efData[i][1] === eventId) {
+        hasAnyLink = true;
+        if (ownedFriendMap.hasOwnProperty(efData[i][2])) currentIdSet[efData[i][2]] = true;
+      }
+    }
+    // Same lazy migration as _getEventFriends, inlined to avoid re-reading Details/EventFriends.
+    if (!hasAnyLink) {
+      Object.keys(derivedFromDetails).forEach(function (fid) { currentIdSet[fid] = true; });
+    }
+
+    var blocked = [];
+    var toAdd = wantedIds.filter(function (fid) { return !currentIdSet[fid]; });
+    var toRemove = Object.keys(currentIdSet).filter(function (fid) {
+      if (wantedIds.indexOf(fid) !== -1) return false;
+      if (usedInEvent[fid]) { blocked.push({ id: fid, name: ownedFriendMap[fid] }); return false; }
+      return true;
+    });
+
+    toRemove.forEach(function (fid) { delete currentIdSet[fid]; });
+
+    var now = new Date().toISOString();
+    var newRows = [];
+    if (!hasAnyLink) {
+      Object.keys(derivedFromDetails).forEach(function (fid) {
+        if (toRemove.indexOf(fid) === -1) newRows.push([Utilities.getUuid(), eventId, fid, now]);
+      });
+    }
+    toAdd.forEach(function (fid) {
+      newRows.push([Utilities.getUuid(), eventId, fid, now]);
+      currentIdSet[fid] = true;
+    });
+
+    // Single read + single write for the whole mutation, not one
+    // deleteRow()/appendRow() per changed row.
+    if (toRemove.length || newRows.length) {
+      var keepRows = efData.filter(function (row, i) {
+        return i > 0 && !(row[1] === eventId && toRemove.indexOf(row[2]) !== -1);
+      });
+      efSheet.clearContents();
+      var allRows = [efData[0]].concat(keepRows).concat(newRows);
+      efSheet.getRange(1, 1, allRows.length, 4).setValues(allRows);
+    }
+
+    var finalFriends = Object.keys(currentIdSet).map(function (fid) {
+      return { id: fid, name: ownedFriendMap[fid] };
+    });
+    return { success: true, friends: finalFriends, blocked: blocked };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgSetEventFriends(token, eventId, friendIds) {
+  try {
+    var user = requireAuth(token);
+    var conn = _dbConn();
+    try {
+      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Event not found');
+
+      var ownedFriendMap = {};
+      _dbGetFriendsByAccount(user.id, conn).forEach(function (f) { ownedFriendMap[f.id] = f.name });
+      var wantedIds = (friendIds || []).filter(function (fid) { return ownedFriendMap.hasOwnProperty(fid); });
+
+      var usedInEvent = _dbUsedFriendIdsInEvent(eventId, conn);
+      var currentIdSet = {};
+      _dbGetParticipantsByEvent(eventId, conn).forEach(function (f) { currentIdSet[f.id] = true; });
+
+      var blocked = [];
+      var toAdd = wantedIds.filter(function (fid) { return !currentIdSet[fid]; });
+      var toRemove = Object.keys(currentIdSet).filter(function (fid) {
+        if (wantedIds.indexOf(fid) !== -1) return false;
+        if (usedInEvent[fid]) { blocked.push({ id: fid, name: ownedFriendMap[fid] }); return false; }
+        return true;
+      });
+
+      _dbSyncParticipants(eventId, toAdd, toRemove, user.id, conn);
+      toRemove.forEach(function (fid) { delete currentIdSet[fid]; });
+      toAdd.forEach(function (fid) { currentIdSet[fid] = true; });
+
+      var finalFriends = Object.keys(currentIdSet).map(function (fid) {
+        return { id: fid, name: ownedFriendMap[fid] };
+      });
+      return { success: true, friends: finalFriends, blocked: blocked };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function setEventFriends() {
+  return (_dbBackend() === 'postgres' ? _pgSetEventFriends : _shSetEventFriends).apply(null, arguments);
+}
+
+function _shAddEvent(token, name, icon) {
+  try {
+    var user = requireAuth(token);
+    if (!name || name.trim() === '') return _fail('Event name is required');
+    var ss = getSpreadsheet();
+    var sheet = ss.getSheetByName('Events');
+    var id = Utilities.getUuid();
+    var now = new Date().toISOString();
+    sheet.appendRow([id, name.trim(), user.id, now, '', icon || '']);
+
+    // Auto-link the account's own self-friend so every event starts with yourself in it
+    var frData = ss.getSheetByName('Friends').getDataRange().getValues();
+    var selfRow = _findSelfFriendRow(frData, user.id);
+    if (selfRow !== -1) {
+      getEventFriendsSheet().appendRow([Utilities.getUuid(), id, frData[selfRow][0], now]);
+    }
+
+    return { success: true, event: { id: id, name: name.trim(), accountId: user.id, createdAt: now, icon: icon || '' } };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgAddEvent(token, name, icon) {
+  try {
+    var user = requireAuth(token);
+    if (!name || name.trim() === '') return _fail('Event name is required');
+    var trimmed = name.trim();
+    var conn = _dbConn();
+    try {
+      var created = _dbInsertEvent(user.id, trimmed, icon || '', user.id, conn);
+
+      // Auto-link the account's own self-friend so every event starts with yourself in it
+      var selfFriend = _dbFindSelfFriend(user.id, conn);
+      if (selfFriend) _dbAddParticipant(created.id, selfFriend.id, user.id, conn);
+
+      return { success: true, event: { id: created.id, name: trimmed, accountId: user.id, createdAt: created.createdAt, icon: icon || '' } };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function addEvent() {
+  return (_dbBackend() === 'postgres' ? _pgAddEvent : _shAddEvent).apply(null, arguments);
+}
+
+function _shRenameEvent(token, eventId, name, icon) {
+  try {
+    var user = requireAuth(token);
+    if (!name || name.trim() === '') return _fail('Event name is required');
+    var ss = getSpreadsheet();
+    var sheet = ss.getSheetByName('Events');
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] === eventId && data[i][2] === user.id) {
+        sheet.getRange(i + 1, 2).setValue(name.trim());
+        sheet.getRange(i + 1, 6).setValue(icon || '');
+        return { success: true, name: name.trim(), icon: icon || '' };
+      }
+    }
+    return _fail('Event not found');
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgRenameEvent(token, eventId, name, icon) {
+  try {
+    var user = requireAuth(token);
+    if (!name || name.trim() === '') return _fail('Event name is required');
+    var conn = _dbConn();
+    try {
+      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Event not found');
+      _dbUpdateEventName(eventId, name.trim(), icon || '', user.id, conn);
+      return { success: true, name: name.trim(), icon: icon || '' };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function renameEvent() {
+  return (_dbBackend() === 'postgres' ? _pgRenameEvent : _shRenameEvent).apply(null, arguments);
+}
+
+function _shSetEventActive(token, eventId, active) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    var sheet = ss.getSheetByName('Events');
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] === eventId && data[i][2] === user.id) {
+        sheet.getRange(i + 1, 5).setValue(active === true);
+        return { success: true, active: active === true };
+      }
+    }
+    return _fail('Event not found');
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgSetEventActive(token, eventId, active) {
+  try {
+    var user = requireAuth(token);
+    var conn = _dbConn();
+    try {
+      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Event not found');
+      _dbSetEventActive(eventId, active === true, user.id, conn);
+      return { success: true, active: active === true };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function setEventActive() {
+  return (_dbBackend() === 'postgres' ? _pgSetEventActive : _shSetEventActive).apply(null, arguments);
+}
+
+function _shDeleteEvent(token, eventId) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    // Check ownership before deleting anything - don't wipe another
+    // account's Details/EventFriends/EventShares rows first.
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
+
+    var detailsSheet = ss.getSheetByName('Details');
+    var dtData = detailsSheet.getDataRange().getValues();
+    var txIds = {};
+    for (var i = 1; i < dtData.length; i++) {
+      if (dtData[i][1] === eventId) txIds[dtData[i][0]] = true;
+    }
+
+    _trashSlipFilesForTxSet(txIds);
+    _removeRowsWhere(detailsSheet, 1, eventId, dtData);
+    _removeRowsWhere(getEventFriendsSheet(), 1, eventId);
+    _removeRowsWhere(getEventSharesSheet(), 0, eventId);
+    _removeRowsBySet(getTransactionSlipsSheet(), 0, txIds);
+
+    var eventsSheet = ss.getSheetByName('Events');
+    var eventsData = eventsSheet.getDataRange().getValues();
+    for (var j = 1; j < eventsData.length; j++) {
+      if (eventsData[j][0] === eventId && eventsData[j][2] === user.id) {
+        eventsSheet.deleteRow(j + 1);
+        return { success: true };
+      }
+    }
+    return _fail('Event not found');
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgDeleteEvent(token, eventId) {
+  try {
+    var user = requireAuth(token);
+    var conn = _dbConn();
+    try {
+      // Check ownership before deleting anything.
+      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Event not found');
+
+      _trashSlipFilesForEvent(eventId, conn);
+      _dbDeleteEvent(eventId, conn); // cascades to transaction/split/participant/settlement/receipt
+
+      return { success: true };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function deleteEvent() {
+  return (_dbBackend() === 'postgres' ? _pgDeleteEvent : _shDeleteEvent).apply(null, arguments);
+}
+
+function _shGetShareLink(token, eventId) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
+    var data = getEventSharesSheet().getDataRange().getValues();
+    var row = _findRow(data, eventId);
+    if (row === -1) return { success: true, shareToken: null };
+    return {
+      success: true, shareToken: data[row][1], permission: _sharePermission(data[row]),
+      shareUrl: ScriptApp.getService().getUrl() + '?share=' + data[row][1]
+    };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgGetShareLink(token, eventId) {
+  try {
+    var user = requireAuth(token);
+    // One fetch covers both the ownership check and the share info - no
+    // separate _eventOwnedBy round-trip needed.
+    var event = _dbGetEventById(eventId);
+    if (!event || event.accountId !== user.id) return _fail('Event not found');
+    if (!event.shareToken) return { success: true, shareToken: null };
+    return {
+      success: true, shareToken: event.shareToken, permission: event.sharePerm,
+      shareUrl: ScriptApp.getService().getUrl() + '?share=' + event.shareToken
+    };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function getShareLink() {
+  return (_dbBackend() === 'postgres' ? _pgGetShareLink : _shGetShareLink).apply(null, arguments);
+}
+
+// Creates the link on first call; on later calls with an existing link, just
+// updates its permission in place so the same URL keeps working.
+function _shEnableEventShare(token, eventId, permission) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
+    var perm = permission === 'edit' ? 'edit' : 'view';
+
+    var sheet = getEventSharesSheet();
+    var data = sheet.getDataRange().getValues();
+    var row = _findRow(data, eventId);
+    var shareToken;
+    if (row !== -1) {
+      shareToken = data[row][1];
+      sheet.getRange(row + 1, 4).setValue(perm);
+    } else {
+      shareToken = Utilities.getUuid();
+      sheet.appendRow([eventId, shareToken, new Date().toISOString(), perm]);
+    }
+    return { success: true, shareToken: shareToken, permission: perm, shareUrl: ScriptApp.getService().getUrl() + '?share=' + shareToken };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+// Creates the link on first call; on later calls with an existing link, just
+// updates its permission in place so the same URL keeps working.
+function _pgEnableEventShare(token, eventId, permission) {
+  try {
+    var user = requireAuth(token);
+    var conn = _dbConn();
+    try {
+      var event = _dbGetEventById(eventId, conn);
+      if (!event || event.accountId !== user.id) return _fail('Event not found');
+      var perm = permission === 'edit' ? 'edit' : 'view';
+
+      var shareToken = event.shareToken || Utilities.getUuid();
+      _dbSetEventShare(eventId, shareToken, perm, user.id, conn);
+      return { success: true, shareToken: shareToken, permission: perm, shareUrl: ScriptApp.getService().getUrl() + '?share=' + shareToken };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function enableEventShare() {
+  return (_dbBackend() === 'postgres' ? _pgEnableEventShare : _shEnableEventShare).apply(null, arguments);
+}
+
+function _shDisableEventShare(token, eventId) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
+    _removeRowsWhere(getEventSharesSheet(), 0, eventId);
+    return { success: true };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgDisableEventShare(token, eventId) {
+  try {
+    var user = requireAuth(token);
+    var conn = _dbConn();
+    try {
+      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Event not found');
+      _dbClearEventShare(eventId, user.id, conn);
+      return { success: true };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function disableEventShare() {
+  return (_dbBackend() === 'postgres' ? _pgDisableEventShare : _shDisableEventShare).apply(null, arguments);
+}
+
+// Public — intentionally takes no auth token. Only ever returns the one
+// event a valid, unguessable share token points to; never account data.
+function _shGetSharedEventView(shareToken) {
+  try {
+    if (!shareToken) return _fail('Invalid link');
+    var ss = getSpreadsheet();
+
+    var shData = getEventSharesSheet().getDataRange().getValues();
+    var eventId = null, permission = 'view';
+    for (var i = 1; i < shData.length; i++) {
+      if (shData[i][1] === shareToken) { eventId = shData[i][0]; permission = _sharePermission(shData[i]); break; }
+    }
+    if (!eventId) return _fail('This share link is no longer active');
+
+    var evData = ss.getSheetByName('Events').getDataRange().getValues();
+    var eventRow = null;
+    for (var i = 1; i < evData.length; i++) {
+      if (evData[i][0] === eventId) { eventRow = evData[i]; break; }
+    }
+    if (!eventRow) return _fail('This share link is no longer active');
+    var accountId = eventRow[2];
+
+    var ownerPhoto = '';
+    var acData = ss.getSheetByName('Accounts').getDataRange().getValues();
+    for (var i = 1; i < acData.length; i++) {
+      if (acData[i][0] === accountId) { ownerPhoto = acData[i][9] || ''; break; }
+    }
+
+    // Same core the authenticated getDetailData uses, so a share visitor sees
+    // identical details/friends/settlements (including paid state)/slips
+    // shapes — the client renders both through the exact same Detail code.
+    var payload = _buildDetailPayload(ss, eventId, accountId);
+
+    return {
+      success: true,
+      event: { name: eventRow[1], createdAt: eventRow[3], icon: eventRow[5] || '' },
+      details: payload.details,
+      friends: payload.friends,
+      settlements: payload.settlements,
+      selfFriendId: payload.selfFriendId,
+      ownerPhoto: ownerPhoto,
+      slips: payload.slips,
+      permission: permission
+    };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+// Public — intentionally takes no auth token. Only ever returns the one
+// event a valid, unguessable share token points to; never account data.
+function _pgGetSharedEventView(shareToken) {
+  try {
+    if (!shareToken) return _fail('Invalid link');
+    var conn = _dbConn();
+    try {
+      var event = _dbGetEventByShareToken(shareToken, conn);
+      if (!event) return _fail('This share link is no longer active');
+
+      var ownerAccount = _dbGetAccountById(event.accountId, conn);
+      var ownerPhoto = ownerAccount ? ownerAccount.photo : '';
+
+      // Same core the authenticated getDetailData uses, so a share visitor sees
+      // identical details/friends/settlements (including paid state)/slips
+      // shapes — the client renders both through the exact same Detail code.
+      var payload = _buildDetailPayload(event.id, event.accountId, conn);
+
+      return {
+        success: true,
+        event: { name: event.name, createdAt: event.createdAt, icon: event.icon },
+        details: payload.details,
+        friends: payload.friends,
+        settlements: payload.settlements,
+        selfFriendId: payload.selfFriendId,
+        ownerPhoto: ownerPhoto,
+        slips: payload.slips,
+        permission: event.sharePerm
+      };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function getSharedEventView() {
+  return (_dbBackend() === 'postgres' ? _pgGetSharedEventView : _shGetSharedEventView).apply(null, arguments);
+}
+
+function _shAddDetail(token, eventId, payId, friendIds, totalAmount, description, customAmounts) {
+  try {
+    var user = requireAuth(token);
+    if (!friendIds || !friendIds.length) return _fail('At least one person is required');
+    var sheet = getSpreadsheet().getSheetByName('Details');
+    var transactionId = Utilities.getUuid();
+    _writeDetailRow(sheet, eventId, transactionId, payId, friendIds, totalAmount, description, customAmounts, new Date().toISOString());
+    return { success: true, transactionId: transactionId };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgAddDetail(token, eventId, payId, friendIds, totalAmount, description, customAmounts) {
+  try {
+    var user = requireAuth(token);
+    if (!friendIds || !friendIds.length) return _fail('At least one person is required');
+    var transactionId = _dbInsertTransactionWithSplits(eventId, payId, friendIds, totalAmount, description, customAmounts, user.id);
+    return { success: true, transactionId: transactionId };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function addDetail() {
+  return (_dbBackend() === 'postgres' ? _pgAddDetail : _shAddDetail).apply(null, arguments);
+}
+
+function _shUpdateDetail(token, transactionId, payId, friendIds, totalAmount, description, customAmounts) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    var sheet = ss.getSheetByName('Details');
+    var data = sheet.getDataRange().getValues();
+
+    var row = _findRow(data, transactionId);
+    if (row === -1) return _fail('Transaction not found');
+    var eventId = data[row][1], createdAt = data[row][5];
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Transaction not found');
+    if (!friendIds || !friendIds.length) return _fail('At least one person is required');
+
+    var newRow = _buildDetailRow(eventId, transactionId, payId, friendIds, parseFloat(totalAmount), description, customAmounts, createdAt);
+    sheet.getRange(row + 1, 1, 1, newRow.length).setValues([newRow]);
+    return { success: true, transactionId: transactionId };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgUpdateDetail(token, transactionId, payId, friendIds, totalAmount, description, customAmounts) {
+  try {
+    var user = requireAuth(token);
+    if (!friendIds || !friendIds.length) return _fail('At least one person is required');
+    var conn = _dbConn();
+    try {
+      var eventId = _dbGetTransactionEventId(transactionId, conn);
+      if (!eventId) return _fail('Transaction not found');
+      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Transaction not found');
+
+      _dbUpdateTransactionWithSplits(transactionId, payId, friendIds, totalAmount, description, customAmounts, user.id, conn);
+      return { success: true, transactionId: transactionId };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function updateDetail() {
+  return (_dbBackend() === 'postgres' ? _pgUpdateDetail : _shUpdateDetail).apply(null, arguments);
+}
+
+function _shDeleteDetail(token, transactionId) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    var sheet = ss.getSheetByName('Details');
+    var data = sheet.getDataRange().getValues();
+    var row = _findRow(data, transactionId);
+    if (row === -1) return _fail('Transaction not found');
+    var eventId = data[row][1];
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Transaction not found');
+
+    _trashSlipFilesForTx(transactionId);
+    sheet.deleteRow(row + 1);
+    _removeRowsWhere(getTransactionSlipsSheet(), 0, transactionId);
+    return { success: true };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgDeleteDetail(token, transactionId) {
+  try {
+    var user = requireAuth(token);
+    var conn = _dbConn();
+    try {
+      var eventId = _dbGetTransactionEventId(transactionId, conn);
+      if (!eventId) return _fail('Transaction not found');
+      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Transaction not found');
+
+      _trashSlipFilesForTx(transactionId, conn);
+      _dbDeleteTransaction(transactionId, conn); // cascades to split/receipt
+      return { success: true };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function deleteDetail() {
+  return (_dbBackend() === 'postgres' ? _pgDeleteDetail : _shDeleteDetail).apply(null, arguments);
+}
+
+function _shAddDetailViaShare(shareToken, payId, friendIds, totalAmount, description, customAmounts) {
+  try {
+    var eventId = _shareEventId(shareToken, true);
+    if (!eventId) return _fail('This share link cannot make changes');
+    if (!friendIds || !friendIds.length) return _fail('At least one person is required');
+
+    var sheet = getSpreadsheet().getSheetByName('Details');
+    var transactionId = Utilities.getUuid();
+    _writeDetailRow(sheet, eventId, transactionId, payId, friendIds, totalAmount, description, customAmounts, new Date().toISOString());
+    return { success: true, transactionId: transactionId };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgAddDetailViaShare(shareToken, payId, friendIds, totalAmount, description, customAmounts) {
+  try {
+    if (!friendIds || !friendIds.length) return _fail('At least one person is required');
+    var conn = _dbConn();
+    try {
+      var eventId = _shareEventId(shareToken, true, conn);
+      if (!eventId) return _fail('This share link cannot make changes');
+      var transactionId = _dbInsertTransactionWithSplits(eventId, payId, friendIds, totalAmount, description, customAmounts, null, conn);
+      return { success: true, transactionId: transactionId };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function addDetailViaShare() {
+  return (_dbBackend() === 'postgres' ? _pgAddDetailViaShare : _shAddDetailViaShare).apply(null, arguments);
+}
+
+function _shUpdateDetailViaShare(shareToken, transactionId, payId, friendIds, totalAmount, description, customAmounts) {
+  try {
+    var eventId = _shareEventId(shareToken, true);
+    if (!eventId) return _fail('This share link cannot make changes');
+    if (!friendIds || !friendIds.length) return _fail('At least one person is required');
+
+    var sheet = getSpreadsheet().getSheetByName('Details');
+    var data = sheet.getDataRange().getValues();
+    var row = _findRow(data, transactionId);
+    if (row === -1 || data[row][1] !== eventId) return _fail('Transaction not found');
+    var createdAt = data[row][5];
+
+    var newRow = _buildDetailRow(eventId, transactionId, payId, friendIds, parseFloat(totalAmount), description, customAmounts, createdAt);
+    sheet.getRange(row + 1, 1, 1, newRow.length).setValues([newRow]);
+    return { success: true, transactionId: transactionId };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgUpdateDetailViaShare(shareToken, transactionId, payId, friendIds, totalAmount, description, customAmounts) {
+  try {
+    if (!friendIds || !friendIds.length) return _fail('At least one person is required');
+    var conn = _dbConn();
+    try {
+      var eventId = _shareEventId(shareToken, true, conn);
+      if (!eventId) return _fail('This share link cannot make changes');
+      if (_dbGetTransactionEventId(transactionId, conn) !== eventId) return _fail('Transaction not found');
+
+      _dbUpdateTransactionWithSplits(transactionId, payId, friendIds, totalAmount, description, customAmounts, null, conn);
+      return { success: true, transactionId: transactionId };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function updateDetailViaShare() {
+  return (_dbBackend() === 'postgres' ? _pgUpdateDetailViaShare : _shUpdateDetailViaShare).apply(null, arguments);
+}
+
+// 'slip'/'slipHi' both hold the Drive fileId (client resolves it to a real
+// image via getSlipImage/getSlipImageViaShare); 'fileId' is its own column
+// too since that's what the delete-cleanup helpers key off of.
+function _shSaveUploadedSlip(transactionId, slip) {
+  var uploaded = _uploadSlipToDrive(slip);
+  var id = Utilities.getUuid();
+  getTransactionSlipsSheet().appendRow([transactionId, uploaded.fileId, new Date().toISOString(), id, uploaded.fileId, uploaded.fileId]);
+  return { success: true, id: id, slip: uploaded.fileId, slipHi: uploaded.fileId };
+}
+
+function _pgSaveUploadedSlip(transactionId, slip, createdBy, connOpt) {
+  var uploaded = _uploadSlipToDrive(slip);
+  var id = _dbInsertReceipt(transactionId, uploaded.fileId, createdBy, connOpt);
+  return { success: true, id: id, slip: uploaded.fileId, slipHi: uploaded.fileId };
+}
+
+function _saveUploadedSlip() {
+  return (_dbBackend() === 'postgres' ? _pgSaveUploadedSlip : _shSaveUploadedSlip).apply(null, arguments);
+}
+
+function _shUploadTransactionSlipViaShare(shareToken, transactionId, slip) {
+  try {
+    var eventId = _shareEventId(shareToken, true);
+    if (!eventId) return _fail('This share link cannot make changes');
+    if (!slip) return _fail('No photo provided');
+    var dtData = getSpreadsheet().getSheetByName('Details').getDataRange().getValues();
+    if (_transactionEventId(dtData, transactionId) !== eventId) return _fail('Transaction not found');
+    return _saveUploadedSlip(transactionId, slip);
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgUploadTransactionSlipViaShare(shareToken, transactionId, slip) {
+  try {
+    if (!slip) return _fail('No photo provided');
+    var conn = _dbConn();
+    try {
+      var eventId = _shareEventId(shareToken, true, conn);
+      if (!eventId) return _fail('This share link cannot make changes');
+      if (_dbGetTransactionEventId(transactionId, conn) !== eventId) return _fail('Transaction not found');
+      return _saveUploadedSlip(transactionId, slip, null, conn);
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function uploadTransactionSlipViaShare() {
+  return (_dbBackend() === 'postgres' ? _pgUploadTransactionSlipViaShare : _shUploadTransactionSlipViaShare).apply(null, arguments);
+}
+
+// Always adds a new photo (a transaction can have several) - returns its id
+// so the client can target it with deleteTransactionSlip later.
+function _shUploadTransactionSlip(token, transactionId, slip) {
+  try {
+    var user = requireAuth(token);
+    if (!slip) return _fail('No photo provided');
+    var ss = getSpreadsheet();
+    var dtData = ss.getSheetByName('Details').getDataRange().getValues();
+    var eventId = _transactionEventId(dtData, transactionId);
+    if (!eventId) return _fail('Transaction not found');
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Transaction not found');
+    return _saveUploadedSlip(transactionId, slip);
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+// Always adds a new photo (a transaction can have several) - returns its id
+// so the client can target it with deleteTransactionSlip later.
+function _pgUploadTransactionSlip(token, transactionId, slip) {
+  try {
+    var user = requireAuth(token);
+    if (!slip) return _fail('No photo provided');
+    var conn = _dbConn();
+    try {
+      var eventId = _dbGetTransactionEventId(transactionId, conn);
+      if (!eventId) return _fail('Transaction not found');
+      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Transaction not found');
+      return _saveUploadedSlip(transactionId, slip, user.id, conn);
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function uploadTransactionSlip() {
+  return (_dbBackend() === 'postgres' ? _pgUploadTransactionSlip : _shUploadTransactionSlip).apply(null, arguments);
+}
+
+function _shDeleteTransactionSlip(token, transactionId, slipId) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    var dtData = ss.getSheetByName('Details').getDataRange().getValues();
+    var eventId = _transactionEventId(dtData, transactionId);
+    if (!eventId) return _fail('Transaction not found');
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Transaction not found');
+
+    var sheet = getTransactionSlipsSheet();
+    var data = _backfillSlipIds(sheet, sheet.getDataRange().getValues());
+    for (var j = 1; j < data.length; j++) {
+      if (data[j][0] === transactionId && data[j][3] === slipId) {
+        _deleteSlipFile(data[j][5]);
+        sheet.deleteRow(j + 1);
+        return { success: true };
+      }
+    }
+    return _fail('Photo not found');
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgDeleteTransactionSlip(token, transactionId, slipId) {
+  try {
+    var user = requireAuth(token);
+    var conn = _dbConn();
+    try {
+      var eventId = _dbGetTransactionEventId(transactionId, conn);
+      if (!eventId) return _fail('Transaction not found');
+      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Transaction not found');
+
+      var fileId = _dbDeleteReceipt(transactionId, slipId, conn);
+      if (fileId === null) return _fail('Photo not found');
+      _deleteSlipFile(fileId);
+      return { success: true };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function deleteTransactionSlip() {
+  return (_dbBackend() === 'postgres' ? _pgDeleteTransactionSlip : _shDeleteTransactionSlip).apply(null, arguments);
+}
+
+function _shComputeSettlementsWithPaid(detailRows, friendMap, eventId, spDataOpt) {
+  var settlements = _computeSettlements(detailRows, friendMap);
+  var paidSet = _getPaidSet(eventId, spDataOpt);
+  settlements.forEach(function (s) { s.paid = !!paidSet[_settleKey(s.from, s.to, s.amount)] });
+  return settlements;
+}
+
+function _pgComputeSettlementsWithPaid(detailRows, friendMap, eventId, connOpt) {
+  var settlements = _computeSettlements(detailRows, friendMap);
+  var paidSet = _dbGetSettlementsByEvent(eventId, connOpt);
+  settlements.forEach(function (s) { s.paid = !!paidSet[_settleKey(s.from, s.to, s.amount)] });
+  return settlements;
+}
+
+function _computeSettlementsWithPaid() {
+  return (_dbBackend() === 'postgres' ? _pgComputeSettlementsWithPaid : _shComputeSettlementsWithPaid).apply(null, arguments);
+}
+
+function _shApplySettlementPaid(eventId, fromId, toId, amount, paid) {
+  var sheet = getSettlementPaymentsSheet();
+  var data = sheet.getDataRange().getValues();
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (data[i][1] === eventId && data[i][2] === fromId && data[i][3] === toId) sheet.deleteRow(i + 1);
+  }
+  if (paid) sheet.appendRow([Utilities.getUuid(), eventId, fromId, toId, amount, new Date().toISOString()]);
+  return { success: true };
+}
+
+function _pgApplySettlementPaid(eventId, fromId, toId, amount, paid, actorId, connOpt) {
+  if (paid) _dbUpsertSettlement(eventId, fromId, toId, amount, actorId, connOpt);
+  else _dbDeleteSettlement(eventId, fromId, toId, connOpt);
+  return { success: true };
+}
+
+function _markSettlementPaid() {
+  return (_dbBackend() === 'postgres' ? _pgApplySettlementPaid : _shApplySettlementPaid).apply(null, arguments);
+}
+
+function _shMarkSettlementPaid(token, eventId, fromId, toId, amount, paid) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
+    return _markSettlementPaid(eventId, fromId, toId, amount, paid);
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgMarkSettlementPaid(token, eventId, fromId, toId, amount, paid) {
+  try {
+    var user = requireAuth(token);
+    var conn = _dbConn();
+    try {
+      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Event not found');
+      return _markSettlementPaid(eventId, fromId, toId, amount, paid, user.id, conn);
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function markSettlementPaid() {
+  return (_dbBackend() === 'postgres' ? _pgMarkSettlementPaid : _shMarkSettlementPaid).apply(null, arguments);
+}
+
+// Share-link 'edit' permission covers transaction CRUD already - marking a
+// settlement/transaction paid is the same tier of access, unlike 'view'.
+function _shMarkSettlementPaidViaShare(shareToken, fromId, toId, amount, paid) {
+  try {
+    var eventId = _shareEventId(shareToken, true);
+    if (!eventId) return _fail('This share link cannot make changes');
+    return _markSettlementPaid(eventId, fromId, toId, amount, paid);
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+// Share-link 'edit' permission covers transaction CRUD already - marking a
+// settlement/transaction paid is the same tier of access, unlike 'view'.
+function _pgMarkSettlementPaidViaShare(shareToken, fromId, toId, amount, paid) {
+  try {
+    var conn = _dbConn();
+    try {
+      var eventId = _shareEventId(shareToken, true, conn);
+      if (!eventId) return _fail('This share link cannot make changes');
+      return _markSettlementPaid(eventId, fromId, toId, amount, paid, null, conn);
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function markSettlementPaidViaShare() {
+  return (_dbBackend() === 'postgres' ? _pgMarkSettlementPaidViaShare : _shMarkSettlementPaidViaShare).apply(null, arguments);
+}
+
+function _shMarkTransactionPaid(token, eventId, transactionId, paid) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+    if (!_eventOwnedBy(ss, eventId, user.id)) return _fail('Event not found');
+    return _markTransactionPaid(eventId, transactionId, paid);
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+// Marks a single transaction as already settled - it's then excluded from
+// settlement math app-wide (see transaction.excluded_at, consumed by
+// getHomeData/_buildDetailPayload/getSummary) instead of just noting a net
+// debt as paid.
+function _pgMarkTransactionPaid(token, eventId, transactionId, paid) {
+  try {
+    var user = requireAuth(token);
+    var conn = _dbConn();
+    try {
+      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Event not found');
+      _dbSetTransactionExcluded(transactionId, paid, user.id, conn);
+      return { success: true };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function markTransactionPaid() {
+  return (_dbBackend() === 'postgres' ? _pgMarkTransactionPaid : _shMarkTransactionPaid).apply(null, arguments);
+}
+
+function _shMarkTransactionPaidViaShare(shareToken, transactionId, paid) {
+  try {
+    var eventId = _shareEventId(shareToken, true);
+    if (!eventId) return _fail('This share link cannot make changes');
+    return _markTransactionPaid(eventId, transactionId, paid);
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgMarkTransactionPaidViaShare(shareToken, transactionId, paid) {
+  try {
+    var conn = _dbConn();
+    try {
+      var eventId = _shareEventId(shareToken, true, conn);
+      if (!eventId) return _fail('This share link cannot make changes');
+      _dbSetTransactionExcluded(transactionId, paid, null, conn);
+      return { success: true };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function markTransactionPaidViaShare() {
+  return (_dbBackend() === 'postgres' ? _pgMarkTransactionPaidViaShare : _shMarkTransactionPaidViaShare).apply(null, arguments);
+}
+
+function _shGetSummary(token, eventId) {
+  try {
+    var user = requireAuth(token);
+    var ss = getSpreadsheet();
+
+    var friendsData = ss.getSheetByName('Friends').getDataRange().getValues();
+    var friendMap = {};
+    for (var f = 1; f < friendsData.length; f++) {
+      if (friendsData[f][1] === user.id) friendMap[friendsData[f][0]] = friendsData[f][2];
+    }
+
+    var detailsData = ss.getSheetByName('Details').getDataRange().getValues();
+    var paidTxSet = _paidTransactionSet();
+    var rows = [];
+    for (var i = 1; i < detailsData.length; i++) {
+      if (detailsData[i][1] === eventId && !paidTxSet[detailsData[i][0]]) {
+        var payId = detailsData[i][2];
+        _splitsToRows(detailsData[i]).forEach(function (s) { rows.push({ payId: payId, friendId: s.friendId, amount: s.amount }) });
+      }
+    }
+
+    return { success: true, settlements: _computeSettlementsWithPaid(rows, friendMap, eventId) };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgGetSummary(token, eventId) {
+  try {
+    var user = requireAuth(token);
+    var conn = _dbConn();
+    try {
+      var friendMap = {};
+      _dbGetFriendsByAccount(user.id, conn).forEach(function (f) { friendMap[f.id] = f.name });
+
+      var rows = [];
+      _dbGetTransactionsByEvent(eventId, conn).forEach(function (tx) {
+        if (!tx.excluded) tx.splits.forEach(function (s) { rows.push({ payId: tx.payId, friendId: s.friendId, amount: s.amount }) });
+      });
+
+      return { success: true, settlements: _computeSettlementsWithPaid(rows, friendMap, eventId, conn) };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function getSummary() {
+  return (_dbBackend() === 'postgres' ? _pgGetSummary : _shGetSummary).apply(null, arguments);
+}
+
+function _shGetAllAccounts(token) {
+  try {
+    var user = requireAuth(token);
+    if (user.role !== 'admin') return _fail('Forbidden');
+    var ss = getSpreadsheet();
+    var sheet = ss.getSheetByName('Accounts');
+    var data = sheet.getDataRange().getValues();
+    var accounts = [];
+    for (var i = 1; i < data.length; i++) {
+      accounts.push({
+        id: data[i][0],
+        displayName: data[i][1],
+        username: data[i][2],
+        firstLogin: data[i][4],
+        lastLogin: data[i][5],
+        role: data[i][6],
+        status: data[i][7] || 'active',
+        photo: data[i][9] || ''
+      });
+    }
+    return { success: true, accounts: accounts };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgGetAllAccounts(token) {
+  try {
+    var user = requireAuth(token);
+    if (user.role !== 'admin') return _fail('Forbidden');
+    return { success: true, accounts: _dbGetAllAccounts() };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function getAllAccounts() {
+  return (_dbBackend() === 'postgres' ? _pgGetAllAccounts : _shGetAllAccounts).apply(null, arguments);
+}
+
+function _shUpdateAccountStatus(token, accountId, status) {
+  try {
+    var user = requireAuth(token);
+    if (user.role !== 'admin') return _fail('Forbidden');
+    if (user.id === accountId) return _fail('Cannot disable your own account');
+    var sheet = getSpreadsheet().getSheetByName('Accounts');
+    var row = _findRow(sheet.getDataRange().getValues(), accountId);
+    if (row === -1) return _fail('Account not found');
+    sheet.getRange(row + 1, 8).setValue(status);
+    return { success: true };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgUpdateAccountStatus(token, accountId, status) {
+  try {
+    var user = requireAuth(token);
+    if (user.role !== 'admin') return _fail('Forbidden');
+    if (user.id === accountId) return _fail('Cannot disable your own account');
+    var conn = _dbConn();
+    try {
+      if (!_dbGetAccountById(accountId, conn)) return _fail('Account not found');
+      _dbUpdateAccountStatus(accountId, status, conn);
+      return { success: true };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function updateAccountStatus() {
+  return (_dbBackend() === 'postgres' ? _pgUpdateAccountStatus : _shUpdateAccountStatus).apply(null, arguments);
+}
+
+function _shUpdateAccountRole(token, accountId, role) {
+  try {
+    var user = requireAuth(token);
+    if (user.role !== 'admin') return _fail('Forbidden');
+    if (user.id === accountId) return _fail('Cannot change your own role');
+    var sheet = getSpreadsheet().getSheetByName('Accounts');
+    var row = _findRow(sheet.getDataRange().getValues(), accountId);
+    if (row === -1) return _fail('Account not found');
+    sheet.getRange(row + 1, 7).setValue(role);
+    return { success: true };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgUpdateAccountRole(token, accountId, role) {
+  try {
+    var user = requireAuth(token);
+    if (user.role !== 'admin') return _fail('Forbidden');
+    if (user.id === accountId) return _fail('Cannot change your own role');
+    var conn = _dbConn();
+    try {
+      if (!_dbGetAccountById(accountId, conn)) return _fail('Account not found');
+      _dbUpdateAccountRole(accountId, role, conn);
+      return { success: true };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function updateAccountRole() {
+  return (_dbBackend() === 'postgres' ? _pgUpdateAccountRole : _shUpdateAccountRole).apply(null, arguments);
+}
+
+function _shDeleteAccount(token, accountId) {
+  try {
+    var user = requireAuth(token);
+    if (user.role !== 'admin') return _fail('Forbidden');
+    if (user.id === accountId) return _fail('Cannot delete your own account');
+    var sheet = getSpreadsheet().getSheetByName('Accounts');
+    var row = _findRow(sheet.getDataRange().getValues(), accountId);
+    if (row === -1) return _fail('Account not found');
+    sheet.deleteRow(row + 1);
+    return { success: true };
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function _pgDeleteAccount(token, accountId) {
+  try {
+    var user = requireAuth(token);
+    if (user.role !== 'admin') return _fail('Forbidden');
+    if (user.id === accountId) return _fail('Cannot delete your own account');
+    var conn = _dbConn();
+    try {
+      if (!_dbGetAccountById(accountId, conn)) return _fail('Account not found');
+      _dbDeleteAccount(accountId, conn);
+      return { success: true };
+    } finally { conn.close(); }
+  } catch (e) {
+    return _fail(e);
+  }
+}
+
+function deleteAccount() {
+  return (_dbBackend() === 'postgres' ? _pgDeleteAccount : _shDeleteAccount).apply(null, arguments);
 }
 
 // ----------------------------------------------------------------
-// Entry Point
+// Entry point + shared single implementations (identical on both backends)
 // ----------------------------------------------------------------
-
-// Looked up at render time (not via getSharedEventView) so doGet can skip
-// sending the add/edit/delete transaction markup entirely for the common
-// view-only case, instead of shipping it and hiding it with CSS.
-function _sharePermissionByToken(shareToken) {
-  if (!shareToken) return 'view';
-  var event = _dbGetEventByShareToken(shareToken);
-  return event ? event.sharePerm : 'view';
-}
 
 function doGet(e) {
   var rawToken = e && e.parameter && e.parameter.share;
@@ -1038,9 +3375,7 @@ function include(filename) {
 }
 
 // ----------------------------------------------------------------
-// App Settings (session length, password policy) - singleton config
-// stored in Script Properties, not a sheet, since it's a single object
-// with no per-row semantics.
+// App Settings (session length, password policy) - Script Properties singleton, backend-independent
 // ----------------------------------------------------------------
 
 function getAppSettings() {
@@ -1112,10 +3447,7 @@ function updateSettings(token, settings) {
 }
 
 // ----------------------------------------------------------------
-// App Theme - global color palette, applied identically to every user.
-// Stored in Script Properties (singleton, like APP_SETTINGS above).
-// buildThemeCss() only emits overrides for keys actually saved, so an
-// empty/never-saved theme leaves Shared_css.html's own colors untouched.
+// App Theme - Script Properties singleton, backend-independent
 // ----------------------------------------------------------------
 
 var HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -1175,61 +3507,16 @@ function buildThemeCss() {
 }
 
 // ----------------------------------------------------------------
-// Auth
+// Auth / session lookups shared verbatim (call into the dispatched helpers above)
 // ----------------------------------------------------------------
 
-function loginUser(username, password) {
-  try {
-    var conn = _dbConn();
-    var account, token, userInfo, expires;
-    try {
-      account = _dbGetAccountByUsername(username, conn);
-      var hashed = hashPassword(password);
-      if (!account || account.passwordHash !== hashed) return _fail('Invalid username or password');
-      if (account.status === 'disabled') return _fail('This account has been disabled');
-      _dbUpdateAccountLastLogin(account.id, conn);
-
-      token = generateToken();
-      userInfo = { id: account.id, displayName: account.displayName, username: account.username, role: account.role };
-      var sessionMinutes = getAppSettings().sessionMinutes;
-      expires = new Date(new Date().getTime() + sessionMinutes * 60000);
-      var cacheTtl = Math.max(1, Math.min(CACHE_EXPIRY, sessionMinutes * 60));
-      getCache().put('token_' + token, JSON.stringify(userInfo), cacheTtl);
-      _dbCreateSession(token, account.id, userInfo, expires.toISOString(), conn);
-      _dbCleanExpiredSessions(conn);
-    } finally { conn.close(); }
-    return { success: true, token: token, user: userInfo, url: ScriptApp.getService().getUrl() + '?tk=' + encodeURIComponent(token) };
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-function registerUser(displayName, username, password) {
-  try {
-    var pwErr = _validatePassword(password);
-    if (pwErr) return _fail(pwErr);
-
-    var conn = _dbConn();
-    try {
-      if (_dbGetAccountByUsername(username, conn)) return _fail('Username already taken');
-      var hashed = hashPassword(password);
-      var id = _dbInsertAccount(displayName, username.toLowerCase(), hashed, 'user', 'active', conn);
-      _dbInsertFriend(id, 'Me', true, conn);
-      return { success: true };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-function logoutUser(token) {
-  try {
-    getCache().remove('token_' + token);
-    _dbDeleteSession(token);
-    return { success: true };
-  } catch (e) {
-    return _fail(e);
-  }
+function requireAuth(token) {
+  var cached = getCache().get('token_' + token);
+  if (cached) return JSON.parse(cached);
+  var found = _lookupSession(token);
+  if (!found) throw new Error('Unauthorized');
+  getCache().put('token_' + token, JSON.stringify(found.userInfo), _cacheTtlFor(found.expiresAt));
+  return found.userInfo;
 }
 
 function getSessionUser(token) {
@@ -1245,618 +3532,17 @@ function getSessionUser(token) {
   }
 }
 
-function requireAuth(token) {
-  var cached = getCache().get('token_' + token);
-  if (cached) return JSON.parse(cached);
-  var found = _lookupSession(token);
-  if (!found) throw new Error('Unauthorized');
-  getCache().put('token_' + token, JSON.stringify(found.userInfo), _cacheTtlFor(found.expiresAt));
-  return found.userInfo;
-}
-
-// Refreshes the cached userInfo for the CURRENT session/device only (the one
-// that made this request) so a profile edit shows up immediately without
-// re-login. Other devices logged into the same account keep their own
-// cached copy until it naturally expires or they log in again — same
-// limitation that already exists for admin-driven role changes.
-function _updateSessionUserInfo(token, userInfo) {
-  var found = _dbGetSession(token);
-  var ttl = CACHE_EXPIRY;
-  if (found) {
-    _dbUpdateSessionInfo(token, userInfo);
-    ttl = _cacheTtlFor(found.expiresAt);
-  }
-  getCache().put('token_' + token, JSON.stringify(userInfo), ttl);
-}
-
-// ----------------------------------------------------------------
-// Profile (self-service account settings)
-// ----------------------------------------------------------------
-
-function getMyProfile(token) {
+function getSlipImage(token, fileId) {
   try {
-    var user = requireAuth(token);
-    var account = _dbGetAccountById(user.id);
-    if (!account) return _fail('Account not found');
-    return { success: true, displayName: account.displayName, username: account.username, photo: account.photo };
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-// photo: pass a string to set it ('' clears it); omit/null to leave unchanged.
-function updateProfile(token, displayName, photo) {
-  try {
-    var user = requireAuth(token);
-    if (!displayName || !displayName.trim()) return _fail('Name is required');
-    var trimmed = displayName.trim();
-
-    var conn = _dbConn();
-    try {
-      var account = _dbGetAccountById(user.id, conn);
-      if (!account) return _fail('Account not found');
-      _dbUpdateAccountProfile(user.id, trimmed, photo, conn);
-
-      // Keep the self-friend (shown as payer/participant in every event) in sync.
-      var selfFriend = _dbFindSelfFriend(user.id, conn);
-      if (selfFriend) _dbUpdateFriendName(selfFriend.id, trimmed, conn);
-    } finally { conn.close(); }
-
-    var userInfo = { id: user.id, displayName: trimmed, username: user.username, role: user.role };
-    _updateSessionUserInfo(token, userInfo);
-    return { success: true, user: userInfo };
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-function changePassword(token, currentPassword, newPassword) {
-  try {
-    var user = requireAuth(token);
-    var pwErr = _validatePassword(newPassword);
-    if (pwErr) return _fail(pwErr);
-    var conn = _dbConn();
-    try {
-      var account = _dbGetAccountById(user.id, conn);
-      if (!account) return _fail('Account not found');
-      if (account.passwordHash !== hashPassword(currentPassword || '')) return _fail('Current password is incorrect');
-      _dbUpdateAccountPassword(user.id, hashPassword(newPassword), conn);
-      return { success: true };
-    } finally { conn.close(); }
+    requireAuth(token);
+    return _readSlipImage(fileId);
   } catch (e) {
     return _fail(e);
   }
 }
 
 // ----------------------------------------------------------------
-// Combined data fetchers (reduce round-trips)
-// ----------------------------------------------------------------
-
-// One connection covers every one of the account's events at once - avoids
-// opening a fresh connection per event the way a naive per-event loop would.
-function _dbGetHomeSettlementInput(accountId, connOpt) {
-  return _withConn(connOpt, function (conn) {
-    var rowsByEvent = {};
-    var txStmt = conn.prepareStatement(
-      'SELECT t.event_id, t.payer_id, s.friend_id, s.amount FROM transaction t ' +
-      'JOIN split s ON s.transaction_id = t.id JOIN event e ON e.id = t.event_id ' +
-      'WHERE e.account_id = ? AND t.excluded_at IS NULL'
-    );
-    txStmt.setLong(1, parseInt(accountId, 10));
-    var txRs = txStmt.executeQuery();
-    while (txRs.next()) {
-      var eid = String(txRs.getLong('event_id'));
-      if (!rowsByEvent[eid]) rowsByEvent[eid] = [];
-      rowsByEvent[eid].push({ payId: String(txRs.getLong('payer_id')), friendId: String(txRs.getLong('friend_id')), amount: txRs.getDouble('amount') });
-    }
-    txRs.close(); txStmt.close();
-
-    var paidSetByEvent = {};
-    var spStmt = conn.prepareStatement(
-      'SELECT s.event_id, s.from_id, s.to_id, s.amount FROM settlement s JOIN event e ON e.id = s.event_id WHERE e.account_id = ?'
-    );
-    spStmt.setLong(1, parseInt(accountId, 10));
-    var spRs = spStmt.executeQuery();
-    while (spRs.next()) {
-      var eid2 = String(spRs.getLong('event_id'));
-      if (!paidSetByEvent[eid2]) paidSetByEvent[eid2] = {};
-      paidSetByEvent[eid2][_settleKey(String(spRs.getLong('from_id')), String(spRs.getLong('to_id')), spRs.getDouble('amount'))] = true;
-    }
-    spRs.close(); spStmt.close();
-
-    return { rowsByEvent: rowsByEvent, paidSetByEvent: paidSetByEvent };
-  });
-}
-
-function getHomeData(token) {
-  try {
-    var user = requireAuth(token);
-    // One shared connection for all three reads below, instead of three
-    // separate round-trips to Neon - this RPC runs on every Home load.
-    var conn = _dbConn();
-    var events, friends, friendMap = {}, input;
-    try {
-      events = _dbGetEventsByAccount(user.id, conn);
-      var dbFriends = _dbGetFriendsByAccount(user.id, conn);
-      friends = [];
-      dbFriends.forEach(function (f) {
-        friends.push({ id: f.id, accountId: user.id, name: f.name });
-        friendMap[f.id] = f.name;
-      });
-      // Settlement state per event for the Home filter tabs, via the same
-      // engine as getSummary.
-      input = _dbGetHomeSettlementInput(user.id, conn);
-    } finally { conn.close(); }
-
-    events.forEach(function (ev) {
-      var rows = input.rowsByEvent[ev.id] || [];
-      if (!rows.length) { ev.settled = true; return }
-      var settlements = _computeSettlements(rows, friendMap);
-      var paidSet = input.paidSetByEvent[ev.id] || {};
-      ev.settled = settlements.every(function (s) { return !!paidSet[_settleKey(s.from, s.to, s.amount)] });
-    });
-
-    return { success: true, events: events, friends: friends };
-  } catch (e) { return _fail(e) }
-}
-
-// Shared core behind getDetailData (authenticated) and getSharedEventView
-// (public share link) so both paths compute details/friends/settlements/slips
-// identically instead of maintaining two parallel implementations.
-// connOpt: share one connection across every read below (transactions/
-// splits, self-friend, participants, settlements, receipts) instead of
-// opening 5-6 separate ones - this backs the most-loaded page in the app
-// (Detail), both for the owner and for public share-link visitors.
-function _buildDetailPayload(eventId, accountId, connOpt) {
-  return _withConn(connOpt, function (conn) {
-    var transactions = _dbGetTransactionsByEvent(eventId, conn);
-    var details = [], rows = [];
-    transactions.forEach(function (tx) {
-      tx.splits.forEach(function (s) {
-        details.push({
-          id: tx.id + '_' + s.friendId, eventId: eventId, transactionId: tx.id,
-          payId: tx.payId, friendId: s.friendId, amount: s.amount, totalAmount: tx.amount,
-          description: tx.description, createdAt: tx.createdAt, paid: tx.excluded
-        });
-      });
-      // Excluded transactions are left out of settlement math entirely - see markTransactionPaid.
-      if (!tx.excluded) tx.splits.forEach(function (s) { rows.push({ payId: tx.payId, friendId: s.friendId, amount: s.amount }) });
-    });
-
-    var selfFriend = _dbFindSelfFriend(accountId, conn);
-    var selfFriendId = selfFriend ? selfFriend.id : null;
-
-    var friends = _dbGetParticipantsByEvent(eventId, conn);
-    var friendMap = {};
-    friends.forEach(function (f) { friendMap[f.id] = f.name });
-    // _computeSettlementsWithPaid so share-link visitors see the same "paid"
-    // checkmarks the owner does, bundled here to avoid a second round-trip.
-    var settlements = _computeSettlementsWithPaid(rows, friendMap, eventId, conn);
-
-    var slips = _dbGetReceiptsByEvent(eventId, conn);
-
-    // selfFriendId: lets the client show the account's own profile photo.
-    return { details: details, friends: friends, settlements: settlements, selfFriendId: selfFriendId, slips: slips };
-  });
-}
-
-function getDetailData(token, eventId) {
-  try {
-    var user = requireAuth(token);
-    var conn = _dbConn();
-    try {
-      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Event not found');
-      var payload = _buildDetailPayload(eventId, user.id, conn);
-      payload.success = true;
-      return payload;
-    } finally { conn.close(); }
-  } catch (e) { return _fail(e) }
-}
-
-// ----------------------------------------------------------------
-// Event-scoped friend membership
-// ----------------------------------------------------------------
-
-function _eventOwnedBy(eventId, accountId, connOpt) {
-  var event = _dbGetEventById(eventId, connOpt);
-  return !!event && event.accountId === accountId;
-}
-
-// Combined fetch for the Add/Manage Friends sheet — one round trip instead of
-// separate getFriends + getEventFriends calls.
-function getEventFriendsData(token, eventId) {
-  try {
-    var user = requireAuth(token);
-    var conn = _dbConn();
-    try {
-      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Event not found');
-      var allFriends = _dbGetFriendsByAccount(user.id, conn).map(function (f) { return { id: f.id, name: f.name }; });
-      var linkedFriends = _dbGetParticipantsByEvent(eventId, conn);
-      return { success: true, allFriends: allFriends, linkedFriends: linkedFriends };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-function addFriendToEvent(token, eventId, name) {
-  try {
-    var user = requireAuth(token);
-    if (!name || name.trim() === '') return _fail('Name is required');
-    var trimmed = name.trim();
-    var conn = _dbConn();
-    try {
-      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Event not found');
-      var existing = _dbFindFriendByName(user.id, trimmed, conn);
-      var friendId = existing ? existing.id : _dbInsertFriend(user.id, trimmed, false, conn);
-      _dbAddParticipant(eventId, friendId, user.id, conn);
-      return { success: true, friend: { id: friendId, name: trimmed } };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-function setEventFriends(token, eventId, friendIds) {
-  try {
-    var user = requireAuth(token);
-    var conn = _dbConn();
-    try {
-      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Event not found');
-
-      var ownedFriendMap = {};
-      _dbGetFriendsByAccount(user.id, conn).forEach(function (f) { ownedFriendMap[f.id] = f.name });
-      var wantedIds = (friendIds || []).filter(function (fid) { return ownedFriendMap.hasOwnProperty(fid); });
-
-      var usedInEvent = _dbUsedFriendIdsInEvent(eventId, conn);
-      var currentIdSet = {};
-      _dbGetParticipantsByEvent(eventId, conn).forEach(function (f) { currentIdSet[f.id] = true; });
-
-      var blocked = [];
-      var toAdd = wantedIds.filter(function (fid) { return !currentIdSet[fid]; });
-      var toRemove = Object.keys(currentIdSet).filter(function (fid) {
-        if (wantedIds.indexOf(fid) !== -1) return false;
-        if (usedInEvent[fid]) { blocked.push({ id: fid, name: ownedFriendMap[fid] }); return false; }
-        return true;
-      });
-
-      _dbSyncParticipants(eventId, toAdd, toRemove, user.id, conn);
-      toRemove.forEach(function (fid) { delete currentIdSet[fid]; });
-      toAdd.forEach(function (fid) { currentIdSet[fid] = true; });
-
-      var finalFriends = Object.keys(currentIdSet).map(function (fid) {
-        return { id: fid, name: ownedFriendMap[fid] };
-      });
-      return { success: true, friends: finalFriends, blocked: blocked };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-// ----------------------------------------------------------------
-// Events
-// ----------------------------------------------------------------
-
-function addEvent(token, name, icon) {
-  try {
-    var user = requireAuth(token);
-    if (!name || name.trim() === '') return _fail('Event name is required');
-    var trimmed = name.trim();
-    var conn = _dbConn();
-    try {
-      var created = _dbInsertEvent(user.id, trimmed, icon || '', user.id, conn);
-
-      // Auto-link the account's own self-friend so every event starts with yourself in it
-      var selfFriend = _dbFindSelfFriend(user.id, conn);
-      if (selfFriend) _dbAddParticipant(created.id, selfFriend.id, user.id, conn);
-
-      return { success: true, event: { id: created.id, name: trimmed, accountId: user.id, createdAt: created.createdAt, icon: icon || '' } };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-function renameEvent(token, eventId, name, icon) {
-  try {
-    var user = requireAuth(token);
-    if (!name || name.trim() === '') return _fail('Event name is required');
-    var conn = _dbConn();
-    try {
-      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Event not found');
-      _dbUpdateEventName(eventId, name.trim(), icon || '', user.id, conn);
-      return { success: true, name: name.trim(), icon: icon || '' };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-function setEventActive(token, eventId, active) {
-  try {
-    var user = requireAuth(token);
-    var conn = _dbConn();
-    try {
-      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Event not found');
-      _dbSetEventActive(eventId, active === true, user.id, conn);
-      return { success: true, active: active === true };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-function deleteEvent(token, eventId) {
-  try {
-    var user = requireAuth(token);
-    var conn = _dbConn();
-    try {
-      // Check ownership before deleting anything.
-      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Event not found');
-
-      _trashSlipFilesForEvent(eventId, conn);
-      _dbDeleteEvent(eventId, conn); // cascades to transaction/split/participant/settlement/receipt
-
-      return { success: true };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-// ----------------------------------------------------------------
-// Event Sharing (public read-only link)
-// ----------------------------------------------------------------
-
-function getShareLink(token, eventId) {
-  try {
-    var user = requireAuth(token);
-    // One fetch covers both the ownership check and the share info - no
-    // separate _eventOwnedBy round-trip needed.
-    var event = _dbGetEventById(eventId);
-    if (!event || event.accountId !== user.id) return _fail('Event not found');
-    if (!event.shareToken) return { success: true, shareToken: null };
-    return {
-      success: true, shareToken: event.shareToken, permission: event.sharePerm,
-      shareUrl: ScriptApp.getService().getUrl() + '?share=' + event.shareToken
-    };
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-// Creates the link on first call; on later calls with an existing link, just
-// updates its permission in place so the same URL keeps working.
-function enableEventShare(token, eventId, permission) {
-  try {
-    var user = requireAuth(token);
-    var conn = _dbConn();
-    try {
-      var event = _dbGetEventById(eventId, conn);
-      if (!event || event.accountId !== user.id) return _fail('Event not found');
-      var perm = permission === 'edit' ? 'edit' : 'view';
-
-      var shareToken = event.shareToken || Utilities.getUuid();
-      _dbSetEventShare(eventId, shareToken, perm, user.id, conn);
-      return { success: true, shareToken: shareToken, permission: perm, shareUrl: ScriptApp.getService().getUrl() + '?share=' + shareToken };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-function disableEventShare(token, eventId) {
-  try {
-    var user = requireAuth(token);
-    var conn = _dbConn();
-    try {
-      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Event not found');
-      _dbClearEventShare(eventId, user.id, conn);
-      return { success: true };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-// Public — intentionally takes no auth token. Only ever returns the one
-// event a valid, unguessable share token points to; never account data.
-function getSharedEventView(shareToken) {
-  try {
-    if (!shareToken) return _fail('Invalid link');
-    var conn = _dbConn();
-    try {
-      var event = _dbGetEventByShareToken(shareToken, conn);
-      if (!event) return _fail('This share link is no longer active');
-
-      var ownerAccount = _dbGetAccountById(event.accountId, conn);
-      var ownerPhoto = ownerAccount ? ownerAccount.photo : '';
-
-      // Same core the authenticated getDetailData uses, so a share visitor sees
-      // identical details/friends/settlements (including paid state)/slips
-      // shapes — the client renders both through the exact same Detail code.
-      var payload = _buildDetailPayload(event.id, event.accountId, conn);
-
-      return {
-        success: true,
-        event: { name: event.name, createdAt: event.createdAt, icon: event.icon },
-        details: payload.details,
-        friends: payload.friends,
-        settlements: payload.settlements,
-        selfFriendId: payload.selfFriendId,
-        ownerPhoto: ownerPhoto,
-        slips: payload.slips,
-        permission: event.sharePerm
-      };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-// ----------------------------------------------------------------
-// Details (Transactions)
-// ----------------------------------------------------------------
-
-function addDetail(token, eventId, payId, friendIds, totalAmount, description, customAmounts) {
-  try {
-    var user = requireAuth(token);
-    if (!friendIds || !friendIds.length) return _fail('At least one person is required');
-    var transactionId = _dbInsertTransactionWithSplits(eventId, payId, friendIds, totalAmount, description, customAmounts, user.id);
-    return { success: true, transactionId: transactionId };
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-function updateDetail(token, transactionId, payId, friendIds, totalAmount, description, customAmounts) {
-  try {
-    var user = requireAuth(token);
-    if (!friendIds || !friendIds.length) return _fail('At least one person is required');
-    var conn = _dbConn();
-    try {
-      var eventId = _dbGetTransactionEventId(transactionId, conn);
-      if (!eventId) return _fail('Transaction not found');
-      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Transaction not found');
-
-      _dbUpdateTransactionWithSplits(transactionId, payId, friendIds, totalAmount, description, customAmounts, user.id, conn);
-      return { success: true, transactionId: transactionId };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-function deleteDetail(token, transactionId) {
-  try {
-    var user = requireAuth(token);
-    var conn = _dbConn();
-    try {
-      var eventId = _dbGetTransactionEventId(transactionId, conn);
-      if (!eventId) return _fail('Transaction not found');
-      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Transaction not found');
-
-      _trashSlipFilesForTx(transactionId, conn);
-      _dbDeleteTransaction(transactionId, conn); // cascades to split/receipt
-      return { success: true };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-// ----------------------------------------------------------------
-// Details (Transactions) via an 'edit' share link - no account, so these
-// check the share token's permission instead of requireAuth. Deliberately
-// scoped to transaction CRUD only (no friends/event management), per the
-// share-permission design.
-// ----------------------------------------------------------------
-
-function _shareEventId(shareToken, requireEdit, connOpt) {
-  if (!shareToken) return null;
-  var event = _dbGetEventByShareToken(shareToken, connOpt);
-  if (!event) return null;
-  if (requireEdit && event.sharePerm !== 'edit') return null;
-  return event.id;
-}
-
-function addDetailViaShare(shareToken, payId, friendIds, totalAmount, description, customAmounts) {
-  try {
-    if (!friendIds || !friendIds.length) return _fail('At least one person is required');
-    var conn = _dbConn();
-    try {
-      var eventId = _shareEventId(shareToken, true, conn);
-      if (!eventId) return _fail('This share link cannot make changes');
-      var transactionId = _dbInsertTransactionWithSplits(eventId, payId, friendIds, totalAmount, description, customAmounts, null, conn);
-      return { success: true, transactionId: transactionId };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-function updateDetailViaShare(shareToken, transactionId, payId, friendIds, totalAmount, description, customAmounts) {
-  try {
-    if (!friendIds || !friendIds.length) return _fail('At least one person is required');
-    var conn = _dbConn();
-    try {
-      var eventId = _shareEventId(shareToken, true, conn);
-      if (!eventId) return _fail('This share link cannot make changes');
-      if (_dbGetTransactionEventId(transactionId, conn) !== eventId) return _fail('Transaction not found');
-
-      _dbUpdateTransactionWithSplits(transactionId, payId, friendIds, totalAmount, description, customAmounts, null, conn);
-      return { success: true, transactionId: transactionId };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-// deleteDetailViaShare / deleteTransactionSlipViaShare were removed on purpose
-// (not merely hidden client-side): no share link, editable or not, may ever
-// delete a transaction or a saved photo. Add/Edit stays available below.
-
-function _saveUploadedSlip(transactionId, slip, createdBy, connOpt) {
-  var uploaded = _uploadSlipToDrive(slip);
-  var id = _dbInsertReceipt(transactionId, uploaded.fileId, createdBy, connOpt);
-  return { success: true, id: id, slip: uploaded.fileId, slipHi: uploaded.fileId };
-}
-
-function uploadTransactionSlipViaShare(shareToken, transactionId, slip) {
-  try {
-    if (!slip) return _fail('No photo provided');
-    var conn = _dbConn();
-    try {
-      var eventId = _shareEventId(shareToken, true, conn);
-      if (!eventId) return _fail('This share link cannot make changes');
-      if (_dbGetTransactionEventId(transactionId, conn) !== eventId) return _fail('Transaction not found');
-      return _saveUploadedSlip(transactionId, slip, null, conn);
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-// Always adds a new photo (a transaction can have several) - returns its id
-// so the client can target it with deleteTransactionSlip later.
-function uploadTransactionSlip(token, transactionId, slip) {
-  try {
-    var user = requireAuth(token);
-    if (!slip) return _fail('No photo provided');
-    var conn = _dbConn();
-    try {
-      var eventId = _dbGetTransactionEventId(transactionId, conn);
-      if (!eventId) return _fail('Transaction not found');
-      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Transaction not found');
-      return _saveUploadedSlip(transactionId, slip, user.id, conn);
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-function deleteTransactionSlip(token, transactionId, slipId) {
-  try {
-    var user = requireAuth(token);
-    var conn = _dbConn();
-    try {
-      var eventId = _dbGetTransactionEventId(transactionId, conn);
-      if (!eventId) return _fail('Transaction not found');
-      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Transaction not found');
-
-      var fileId = _dbDeleteReceipt(transactionId, slipId, conn);
-      if (fileId === null) return _fail('Photo not found');
-      _deleteSlipFile(fileId);
-      return { success: true };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-// ----------------------------------------------------------------
-// Summary / Settlement Calculation
+// Settlement math (pure computation, no storage access - identical on both backends)
 // ----------------------------------------------------------------
 
 // detailRows: array of {payId, friendId, amount}. friendMap: id -> name.
@@ -1926,167 +3612,15 @@ function _settleKey(from, to, amount) {
   return from + '|' + to + '|' + Math.round(parseFloat(amount) * 100);
 }
 
-function _computeSettlementsWithPaid(detailRows, friendMap, eventId, connOpt) {
-  var settlements = _computeSettlements(detailRows, friendMap);
-  var paidSet = _dbGetSettlementsByEvent(eventId, connOpt);
-  settlements.forEach(function (s) { s.paid = !!paidSet[_settleKey(s.from, s.to, s.amount)] });
-  return settlements;
-}
-
-function _markSettlementPaid(eventId, fromId, toId, amount, paid, actorId, connOpt) {
-  if (paid) _dbUpsertSettlement(eventId, fromId, toId, amount, actorId, connOpt);
-  else _dbDeleteSettlement(eventId, fromId, toId, connOpt);
-  return { success: true };
-}
-
-function markSettlementPaid(token, eventId, fromId, toId, amount, paid) {
-  try {
-    var user = requireAuth(token);
-    var conn = _dbConn();
-    try {
-      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Event not found');
-      return _markSettlementPaid(eventId, fromId, toId, amount, paid, user.id, conn);
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-// Share-link 'edit' permission covers transaction CRUD already - marking a
-// settlement/transaction paid is the same tier of access, unlike 'view'.
-function markSettlementPaidViaShare(shareToken, fromId, toId, amount, paid) {
-  try {
-    var conn = _dbConn();
-    try {
-      var eventId = _shareEventId(shareToken, true, conn);
-      if (!eventId) return _fail('This share link cannot make changes');
-      return _markSettlementPaid(eventId, fromId, toId, amount, paid, null, conn);
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-// Marks a single transaction as already settled - it's then excluded from
-// settlement math app-wide (see transaction.excluded_at, consumed by
-// getHomeData/_buildDetailPayload/getSummary) instead of just noting a net
-// debt as paid.
-function markTransactionPaid(token, eventId, transactionId, paid) {
-  try {
-    var user = requireAuth(token);
-    var conn = _dbConn();
-    try {
-      if (!_eventOwnedBy(eventId, user.id, conn)) return _fail('Event not found');
-      _dbSetTransactionExcluded(transactionId, paid, user.id, conn);
-      return { success: true };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-function markTransactionPaidViaShare(shareToken, transactionId, paid) {
-  try {
-    var conn = _dbConn();
-    try {
-      var eventId = _shareEventId(shareToken, true, conn);
-      if (!eventId) return _fail('This share link cannot make changes');
-      _dbSetTransactionExcluded(transactionId, paid, null, conn);
-      return { success: true };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-function getSummary(token, eventId) {
-  try {
-    var user = requireAuth(token);
-    var conn = _dbConn();
-    try {
-      var friendMap = {};
-      _dbGetFriendsByAccount(user.id, conn).forEach(function (f) { friendMap[f.id] = f.name });
-
-      var rows = [];
-      _dbGetTransactionsByEvent(eventId, conn).forEach(function (tx) {
-        if (!tx.excluded) tx.splits.forEach(function (s) { rows.push({ payId: tx.payId, friendId: s.friendId, amount: s.amount }) });
-      });
-
-      return { success: true, settlements: _computeSettlementsWithPaid(rows, friendMap, eventId, conn) };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
+// Caps the cache entry so it never outlives the session's real expiry - matters
+// when an admin configures a short sessionMinutes value (e.g. for testing).
+function _cacheTtlFor(expiresAtIso) {
+  var remainingSec = Math.floor((new Date(expiresAtIso).getTime() - Date.now()) / 1000);
+  return Math.max(1, Math.min(CACHE_EXPIRY, remainingSec));
 }
 
 // ----------------------------------------------------------------
-// Admin
-// ----------------------------------------------------------------
-
-function getAllAccounts(token) {
-  try {
-    var user = requireAuth(token);
-    if (user.role !== 'admin') return _fail('Forbidden');
-    return { success: true, accounts: _dbGetAllAccounts() };
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-function updateAccountStatus(token, accountId, status) {
-  try {
-    var user = requireAuth(token);
-    if (user.role !== 'admin') return _fail('Forbidden');
-    if (user.id === accountId) return _fail('Cannot disable your own account');
-    var conn = _dbConn();
-    try {
-      if (!_dbGetAccountById(accountId, conn)) return _fail('Account not found');
-      _dbUpdateAccountStatus(accountId, status, conn);
-      return { success: true };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-function updateAccountRole(token, accountId, role) {
-  try {
-    var user = requireAuth(token);
-    if (user.role !== 'admin') return _fail('Forbidden');
-    if (user.id === accountId) return _fail('Cannot change your own role');
-    var conn = _dbConn();
-    try {
-      if (!_dbGetAccountById(accountId, conn)) return _fail('Account not found');
-      _dbUpdateAccountRole(accountId, role, conn);
-      return { success: true };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-function deleteAccount(token, accountId) {
-  try {
-    var user = requireAuth(token);
-    if (user.role !== 'admin') return _fail('Forbidden');
-    if (user.id === accountId) return _fail('Cannot delete your own account');
-    var conn = _dbConn();
-    try {
-      if (!_dbGetAccountById(accountId, conn)) return _fail('Account not found');
-      _dbDeleteAccount(accountId, conn);
-      return { success: true };
-    } finally { conn.close(); }
-  } catch (e) {
-    return _fail(e);
-  }
-}
-
-// ----------------------------------------------------------------
-// ONE-TIME MIGRATION: Details sheet, old shape (one row per friend-split) ->
-// new shape (one row per transaction, splits as JSON). Not client-callable -
-// run manually from the Apps Script editor, once, then verify before
-// redeploying the rest of this file. Never deletes the old data - the
-// original sheet is renamed aside, not overwritten.
+// ONE-TIME MIGRATION: Details sheet v1 -> v2 shape. Not client-callable.
 // ----------------------------------------------------------------
 
 function migrateDetailsToV2() {
@@ -2180,7 +3714,7 @@ function verifyDetailsMigration(backupSheetName) {
     if (!numsMatch(row[3], g.totalAmount)) problems.push(tid + ': totalAmount mismatch');
     if (row[4] !== g.description) problems.push(tid + ': description mismatch');
     if (row[5] !== g.createdAt) problems.push(tid + ': createdAt mismatch');
-    var newSplits = _parseSplitsForMigration(row[6]);
+    var newSplits = _parseSplits(row[6]);
     var oldKeys = Object.keys(g.splits), newKeys = Object.keys(newSplits);
     if (oldKeys.length !== newKeys.length) problems.push(tid + ': split participant count mismatch');
     oldKeys.forEach(function (fid) {
@@ -2198,22 +3732,7 @@ function verifyDetailsMigration(backupSheetName) {
 }
 
 // ----------------------------------------------------------------
-// ONE-TIME MIGRATION: account/friend move from the Accounts/Friends sheets
-// into Postgres (`account`/`friend`). Not client-callable - run manually
-// from the Apps Script editor, once, then verify the log before deploying
-// the rest of this file.
-//
-// account/friend get brand-new BIGINT ids in Postgres, so every other
-// sheet that references the OLD uuid ids (Events.accountId, Details.payId
-// + the splits JSON, EventFriends.friendId, SettlementPayments.fromId/toId)
-// gets rewritten in place to point at the new ids instead. Sessions is
-// cleared rather than remapped (its userInfo JSON embeds the old id too,
-// and a session is cheap to just re-issue) - everyone gets logged out once.
-//
-// Safety: takes a full spreadsheet backup before touching anything, and
-// never deletes the original Accounts/Friends sheets - just renames them
-// aside. Refuses to run if `account` already has rows, so it can't be
-// run twice by accident.
+// ONE-TIME MIGRATION: Sheets -> Postgres (account/friend). Not client-callable. Kept for reference/rollforward.
 // ----------------------------------------------------------------
 
 function migrateAccountsFriendsToDb() {
@@ -2358,23 +3877,7 @@ function _dbInsertAccountMigrated(name, username, passwordHash, role, status, fi
 }
 
 // ----------------------------------------------------------------
-// ONE-TIME MIGRATION: everything else (Events, Details+splits,
-// EventFriends, EventShares, SettlementPayments, TransactionPayments,
-// TransactionSlips, Sessions) moves from Sheets into Postgres
-// (event/transaction/split/participant/settlement/receipt/session). Not
-// client-callable - run manually from the Apps Script editor, once, after
-// migrateAccountsFriendsToDb() has already run (this reuses the bigint
-// account/friend ids that migration already wrote back into these sheets).
-//
-// Everything below shares ONE connection for the whole run (prepare each
-// statement once, loop rows through it) - a first attempt that opened a
-// fresh connection per row hit Apps Script's 6-minute execution cap partway
-// through Details, since each Jdbc.getConnection() pays a real network
-// handshake to Neon.
-//
-// Safety: takes a full spreadsheet backup before touching anything, and
-// never deletes the original sheets - just renames them aside. Refuses to
-// run if `event` already has rows, so it can't be run twice by accident.
+// ONE-TIME MIGRATION: Sheets -> Postgres (everything else). Not client-callable. Kept for reference/rollforward.
 // ----------------------------------------------------------------
 
 // Migration-only: same JSON tolerance as the old _parseSplits (retired from
@@ -2603,3 +4106,4 @@ function migrateRestToDb() {
     conn.close();
   }
 }
+
