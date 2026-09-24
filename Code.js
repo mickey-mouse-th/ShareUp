@@ -44,6 +44,17 @@ function _dbBackend() {
   return _DB_BACKEND_CACHE;
 }
 
+// CacheService.getScriptCache() is shared script-wide regardless of which
+// backend is active - a session token cached while running on Postgres would
+// otherwise still satisfy a lookup after switching to Sheets (and vice
+// versa), silently authenticating as a user id that belongs to the OTHER
+// backend and has none of this backend's data (looks like "logged in but
+// every event disappeared", not an error). Namespacing the key by backend
+// forces a real per-backend session lookup on every switch instead.
+function _tokenCacheKey(token) {
+  return 'token_' + _dbBackend() + '_' + token;
+}
+
 // Admin-only - flips the switch for every user. Not exposed to the client
 // UI; call it once from the Apps Script editor (or wire an Admin Settings
 // control to it) when you actually want to cut over.
@@ -1536,7 +1547,7 @@ function _shUpdateSessionUserInfo(token, userInfo) {
     sheet.getRange(row + 1, 3).setValue(JSON.stringify(userInfo));
     ttl = _cacheTtlFor(data[row][4]);
   }
-  getCache().put('token_' + token, JSON.stringify(userInfo), ttl);
+  getCache().put(_tokenCacheKey(token), JSON.stringify(userInfo), ttl);
 }
 
 // Refreshes the cached userInfo for the CURRENT session/device only (the one
@@ -1551,7 +1562,7 @@ function _pgUpdateSessionUserInfo(token, userInfo) {
     _dbUpdateSessionInfo(token, userInfo);
     ttl = _cacheTtlFor(found.expiresAt);
   }
-  getCache().put('token_' + token, JSON.stringify(userInfo), ttl);
+  getCache().put(_tokenCacheKey(token), JSON.stringify(userInfo), ttl);
 }
 
 function _updateSessionUserInfo() {
@@ -1583,7 +1594,7 @@ function _shLoginUser(username, password) {
         var sessionMinutes = getAppSettings().sessionMinutes;
         var expires = new Date(now.getTime() + sessionMinutes * 60000);
         var cacheTtl = Math.max(1, Math.min(CACHE_EXPIRY, sessionMinutes * 60));
-        getCache().put('token_' + token, JSON.stringify(userInfo), cacheTtl);
+        getCache().put(_tokenCacheKey(token), JSON.stringify(userInfo), cacheTtl);
         getSessionsSheet().appendRow([token, row[0], JSON.stringify(userInfo), now.toISOString(), expires.toISOString()]);
         _cleanExpiredSessions();
         return { success: true, token: token, user: userInfo, url: ScriptApp.getService().getUrl() + '?tk=' + encodeURIComponent(token) };
@@ -1611,7 +1622,7 @@ function _pgLoginUser(username, password) {
       var sessionMinutes = getAppSettings().sessionMinutes;
       expires = new Date(new Date().getTime() + sessionMinutes * 60000);
       var cacheTtl = Math.max(1, Math.min(CACHE_EXPIRY, sessionMinutes * 60));
-      getCache().put('token_' + token, JSON.stringify(userInfo), cacheTtl);
+      getCache().put(_tokenCacheKey(token), JSON.stringify(userInfo), cacheTtl);
       _dbCreateSession(token, account.id, userInfo, expires.toISOString(), conn);
       _dbCleanExpiredSessions(conn);
     } finally { conn.close(); }
@@ -1680,7 +1691,7 @@ function registerUser() {
 
 function _shLogoutUser(token) {
   try {
-    getCache().remove('token_' + token);
+    getCache().remove(_tokenCacheKey(token));
     var sheet = getSessionsSheet();
     var row = _findRow(sheet.getDataRange().getValues(), token);
     if (row !== -1) sheet.deleteRow(row + 1);
@@ -1692,7 +1703,7 @@ function _shLogoutUser(token) {
 
 function _pgLogoutUser(token) {
   try {
-    getCache().remove('token_' + token);
+    getCache().remove(_tokenCacheKey(token));
     _dbDeleteSession(token);
     return { success: true };
   } catch (e) {
@@ -3511,21 +3522,21 @@ function buildThemeCss() {
 // ----------------------------------------------------------------
 
 function requireAuth(token) {
-  var cached = getCache().get('token_' + token);
+  var cached = getCache().get(_tokenCacheKey(token));
   if (cached) return JSON.parse(cached);
   var found = _lookupSession(token);
   if (!found) throw new Error('Unauthorized');
-  getCache().put('token_' + token, JSON.stringify(found.userInfo), _cacheTtlFor(found.expiresAt));
+  getCache().put(_tokenCacheKey(token), JSON.stringify(found.userInfo), _cacheTtlFor(found.expiresAt));
   return found.userInfo;
 }
 
 function getSessionUser(token) {
   try {
-    var cached = getCache().get('token_' + token);
+    var cached = getCache().get(_tokenCacheKey(token));
     if (cached) return { success: true, user: JSON.parse(cached) };
     var found = _lookupSession(token);
     if (!found) return _fail('Session expired');
-    getCache().put('token_' + token, JSON.stringify(found.userInfo), _cacheTtlFor(found.expiresAt));
+    getCache().put(_tokenCacheKey(token), JSON.stringify(found.userInfo), _cacheTtlFor(found.expiresAt));
     return { success: true, user: found.userInfo };
   } catch (e) {
     return _fail(e);
