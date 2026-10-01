@@ -1,0 +1,4 @@
+name = "shareup-prototype"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+# Secret: npx wrangler secret put DATABASE_URL
