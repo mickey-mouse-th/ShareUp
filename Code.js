@@ -3806,6 +3806,98 @@ function verifyDetailsMigration(backupSheetName) {
 }
 
 // ----------------------------------------------------------------
+// READ-ONLY CHECK: Sheets vs Postgres. Run from the Apps Script editor before AND
+// after re-migrating; changes nothing. Logs a table of row counts, total money,
+// and per-user event / expense counts + totals, marking each line OK or DIFF.
+// After a clean migration every line should be OK; a DIFF should be explained
+// by a "WARNING ... skipped" line in the migration log (rows that pointed at
+// something that no longer exists).
+// ----------------------------------------------------------------
+
+function compareSheetsAndDb() {
+  var ss = getSpreadsheet();
+  var rows = function (name) {
+    var sh = ss.getSheetByName(name);
+    return sh ? sh.getDataRange().getValues().slice(1).filter(function (r) { return r[0] !== '' }) : [];
+  };
+  var accounts = rows('Accounts'), friends = rows('Friends'), events = rows('Events'), details = rows('Details'),
+      ef = rows('EventFriends'), shares = rows('EventShares'), sp = rows('SettlementPayments'),
+      tp = rows('TransactionPayments'), sl = rows('TransactionSlips');
+
+  var splitCount = 0, moneySheets = 0;
+  details.forEach(function (r) {
+    splitCount += Object.keys(_parseSplitsForMigration(r[6])).length;
+    moneySheets += parseFloat(r[3]) || 0;
+  });
+
+  var conn = _dbConn();
+  var scalar = function (sql) {
+    var st = conn.prepareStatement(sql), rs = st.executeQuery();
+    rs.next();
+    var v = Number(rs.getString(1));
+    rs.close(); st.close();
+    return v;
+  };
+  var lines = [], diffs = 0;
+  var cmp = function (label, a, b, isMoney) {
+    var same = isMoney ? Math.abs(a - b) < 0.005 : a === b;
+    if (!same) diffs++;
+    lines.push((same ? 'OK   ' : 'DIFF ') + label + ':  sheets=' + (isMoney ? a.toFixed(2) : a) + '  postgres=' + (isMoney ? b.toFixed(2) : b));
+  };
+
+  try {
+    cmp('accounts', accounts.length, scalar('SELECT count(*) FROM account'));
+    cmp('friends', friends.length, scalar('SELECT count(*) FROM friend'));
+    cmp('events', events.length, scalar('SELECT count(*) FROM event'));
+    cmp('transactions', details.length, scalar('SELECT count(*) FROM transaction'));
+    cmp('splits (people per expense)', splitCount, scalar('SELECT count(*) FROM split'));
+    cmp('event participants', ef.length, scalar('SELECT count(*) FROM participant'));
+    cmp('share links', shares.length, scalar('SELECT count(*) FROM event WHERE share_token IS NOT NULL'));
+    cmp('settlement payments', sp.length, scalar('SELECT count(*) FROM settlement'));
+    cmp('expenses marked paid', tp.length, scalar('SELECT count(*) FROM transaction WHERE excluded_at IS NOT NULL'));
+    cmp('receipts (photos)', sl.length, scalar('SELECT count(*) FROM receipt'));
+    cmp('TOTAL money across all expenses', moneySheets, scalar('SELECT coalesce(sum(amount), 0) FROM transaction'), true);
+
+    // per user (usernames are unique and survive the migration; ids do not)
+    var userOf = {}, perUser = {};
+    accounts.forEach(function (r) { userOf[r[0]] = String(r[2]).toLowerCase(); perUser[userOf[r[0]]] = { ev: 0, tx: 0, money: 0 }; });
+    var ownerOfEvent = {};
+    events.forEach(function (r) {
+      var u = userOf[r[2]]; ownerOfEvent[r[0]] = u;
+      if (u) perUser[u].ev++;
+    });
+    details.forEach(function (r) {
+      var u = ownerOfEvent[r[1]];
+      if (u) { perUser[u].tx++; perUser[u].money += parseFloat(r[3]) || 0; }
+    });
+
+    var st = conn.prepareStatement(
+      'SELECT lower(a.username) AS u, count(DISTINCT e.id) AS ev, count(t.id) AS tx, coalesce(sum(t.amount), 0) AS money ' +
+      'FROM account a LEFT JOIN event e ON e.account_id = a.id LEFT JOIN transaction t ON t.event_id = e.id GROUP BY lower(a.username)'
+    );
+    var rs = st.executeQuery(), pg = {};
+    while (rs.next()) pg[rs.getString('u')] = { ev: Number(rs.getString('ev')), tx: Number(rs.getString('tx')), money: Number(rs.getString('money')) };
+    rs.close(); st.close();
+
+    lines.push('--- per user ---');
+    var names = {};
+    Object.keys(perUser).concat(Object.keys(pg)).forEach(function (n) { names[n] = true });
+    Object.keys(names).sort().forEach(function (n) {
+      var a = perUser[n] || { ev: 0, tx: 0, money: 0 }, b = pg[n] || { ev: 0, tx: 0, money: 0 };
+      var same = a.ev === b.ev && a.tx === b.tx && Math.abs(a.money - b.money) < 0.005;
+      if (!same) diffs++;
+      lines.push((same ? 'OK   ' : 'DIFF ') + n + (perUser[n] ? '' : ' (only in Postgres)') + (pg[n] ? '' : ' (only in Sheets)') +
+        ':  events ' + a.ev + '/' + b.ev + ',  expenses ' + a.tx + '/' + b.tx + ',  money ' + a.money.toFixed(2) + '/' + b.money.toFixed(2));
+    });
+  } finally { conn.close(); }
+
+  lines.push('');
+  lines.push(diffs ? ('RESULT: ' + diffs + ' difference(s) - see DIFF lines (sheets/postgres)') : 'RESULT: everything matches');
+  Logger.log(lines.join('\n'));
+  return { differences: diffs };
+}
+
+// ----------------------------------------------------------------
 // ONE-TIME MIGRATION: Sheets -> Postgres (account/friend). Not client-callable. Kept for reference/rollforward.
 // ----------------------------------------------------------------
 
