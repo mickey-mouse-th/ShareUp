@@ -3911,6 +3911,43 @@ function compareSheetsAndDb() {
   return { differences: diffs };
 }
 
+// READ-ONLY DIAGNOSTIC: explains a "duplicate share_token" failure in migrateRestToDb.
+// Logs every EventShares row (ids/tokens shortened to 6 chars - tokens are secrets),
+// flags tokens or events that appear more than once, and shows which events in
+// Postgres already hold a share token right now. Changes nothing.
+function diagnoseShares() {
+  var ss = getSpreadsheet();
+  var names = ss.getSheets().map(function (x) { return x.getName() });
+  var pick = function (name) {
+    return names.indexOf(name) !== -1 ? name : names.filter(function (n) { return n.indexOf(name + '_v1_backup_') === 0 }).sort().pop();
+  };
+  var shName = pick('EventShares'), evName = pick('Events');
+  Logger.log('EventShares tab: ' + shName + ' | Events tab: ' + evName);
+  var short = function (v) { return String(v).slice(0, 6) };
+  var sh = ss.getSheetByName(shName).getDataRange().getValues().slice(1).filter(function (r) { return r[0] !== '' });
+  var byToken = {}, byEvent = {};
+  sh.forEach(function (r, i) {
+    Logger.log('row ' + (i + 2) + ': event=' + short(r[0]) + ' token=' + short(r[1]) + ' len=' + String(r[1]).length + ' perm=' + (r[3] || '(blank)'));
+    (byToken[r[1]] = byToken[r[1]] || []).push(i + 2);
+    (byEvent[r[0]] = byEvent[r[0]] || []).push(i + 2);
+  });
+  Object.keys(byToken).forEach(function (t) { if (byToken[t].length > 1) Logger.log('DUPLICATE TOKEN ' + short(t) + ' on rows ' + byToken[t].join(', ')) });
+  Object.keys(byEvent).forEach(function (e) { if (byEvent[e].length > 1) Logger.log('EVENT SHARED TWICE ' + short(e) + ' on rows ' + byEvent[e].join(', ')) });
+  var evs = ss.getSheetByName(evName).getDataRange().getValues().slice(1).filter(function (r) { return r[0] !== '' });
+  var known = {};
+  evs.forEach(function (r) { known[r[0]] = true });
+  sh.forEach(function (r, i) { if (!known[r[0]]) Logger.log('row ' + (i + 2) + ' points at an event that is not in the Events tab') });
+  var conn = _dbConn();
+  try {
+    var st = conn.prepareStatement('SELECT id, left(share_token, 6) AS t FROM event WHERE share_token IS NOT NULL ORDER BY id');
+    var rs = st.executeQuery(), n = 0;
+    while (rs.next()) { n++; Logger.log('Postgres event ' + rs.getString('id') + ' already has token ' + rs.getString('t') + '...') }
+    rs.close(); st.close();
+    var c = conn.prepareStatement('SELECT count(*) FROM event').executeQuery(); c.next();
+    Logger.log('Postgres: ' + c.getString(1) + ' event row(s) now, ' + n + ' with a share token.');
+  } finally { conn.close(); }
+}
+
 // ----------------------------------------------------------------
 // ONE-TIME MIGRATION: Sheets -> Postgres (account/friend). Not client-callable. Kept for reference/rollforward.
 // ----------------------------------------------------------------
