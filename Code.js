@@ -3816,8 +3816,12 @@ function verifyDetailsMigration(backupSheetName) {
 
 function compareSheetsAndDb() {
   var ss = getSpreadsheet();
+  // After migrateRestToDb the sheets are renamed '<Name>_v1_backup_<time>': read those too.
+  var sheetNames = ss.getSheets().map(function (x) { return x.getName() });
   var rows = function (name) {
-    var sh = ss.getSheetByName(name);
+    var exact = sheetNames.indexOf(name) !== -1 ? name : null;
+    var renamed = sheetNames.filter(function (n) { return n.indexOf(name + '_v1_backup_') === 0 }).sort().pop();
+    var sh = ss.getSheetByName(exact || renamed || name);
     return sh ? sh.getDataRange().getValues().slice(1).filter(function (r) { return r[0] !== '' }) : [];
   };
   var accounts = rows('Accounts'), friends = rows('Friends'), events = rows('Events'), details = rows('Details'),
@@ -3859,8 +3863,18 @@ function compareSheetsAndDb() {
     cmp('TOTAL money across all expenses', moneySheets, scalar('SELECT coalesce(sum(amount), 0) FROM transaction'), true);
 
     // per user (usernames are unique and survive the migration; ids do not)
+    // Events.accountId is the old UUID before migrateAccountsFriendsToDb and the Postgres id after it
+    // (that step rewrites it in the sheet), so look owners up by either.
     var userOf = {}, perUser = {};
     accounts.forEach(function (r) { userOf[r[0]] = String(r[2]).toLowerCase(); perUser[userOf[r[0]]] = { ev: 0, tx: 0, money: 0 }; });
+    var ast = conn.prepareStatement('SELECT id, lower(username) AS u FROM account');
+    var ars = ast.executeQuery();
+    while (ars.next()) {
+      var pu = ars.getString('u');
+      userOf[ars.getString('id')] = pu;
+      if (!perUser[pu]) perUser[pu] = { ev: 0, tx: 0, money: 0 };
+    }
+    ars.close(); ast.close();
     var ownerOfEvent = {};
     events.forEach(function (r) {
       var u = userOf[r[2]]; ownerOfEvent[r[0]] = u;
@@ -4070,6 +4084,11 @@ function migrateRestToDb() {
       throw new Error('Aborted: event table already has ' + eventCount + ' row(s). This migration only runs once, on an empty table.');
     }
 
+    // All inserts happen in ONE database transaction: either everything lands or (on any
+    // error) nothing does, so a failed run leaves the tables empty and can simply be re-run.
+    // It is committed before the sheets are touched below (sessions cleared, tabs renamed).
+    conn.setAutoCommit(false);
+
     var ss = getSpreadsheet();
     var backupName = SPREADSHEET_NAME + '_backup_before_rest_migration_' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmmss');
     var backupSS = ss.copy(backupName);
@@ -4240,6 +4259,8 @@ function migrateRestToDb() {
     rcStmt.close();
     Logger.log('Migrated ' + receiptsMigrated + ' receipts (' + receiptsUploadedFromLegacy + ' uploaded from legacy base64, ' + receiptsUnmapped + ' unmapped).');
 
+    conn.commit(); // data is safely in Postgres - only now is it OK to change the sheets
+
     // --- sessions: clear rather than remap (userInfo JSON embeds account id, cheap to reissue) ---
     var sessSheet = ss.getSheetByName('Sessions');
     var sessRows = sessSheet.getLastRow() - 1;
@@ -4268,6 +4289,9 @@ function migrateRestToDb() {
     };
     Logger.log(JSON.stringify(summary, null, 2));
     return summary;
+  } catch (e) {
+    try { conn.rollback(); Logger.log('Rolled back - nothing was written to Postgres. Safe to run again.'); } catch (x) { /* connection already gone: the server discards the open transaction */ }
+    throw e;
   } finally {
     conn.close();
   }
