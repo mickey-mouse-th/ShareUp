@@ -1,0 +1,6 @@
+# Push only the Apps Script sources from the repo root.
+# (The new web app, SQL, prototype and notes live in this repo too - never upload those.)
+**/**
+!appsscript.json
+!Code.js
+!*.html
