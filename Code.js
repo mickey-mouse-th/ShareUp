@@ -1469,8 +1469,71 @@ function _shReadSlipImage(fileId) {
 
 function _pgReadSlipImage(fileId, connOpt) {
   if (!_isKnownSlipFile(fileId, connOpt)) return _fail('Photo not found');
+  // Photos added by the new web app are stored in Postgres (file_id = 'db:<uuid>').
+  if (String(fileId).indexOf('db:') === 0) {
+    var img = _dbReadReceiptImage(fileId, connOpt);
+    return img ? { success: true, mimeType: img.mime, base64: img.base64 } : _fail('Photo not found');
+  }
   var d = _slipBase64(fileId);
   return { success: true, mimeType: d.mimeType, base64: d.base64 };
+}
+
+function _dbReadReceiptImage(fileId, connOpt) {
+  return _withConn(connOpt, function (conn) {
+    var stmt = conn.prepareStatement(
+      "SELECT ri.mime, encode(ri.data, 'base64') AS b64 FROM receipt r JOIN receipt_image ri ON ri.receipt_id = r.id WHERE r.file_id = ?"
+    );
+    stmt.setString(1, fileId);
+    var rs = stmt.executeQuery();
+    var out = rs.next() ? { mime: rs.getString('mime'), base64: rs.getString('b64').replace(/\s+/g, '') } : null;
+    rs.close(); stmt.close();
+    return out;
+  });
+}
+
+// ONE-TIME MIGRATION (run from the Apps Script editor, not client-callable):
+// copies every receipt photo that still lives only in Google Drive into the
+// receipt_image table, so the new web app can show it. Safe to re-run - it only
+// copies photos that have no copy yet, and stops before the 6-minute limit.
+// Needs db/migrations/002_receipt_image.sql applied first. Drive files are kept.
+function migrateSlipsToDb() {
+  var started = Date.now();
+  var conn = _dbConn();
+  var copied = 0, skipped = 0, failed = 0, bytes = 0;
+  try {
+    var list = conn.prepareStatement(
+      "SELECT r.id, r.file_id FROM receipt r LEFT JOIN receipt_image i ON i.receipt_id = r.id " +
+      "WHERE i.receipt_id IS NULL AND r.file_id NOT LIKE 'db:%' ORDER BY r.id"
+    ).executeQuery();
+    var todo = [];
+    while (list.next()) todo.push({ id: list.getLong('id'), fileId: list.getString('file_id') });
+    list.close();
+    Logger.log('Photos to copy: ' + todo.length);
+
+    var ins = conn.prepareStatement(
+      'INSERT INTO receipt_image (receipt_id, mime, data, size) VALUES (?, ?, ?, ?) ON CONFLICT (receipt_id) DO NOTHING'
+    );
+    for (var i = 0; i < todo.length; i++) {
+      if (Date.now() - started > 5 * 60 * 1000) { Logger.log('Stopping early (time limit) - run it again to continue'); break; }
+      try {
+        var blob = DriveApp.getFileById(todo[i].fileId).getBlob();
+        var data = blob.getBytes();
+        var mime = blob.getContentType() || 'image/jpeg';
+        if (mime.indexOf('image/') !== 0) { skipped++; continue; }
+        ins.setLong(1, todo[i].id);
+        ins.setString(2, mime);
+        ins.setBytes(3, data);
+        ins.setInt(4, data.length);
+        ins.executeUpdate();
+        copied++; bytes += data.length;
+      } catch (e) {
+        failed++;
+        Logger.log('Receipt ' + todo[i].id + ' (' + todo[i].fileId + ') failed: ' + e);
+      }
+    }
+    ins.close();
+  } finally { conn.close(); }
+  Logger.log('Done. copied=' + copied + ' (' + Math.round(bytes / 1024) + ' KB), skipped=' + skipped + ', failed=' + failed);
 }
 
 function _readSlipImage() {
