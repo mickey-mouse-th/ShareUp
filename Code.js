@@ -3411,7 +3411,25 @@ function deleteAccount() {
 // Entry point + shared single implementations (identical on both backends)
 // ----------------------------------------------------------------
 
+// The app moved to a standalone web app. Every visit to the old link now lands on a
+// "moved" page with a button to the new site. The previous implementation is kept
+// below as doGetLegacy_ (not served) so the code is preserved; rename it back to doGet to revive it.
+var NEW_APP_URL_ = 'https://shareup-web.mickey01mickey.workers.dev';
+
 function doGet(e) {
+  var rawToken = e && e.parameter && e.parameter.share;
+  // Old share links keep working: carry the token over to the new site.
+  var safeToken = (rawToken && /^[a-zA-Z0-9-]{10,100}$/.test(rawToken)) ? rawToken : '';
+  var target = NEW_APP_URL_ + (safeToken ? '/?share=' + safeToken : '/');
+  var tpl = HtmlService.createTemplateFromFile('Moved');
+  tpl.target = target;
+  return tpl.evaluate()
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+    .setTitle('ShareUp has moved');
+}
+
+function doGetLegacy_(e) {
   var rawToken = e && e.parameter && e.parameter.share;
   // Strict allowlist so this can be embedded directly into the page's inline script safely.
   var shareToken = (rawToken && /^[a-zA-Z0-9-]{10,100}$/.test(rawToken)) ? rawToken : '';
